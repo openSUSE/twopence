@@ -1,0 +1,115 @@
+.\" Process this file with
+.\" groff -man -Tascii inject.1
+.\"
+.TH TWOPENCE_INJECT "1" "September 2014" "Twopence 0.1.7" "User Commands"
+
+.SH NAME
+twopence_inject \- inject a test file
+
+.SH SYNOPSIS
+.B twopence_inject [
+.I OPTION
+.B ]... 
+.I TARGET
+.B  
+.I LOCAL
+.B  
+.I REMOTE
+
+.SH DESCRIPTION
+.B twopence_inject
+injects a local file onto the system under test (SUT).
+.PP
+The SUT can be accessed by any means provided by a Twopence
+plugin: virtio (for QEmu/KVM virtual machines), ssh, or serial
+(with a null-modem cable). This access method and the exact
+location of the SUT are defined by the
+.I TARGET
+parameter. With the virtio and serial methods, the program
+.B twopence_test_server
+must be installed and running on the SUT. With the ssh method,
+a SSH server must be installed and running on the SUT.
+.PP
+The transfer can be done as any local user on the SUT (default is
+.I root
+user). There is absolutely no access control, so make sure you
+use Twopence only on test machines on which you have exclusive
+access.
+
+.SH OPTIONS
+.IP \fB\-u\fR\ \fIUSERNAME\fR
+.IP\fB\-\-user\fR=\fIUSERNAME\fR
+Define the username under which the file is written
+on the system under test.
+.IP \fB\-h\fR
+.IP \fB\-\-help\fR
+Display a short error message.
+.PP
+.I TARGET
+obeys the following syntax:
+.PP
+.IP \fBvirtio:\fR\fISOCKETNAME\fR
+for the access through virtio to
+a QEmu/KVM virtual machine. \fISOCKETNAME\fR is the filename of
+the UNIX domain socket used by the virtio channel. It can be defined
+for example with help of
+.BR virt-manager (5)
+command.
+.PP
+.IP \fBssh:\fR\fIHOSTNAME\fR|\fIIPADDRESS\fR\fB[:\fR\fIPORTNUMBER\fR\fB]\fR
+for the access though SSH to a remote host.
+.PP
+.IP \fBserial:\fR\fIDEVICENAME\fR
+for the access through a serial port. \fIDEVICENAME\fR is the filename
+of a UNIX character device describing the serial port.
+.PP
+.I LOCAL
+is the filename of the local file to send.
+.PP
+.I REMOTE
+is the filename under which the file should be saved on the SUT.
+
+.SH FILES
+.I /usr/lib/twopence/twopence_test_server
+.RS
+The server to be installed on the system under test when using
+the virtio or serial access methods.
+
+.SH EXAMPLES
+Example syntax for the virtio plugin:
+.IP \fBtwopence_inject\ \-u\ johndoe\ virtio:/tmp/sut.sock\ local_file.txt\ remote_file.txt\fR
+it will use
+.I /tmp/sut.sock
+to communicate with the QEmu/KVM host.
+.PP
+Example syntax for the ssh plugin:
+.IP \fBtwopence_inject\ \-\-user=johndoe\ ssh:host.example.com\ local_file.txt\ remote_file.txt\fR
+it is functionally equivalent to
+\fBscp local_file.txt johndoe@host.example.com:remote_file.txt\fR
+so it is not very interesting when used from the shell...
+.PP
+Example syntax for the serial plugin:
+.IP \fBtwopence_inject\ serial:/dev/ttyS0\ local_file.txt\ remote_file.txt\fR
+
+.SH BUGS
+Do not expect any security from Twopence. Use with care. You've been warned.
+.PP
+For the moment, only one session with the remote host can be used at
+a time.
+.PP
+For the moment, the serial port speed and parity have to be set up
+by some other utility, like
+.BR minicom (1)
+. 
+.PP
+For the moment, it is not possible to use jokers like * or ? to transfer
+several files at once. It is also not possible to transfer recursively a
+whole directory.
+
+.SH AUTHOR
+The Twopence developpers at SUSE Linux.
+
+.SH SEE ALSO
+.BR twopence_command (1),
+.BR twopence_extract (1),
+.BR twopence_exit (1).

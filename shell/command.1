@@ -1,0 +1,125 @@
+.\" Process this file with
+.\" groff -man -Tascii command.1
+.\"
+.TH TWOPENCE_COMMAND "1" "September 2014" "Twopence 0.1.7" "User Commands"
+
+.SH NAME
+twopence_command \- execute a test command
+
+.SH SYNOPSIS
+.B twopence_command [
+.I OPTION
+.B ]... 
+.I TARGET
+.B  
+.I COMMAND
+
+.SH DESCRIPTION
+.B twopence_command
+executes a command on the system under test (SUT).
+.PP
+The SUT can be accessed by any means provided by a Twopence
+plugin: virtio (for QEmu/KVM virtual machines), ssh, or serial
+(with a null-modem cable). This access method and the exact
+location of the SUT are defined by the
+.I TARGET
+parameter. With the virtio and serial methods, the program
+.B twopence_test_server
+must be installed and running on the SUT. With the ssh method,
+a SSH server must be installed and running on the SUT.
+.PP
+The command can be run as any local user on the SUT (default is
+.I root
+user). There is absolutely no access control, so make sure you
+use Twopence only on test machines on which you have exclusive
+access.
+.PP
+During the command's execution, stdin, stdout, and stderr are
+redirected, so you can see the remotely executed command's
+behaviour and provide it with input if it requires some.
+
+.SH OPTIONS
+.IP \fB\-u\fR\ \fIUSERNAME\fR
+.IP\fB\-\-user\fR=\fIUSERNAME\fR
+Define the username under which to run the command
+on the system under test.
+.IP \fB\-o\fR\ \fIFILENAME\fR
+.IP \fB\-\-output\fR=\fIFILENAME\fR
+Store the results in the given file.
+Both stdout and stderr go to that file, in apparition order.
+Options \fB\-o\fR, \fB\-1\fR/\fB\-2\fR, and \fBq\fR are mutually exclusive.
+.IP \fB\-1\ \fIFILENAME1\fR\ \fB\-2\ \fIFILENAME2\fR
+.IP \fB\-\-stdout\ \fIFILENAME1\fR\ \fB\-\-stderr\fR\ \fIFILENAME2\fR
+Store the results separately, stdout going to the first file, and
+stderr going to the second file.
+Options \fB\-o\fR, \fB\-1\fR/\fB\-2\fR, and \fBq\fR are mutually exclusive.
+.IP \fB\-q\fR
+.IP \fB\-\-quiet\fR
+Do not output anything, apart from the error codes.
+Options \fB\-o\fR, \fB\-1\fR/\fB\-2\fR, and \fBq\fR are mutually exclusive.
+.IP \fB\-h\fR
+.IP \fB\-\-help\fR
+Display a short error message.
+.PP
+.I TARGET
+obeys the following syntax:
+.PP
+.IP \fBvirtio:\fR\fISOCKETNAME\fR
+for the access through virtio to
+a QEmu/KVM virtual machine. \fISOCKETNAME\fR is the filename of
+the UNIX domain socket used by the virtio channel. It can be defined
+for example with help of
+.BR virt-manager (5)
+command.
+.PP
+.IP \fBssh:\fR\fIHOSTNAME\fR|\fIIPADDRESS\fR\fB[:\fR\fIPORTNUMBER\fR\fB]\fR
+for the access though SSH to a remote host.
+.PP
+.IP \fBserial:\fR\fIDEVICENAME\fR
+for the access through a serial port. \fIDEVICENAME\fR is the filename
+of a UNIX character device describing the serial port.
+.PP
+.I COMMAND
+is the command to run. It is provided as a single argument,
+so make sure to quote it if it contains spaces.
+
+.SH FILES
+.I /usr/lib/twopence/twopence_test_server
+.RS
+The server to be installed on the system under test when using
+the virtio or serial access methods.
+
+.SH EXAMPLES
+Example syntax for the virtio plugin:
+.IP \fBtwopence_command\ \-u\ johndoe\ virtio:/tmp/sut.sock\ "ls\ \-l"\fR
+it will use
+.I /tmp/sut.sock
+to communicate with the QEmu/KVM host.
+.PP
+Example syntax for the ssh plugin:
+.IP \fBtwopence_command\ \-\-user=johndoe\ ssh:host.example.com\ "ls\ \-l"\fR
+it is functionally equivalent to
+\fBssh\ johndoe@host.example.com\ ls\ \-l\fR
+so it is not very interesting when used from the shell...
+.PP
+Example syntax for the serial plugin:
+.IP \fBtwopence_command\ serial:/dev/ttyS0\ "ls\ \-l"\fR
+
+.SH BUGS
+Do not expect any security from Twopence. Use with care. You've been warned.
+.PP
+For the moment, only one session with the remote host can be used at
+a time.
+.PP
+For the moment, the serial port speed and parity have to be set up
+by some other utility, like
+.BR minicom (1)
+. 
+
+.SH AUTHOR
+The Twopence developpers at SUSE Linux.
+
+.SH SEE ALSO
+.BR twopence_inject (1),
+.BR twopence_extract (1),
+.BR twopence_exit (1).

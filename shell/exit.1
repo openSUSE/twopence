@@ -1,0 +1,86 @@
+.\" Process this file with
+.\" groff -man -Tascii command.1
+.\"
+.TH TWOPENCE_EXIT "1" "September 2014" "Twopence 0.1.7" "User Commands"
+
+.SH NAME
+twopence_exit \- exit the test server
+
+.SH SYNOPSIS
+.B twopence_exit [
+.I OPTION
+.B ]... 
+.I TARGET
+
+.SH DESCRIPTION
+.B twopence_exit
+makes the remote test server exit on the system under test (SUT).
+.PP
+The SUT can be accessed by any means provided by a Twopence
+plugin: virtio (for QEmu/KVM virtual machines) or serial
+(with a null-modem cable), with exception of the ssh plugin.
+This access method and the exact
+location of the SUT are defined by the
+.I TARGET
+parameter. The program
+.B twopence_test_server
+must be installed and running on the SUT (that's the one that will
+exit).
+
+.SH OPTIONS
+.I TARGET
+obeys the following syntax:
+.PP
+.IP \fBvirtio:\fR\fISOCKETNAME\fR
+for the access through virtio to
+a QEmu/KVM virtual machine. \fISOCKETNAME\fR is the filename of
+the UNIX domain socket used by the virtio channel. It can be defined
+for example with help of
+.BR virt-manager (5)
+command.
+.PP
+.IP \fBserial:\fR\fIDEVICENAME\fR
+for the access through a serial port. \fIDEVICENAME\fR is the filename
+of a UNIX character device describing the serial port.
+.PP
+.I COMMAND
+is the command to run. It is provided as a single argument,
+so make sure to quote it if it contains spaces.
+.PP
+The syntax for SSH does not make any sense, because SSH servers are
+not programmed for leaving on demand.
+
+.SH FILES
+.I /usr/lib/twopence/twopence_test_server
+.RS
+The server to be installed on the system under test when using
+the virtio or serial access methods.
+
+.SH EXAMPLES
+Example syntax for the virtio plugin:
+.IP \fBtwopence_exit\ virtio:/tmp/sut.sock\fR
+it will use
+.I /tmp/sut.sock
+to communicate with the QEmu/KVM host.
+.PP
+Example syntax for the serial plugin:
+.IP \fBtwopence_exit\ serial:/dev/ttyS0\fR
+
+.SH BUGS
+Do not expect any security from Twopence. Use with care. You've been warned.
+.PP
+For the moment, only one session with the remote host can be used at
+a time.
+.PP
+For the moment, the serial port speed and parity have to be set up
+by some other utility, like
+.BR minicom (1)
+. 
+
+.SH AUTHOR
+The Twopence developpers at SUSE Linux.
+
+.SH SEE ALSO
+.BR twopence_command (1),
+.BR twopence_inject (1),
+.BR twopence_extract (1).

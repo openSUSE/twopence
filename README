@@ -1,0 +1,126 @@
+WHAT IS TWOPENCE
+   o Twopence is a test executor
+   o it can run tests in a KVM virtual machine without using the network
+   o it can also run more traditional SSH tests in a remote machine
+   o it can send the tests through a serial cable too
+
+
+HOW DOES TWOPENCE WORK
+   o Twopence is basically a set of libraries
+   o shell and ruby wrappers are provided for convenience
+   o each library is seen as a plugin,
+     currenly available plugins are virtio (KVM), ssh, and serial
+
+
+HOW WOULD I USE IT
+   o have a look at the examples:
+     /usr/lib/twopence/test.sh    (from the shell)
+     /usr/lib/twopence/test.rb    (from Ruby)
+
+
+A NOTE ON SECURITY
+   o the test server runs on the system under test as root, performs no
+     authentication, and will execute whatever command it is asked to
+   o the SSH tests assume that you have published a public key
+     with a private key without passphrase
+   o in short, Twopence is very unsafe and should be reserved to
+     pure test environments (test labs, no production servers)
+
+
+HOW DO I COMPILE IT
+   o run the following commands as root (SUSE):
+     # zypper install libssh-devel
+     # zypper install ruby-devel
+     # zypper install rubygem-rake-compiler
+     or (Ubuntu):
+     # apt-get install libssh-dev
+     # apt-get install ruby-dev
+     # apt-get install rake-compiler
+   o then run the following command, as a normal user:
+     $ make
+   o and again as root user:
+     # make install
+     # ldconfig
+
+
+HOW DO I RUN THE EXAMPLES WITH SSH
+   o on the system under test, make sure the sshd damon is started:
+       # service sshd start
+     and that it is not being blocked by the firewall
+   o on the testing system, create a pair of SSH keys:
+       $ ssh-keygen -t rsa
+     without setting a passphrase
+   o copy the public key to the system under test:
+       $ scp ~/.ssh/id_rsa.pub joe@sut.example.com:.
+   o then, on the system under test, append the public key to the
+     authorized keys file:
+       cat id_rsa.pub >> ~/.ssh/authorized keys
+   o repeat for each account that will be used to run the tests
+
+   o in the directory
+       /usr/lib/twopence/
+     adapt the first lines of test.rb and test.sh
+     to the IP address or hostname of your system under test
+   o run the following commands:
+     $ cd examples
+     $ /usr/lib/twopence/test.sh
+     $ ruby /usr/lib/twopence/test.rb
+
+
+HOW DO I RUN THE EXAMPLES WITH VIRTIO:
+   o setup a KVM virtual machine
+   o declare a UNIX domain socket
+   o to do that, you can use virt-manager:
+     Hardware =>
+       Channel =>
+         Path = the directory and name of your socket file
+         Target type = virtio
+         Target name = org.opensuse.twopence.0
+   o or you can use the provided script:
+     $ /usr/lib/twopence/add_virtio_channel.sh
+   o start the VM
+   o copy the test server into the VM:
+     $ scp /usr/lib/twopence/twopence_test_server root@sut.example.com:.
+     instead of scp, you may use shared folders or whichever method you prefer
+   o inside of the VM, run the server as root:
+     # ./twopence_test_server
+
+   o in the directory
+       /usr/lib/twopence/
+     adapt the first lines of test.rb and test.sh
+     to the name of the socket file you just created; for example:
+        export TARGET=virtio:/var/run/twopence/test.sock
+   o run the following commands:
+     $ cd examples
+     $ export LD_LIBRARY_PATH=../library
+     $ ruby /usr/lib/twopence/test.rb
+   o if you get error opening the communication,
+     check the permissions of the socket file:
+     $ ls -l /var/run/twopence/test.sock
+
+
+HOW DO I RUN THE EXAMPLES WITH A SERIAL CABLE:
+   o connect a null-modem cable to the system under test
+   o connect the other end to the testing machine
+   o determine the port name on both ends
+     (you can use "minicom" to do that)
+   o determine or set up the speed, start, parity, and stop bits
+     (you can use "minicom" to do that)
+   o copy the test server into the system under test:
+     $ scp /usr/lib/twopence/twopence_test_server root@sut.example.com:.
+     instead of scp, you may use shared folders or whichever method you prefer
+   o inside of the sut, run the server as root:
+     # ./twopence_test_server
+ 
+   o in the directory
+       /usr/lib/twopence/
+     adapt the first lines of test.rb and test.sh
+     to the name of the character device; for example:
+        export TARGET=serial:/dev/ttyS0
+   o run the following commands:
+     $ cd examples
+     $ /usr/lib/twopence/test.sh
+     $ ruby /usr/lib/twopence/test.rb
+   o if you get error opening the communication,
+     check the permissions of the character device file:
+     $ ls -l /dev/ttyS0

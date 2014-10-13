@@ -1,0 +1,4 @@
+require 'rake/extensiontask'
+
+spec = Gem::Specification.load('twopence.gemspec')
+Rake::ExtensionTask.new('twopence', spec)
