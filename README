@@ -67,7 +67,7 @@ HOW DO I RUN THE EXAMPLES WITH SSH
      $ ruby /usr/lib/twopence/test.rb
 
 
-HOW DO I RUN THE EXAMPLES WITH VIRTIO:
+HOW DO I RUN THE EXAMPLES WITH VIRTIO
    o setup a KVM virtual machine
    o declare a UNIX domain socket
    o to do that, you can use virt-manager:
@@ -99,12 +99,10 @@ HOW DO I RUN THE EXAMPLES WITH VIRTIO:
      $ ls -l /var/run/twopence/test.sock
 
 
-HOW DO I RUN THE EXAMPLES WITH A SERIAL CABLE:
+HOW DO I RUN THE EXAMPLES WITH A SERIAL CABLE
    o connect a null-modem cable to the system under test
    o connect the other end to the testing machine
    o determine the port name on both ends
-     (you can use "minicom" to do that)
-   o determine or set up the speed, start, parity, and stop bits
      (you can use "minicom" to do that)
    o copy the test server into the system under test:
      $ scp /usr/lib/twopence/twopence_test_server root@sut.example.com:.
