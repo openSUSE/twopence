@@ -44,6 +44,7 @@ struct _twopence_opaque
   char *buffer_err, *end_err;
   ssh_session template,
               session;
+  ssh_channel channel;                 // Set during remote command execution only
 };
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
@@ -182,7 +183,7 @@ int _twopence_read_input
     return 0;
   }
   written = ssh_channel_write          // Data, forward it to the remote host
-   (channel, buffer, size);
+    (channel, buffer, size);
   if (written != size)
     return -1;
   *nothing = false;
@@ -423,15 +424,18 @@ int _twopence_command_ssh
     _twopence_tune_stdin(true);
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
+  handle->channel = channel;
 
   // Execute the command
   if (ssh_channel_request_exec(channel, command) != SSH_OK)
   {
+    handle->channel = NULL;
     ssh_channel_close(channel);
     ssh_channel_free(channel);
     _twopence_tune_stdin(true);
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
+  handle->channel = NULL;
 
   // Read "standard output", "standard error", and remote error code
   rc = _twopence_read_results
@@ -570,6 +574,24 @@ void _twopence_disconnect_ssh
   handle->session = NULL;
 }
 
+// Interrupt current command
+//
+// Returns 0 if everything went fine, or a negative error code if failed
+int _twopence_interrupt_ssh
+  (struct _twopence_opaque *handle)
+{
+  ssh_channel channel = handle->channel;
+
+  if (channel == NULL) return TWOPENCE_OPEN_SESSION_ERROR;
+
+  // This is currently completly useless with OpenSSH
+  // (see https://bugzilla.mindrot.org/show_bug.cgi?id=1424)
+  if (ssh_channel_request_send_signal(channel, "INT") != SSH_OK)
+    return TWOPENCE_INTERRUPT_COMMAND_ERROR;
+
+  return 0;
+}
+
 ///////////////////////////// Public interface //////////////////////////////////
 
 // Initialize the library
@@ -612,6 +634,7 @@ void *twopence_init
   // Register the SSH session template and return the handle
   handle->template = template;
   handle->session = NULL;
+  handle->channel = NULL;
   return (void *) handle;
 };
 
@@ -847,6 +870,16 @@ int twopence_extract_file
   close(fd);
 
   return rc;
+}
+
+// Interrupt current command
+//
+// Returns 0 if everything went fine
+int twopence_interrupt_command(void *opaque_handle)
+{
+  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+
+  return _twopence_interrupt_ssh(handle);
 }
 
 // Tell the remote test server to exit

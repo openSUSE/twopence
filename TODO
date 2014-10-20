@@ -39,6 +39,9 @@ TODO
 
    o real docbook documentation, reusing the README as a starting point
 
+   o handle interruptions during file transfers,
+     not only during command execution
+
 
 FUTURE DIRECTIONS
    o Twopence could be extended by writing new plugins,

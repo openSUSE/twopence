@@ -22,10 +22,13 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <stdio.h>
 #include <stdlib.h>
 #include <getopt.h>
+#include <signal.h>
 
 #include "../util/util.h"
 
 char buffer[65536];
+twopence_interrupt_t interrupt_command;
+void *twopence_handle;
 
 char *short_options = "u:o:1:2:qh";
 struct option long_options[] = {
@@ -63,6 +66,37 @@ int get_hostname_and_port
   return 0;
 }
 
+void signal_handler(int signum)
+{
+  static bool interrupt_in_progress = false;
+
+  if (interrupt_in_progress)
+  {
+    printf("OK, exiting immediately.");
+    exit(-7);
+  }
+  printf("\nInterrupted.\n");
+  interrupt_in_progress = true;
+  (*interrupt_command)(twopence_handle);
+  interrupt_in_progress = false;
+}
+
+int install_handler(int signum, struct sigaction *old_action)
+{
+  struct sigaction new_action;
+
+  new_action.sa_handler = signal_handler;
+  sigemptyset(&new_action.sa_mask);
+  new_action.sa_flags = 0;
+
+  return sigaction(signum, &new_action, old_action);
+}
+
+int restore_handler(int signum, const struct sigaction *old_action)
+{
+  return sigaction(signum, old_action, NULL);
+}
+
 // Write output to file, in case we were requested not to ouput it to screen
 int write_output(const char *filename, const char *buf)
 {
@@ -72,17 +106,17 @@ int write_output(const char *filename, const char *buf)
   if (fp == NULL)
   {
     fprintf(stderr, "Error while opening output file \"%s\"\n", filename);
-    return -5;
+    return -6;
   }
   if (fputs(buf, fp) < 0)
   {
     fprintf(stderr, "Error while writing output to file \"%s\"\n", filename);
-    return -5;
+    return -6;
   }
   if (fclose(fp) < 0)
   {
     fprintf(stderr, "Error closing output file \"%s\"\n", filename);
-    return -5;
+    return -6;
   }
   return 0;
 }
@@ -117,7 +151,7 @@ int main(int argc, char *argv[])
   twopence_test_t2 test_command3;
   twopence_test_t3 test_command4;
   twopence_end_t end_library;
-  void *twopence_handle;
+  struct sigaction old_action;
   int major, minor, rc;
 
   // Parse options
@@ -195,6 +229,7 @@ int main(int argc, char *argv[])
   test_command2 = get_function(dl_handle, "twopence_test_and_drop_results");
   test_command3 = get_function(dl_handle, "twopence_test_and_store_results_together");
   test_command4 = get_function(dl_handle, "twopence_test_and_store_results_separately");
+  interrupt_command = get_function(dl_handle, "twopence_interrupt_command");
   end_library = get_function(dl_handle, "twopence_end");
 
   // Check symbols
@@ -269,6 +304,15 @@ int main(int argc, char *argv[])
     exit(-4);
   }
 
+  // Install signal handler
+  if (install_handler(SIGINT, &old_action))
+  {
+    fprintf(stderr, "Error installing signal handler\n");
+    (*end_library)(twopence_handle);
+    dlclose(dl_handle);
+    exit(-5);
+  }
+
   // Run command
   switch (opt_type)
   {
@@ -294,6 +338,15 @@ int main(int argc, char *argv[])
     printf("Return code of tested command: %d\n", minor);
   }
   else rc = print_error(rc);
+
+  // Restore original signal handler
+  if (restore_handler(SIGINT, &old_action))
+  {
+    fprintf(stderr, "Error removing signal handler\n");
+    (*end_library)(twopence_handle);
+    dlclose(dl_handle);
+    exit(-5);
+  }
 
   // Write captured stdout and stderr to 0, 1, or 2 files
   switch (opt_type)

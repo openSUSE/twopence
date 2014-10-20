@@ -28,6 +28,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <time.h>
 #include <termios.h>
 #include <errno.h>
+#include <signal.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -538,7 +539,7 @@ void linux_command(const char *username, const char *command, int *new_std)
 }
 
 // Forward the standard input-output to the Linux command
-void forward_stdio(int serial_fd, int *new_std, char *buffer)
+void forward_stdio(int serial_fd, int *new_std, int pid, char *buffer)
 {
   int rc, received;
 
@@ -561,8 +562,11 @@ void forward_stdio(int serial_fd, int *new_std, char *buffer)
     case '2':                          // stderr
       send_big_buffer(serial_fd, buffer, received);
       break;
-    case '-':
+    case 'I':                          // interrupt
+      kill(pid, SIGKILL);
       break;
+    case '-':                          // already read
+      return;
   }
   buffer[0] = '-';                     // Mark buffer as already read
 }
@@ -734,6 +738,7 @@ void run_command(int serial_fd, char *buffer)
   char *username, *commandline;
   pid_t pid;
   int std_parent[4], std_child[4];
+  int status;
 
   // Get the username and the Linux command
   sscanf(buffer + 4, "%ms %m[^\n]s", &username, &commandline);
@@ -750,8 +755,7 @@ void run_command(int serial_fd, char *buffer)
     return;
   }
 
-  // Let's fork, it enables to change standard descriptors, to switch user
-  // and to change the working directory without too many problems
+  // Fork current process
   pid = fork();
   if (pid < 0)
   {
@@ -777,17 +781,18 @@ void run_command(int serial_fd, char *buffer)
   // In the parent process, wait for the child to exit
   close_pipes(std_child);
   while (waitpid                       // In the meantime, forward the standard input-output to the child
-    (pid, NULL, WNOHANG) == 0)
+    (pid, &status, WNOHANG) == 0)
   {
     forward_stdio                      // We reuse the command buffer as we don't need it anymore
+      (serial_fd, std_parent, pid, buffer);
+  }
+  if (WIFEXITED(status))               // If child process exited normally
+  {
+    forward_stdio                      // Then we may need to forward last data after child exited
+      (serial_fd, std_parent, pid, buffer);
+    forward_major_minor                // and forward the major and minor error codes to the serial interface
       (serial_fd, std_parent, buffer);
   }
-  forward_stdio                        // We may need to forward last data after child exited
-    (serial_fd, std_parent, buffer);
-
-  // Finally, forward the major and minor error codes to the serial interface
-  forward_major_minor
-    (serial_fd, std_parent, buffer);
 
   // Cleanup
   close_pipes(std_parent);
@@ -876,7 +881,7 @@ int main(int argc, char *argv[])
   int command_num, rc;
 
   // Welcome message, check arguments
-  printf("Twopence test server version 0.1.7\n");
+  printf("Twopence test server version 0.1.8\n");
   if (argc > 2)
   {
     fprintf(stderr, "Usage: %s [<serial port>]\n", argv[0]);

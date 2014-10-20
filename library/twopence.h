@@ -30,6 +30,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define TWOPENCE_SEND_FILE_ERROR -7
 #define TWOPENCE_REMOTE_FILE_ERROR -8
 #define TWOPENCE_RECEIVE_FILE_ERROR -9
+#define TWOPENCE_INTERRUPT_COMMAND_ERROR -10
 
 // Initialize the virtio library
 //
@@ -193,6 +194,20 @@ typedef int (*twopence_extract_t)(void *, const char *, const char *, const char
 //   rc = (*twopence_exit_remote)
 //          (handle);
 typedef int (*twopence_exit_t)(void *);
+
+// Interrupt current command
+//
+// Input:
+//   handle: the handle returned by the initialization function
+//
+// Output:
+//   Returns 0 if everything went fine.
+//
+// Example:
+//   twopence_interrupt_t twopence_interrupt_command;
+//   (*twopence_interrupt_command)
+//          (handle);
+typedef int (*twopence_interrupt_t)(void *);
 
 // Close the library
 //

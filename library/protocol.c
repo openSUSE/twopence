@@ -703,8 +703,7 @@ int _twopence_exit_virtio_serial
   char command[COMMAND_BUFFER_SIZE];
   int n;
   int link_fd;
-  int sent, rc;
-  char byte1, byte2;
+  int sent;
 
   // Prepare command to send to the remote host
   n = snprintf(command, COMMAND_BUFFER_SIZE,
@@ -725,6 +724,42 @@ int _twopence_exit_virtio_serial
   {
     close(link_fd);
     return TWOPENCE_SEND_COMMAND_ERROR;
+  }
+
+  close(link_fd);
+  return 0;
+}
+
+// Interrupt current command
+//
+// Returns 0 if everything went fine, or a negative error code if failed
+int _twopence_interrupt_virtio_serial
+  (struct _twopence_opaque *handle)
+{
+  char command[COMMAND_BUFFER_SIZE];
+  int n;
+  int link_fd;
+  int sent;
+
+  // Prepare command to send to the remote host
+  n = snprintf(command, COMMAND_BUFFER_SIZE,
+               "I...");
+  if (n < 0 || n >= COMMAND_BUFFER_SIZE)
+    return TWOPENCE_PARAMETER_ERROR;
+  store_length(n + 1, command);
+
+  // Open link for sending interrupt command
+  link_fd = _twopence_open_link(handle);
+  if (link_fd < 0)
+    return TWOPENCE_OPEN_SESSION_ERROR;
+
+  // Send command (including terminating NUL)
+  sent = _twopence_send_buffer
+           (link_fd, command, n + 1);
+  if (sent != n + 1)
+  {
+    close(link_fd);
+    return TWOPENCE_INTERRUPT_COMMAND_ERROR;
   }
 
   close(link_fd);
@@ -895,6 +930,16 @@ int twopence_extract_file
   // Close it
   close(fd);
   return rc;
+}
+
+// Interrupt current command
+//
+// Returns 0 if everything went fine
+int twopence_interrupt_command(void *opaque_handle)
+{
+  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+
+  return _twopence_interrupt_virtio_serial(handle);
 }
 
 // Tell the remote test server to exit

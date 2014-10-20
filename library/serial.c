@@ -103,7 +103,12 @@ int _twopence_receive_buffer
   fds[0].fd = device_fd;               // Wait either for input on the device or for a timeout
   fds[0].events = POLLIN;
   n = poll(fds, 1, TIMEOUT);
-  if (n <= 0)
+  if (n < 0)
+  {
+    *rc = errno;
+    return -1;
+  }
+  if (n == 0)
   {
     *rc = ETIME;
     return -1;
@@ -143,7 +148,12 @@ int _twopence_receive_buffer_2
     n = poll(fds + 1, 1, LONG_TIMEOUT);
   else
     n = poll(fds, 2, LONG_TIMEOUT);
-  if (n <= 0)
+  if (n < 0)
+  {
+    *rc = errno;
+    return -1;
+  }
+  if (n == 0)
   {
     *rc = ETIME;
     return -1;
