@@ -943,7 +943,8 @@ int twopence_interrupt_command(void *opaque_handle)
 {
   struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
 
-  if (!handle->interruptible) return 0;
+  if (!handle->interruptible)
+    return TWOPENCE_PARAMETER_ERROR;
   handle->interruptible = false;
 
   return _twopence_interrupt_virtio_serial(handle);
