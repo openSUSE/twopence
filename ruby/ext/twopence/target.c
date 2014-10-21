@@ -1,5 +1,5 @@
 /*
-Target-related methods to call twopence library.
+Methods to call Twopence library - implementation.
 
 
 Copyright (C) 2014 SUSE

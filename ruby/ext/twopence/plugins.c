@@ -1,5 +1,5 @@
 /*
-Plugins for Twopence test executor ruby bindings.
+Plugins for Twopence test executor ruby bindings - implementation.
 
 
 Copyright (C) 2014 SUSE
