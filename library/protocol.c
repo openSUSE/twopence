@@ -30,13 +30,14 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define COMMAND_BUFFER_SIZE 8192       // Size in bytes of the work buffer for sending data to the remote
 
 // This structure encapsulates in an opaque way the behaviour of the library
-// It is not 100% opaque because it is publicly known that the first field is the plugin type
+// It is not 100 % opaque, because it is publicly known that the first field is the plugin type
 struct _twopence_opaque
 {
   int type;
   enum { no_output, to_screen, common_buffer, separate_buffers } output_mode;
   char *buffer_out, *end_out;
   char *buffer_err, *end_err;
+  bool interruptible;
   // More fields here according to real type
   // Yes, this is class inheritance written in C...
 };
@@ -547,14 +548,17 @@ int _twopence_command_virtio_serial
   }
 
   // Read "standard output" and "standard error"
+  handle->interruptible = true;
   rc = _twopence_read_results(handle, link_fd, major, minor);
   if (rc < 0)
   {
+    handle->interruptible = false;
     _twopence_tune_stdin(true);
     close(link_fd);
     return TWOPENCE_RECEIVE_RESULTS_ERROR;
   }
 
+  handle->interruptible = false;
   _twopence_tune_stdin(true);
   close(link_fd);
   return 0;
@@ -938,6 +942,9 @@ int twopence_extract_file
 int twopence_interrupt_command(void *opaque_handle)
 {
   struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+
+  if (!handle->interruptible) return 0;
+  handle->interruptible = false;
 
   return _twopence_interrupt_virtio_serial(handle);
 }

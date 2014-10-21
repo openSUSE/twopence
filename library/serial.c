@@ -33,19 +33,20 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define UNIX_PATH_MAX 108              // Value correct for Linux only; used in /usr/include/sys/un.h
 
 // This structure encapsulates in an opaque way the behaviour of the library
-// It is not 100% opaque because it is publicly known that the first field is the plugin type
+// It is not 100 % opaque, because it is publicly known that the first field is the plugin type
 struct _twopence_opaque
 {
   int type;                            // 2 for serial
   enum { no_output, to_screen, common_buffer, separate_buffers } output_mode;
   char *buffer_out, *end_out;
   char *buffer_err, *end_err;
+  bool interruptible;
   char device_path[UNIX_PATH_MAX];
 };
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
 
-// Init the device name in the handle
+// Initialize the handle
 //
 // Returns 0 if everything went fine, or -1 in case of error
 int _twopence_init_handle(struct _twopence_opaque *handle, const char *devname)
@@ -53,9 +54,14 @@ int _twopence_init_handle(struct _twopence_opaque *handle, const char *devname)
   // Store the plugin type
   handle->type = 2;                    // serial
 
+  // Initialize the device name
   if (strlen(devname) >= UNIX_PATH_MAX)
     return -1;
   strcpy(handle->device_path, devname);
+
+  // Interruptible only in some well-defined parts
+  handle->interruptible = false;
+
   return 0;
 }
 
@@ -246,9 +252,6 @@ void *twopence_init(const char *filename)
   // Allocate the opaque handle
   handle = malloc(sizeof(struct _twopence_opaque));
   if (handle == NULL) return NULL;
-
-  // Store the plugin type
-  handle->type = 2;                    // serial
 
   // Initialize the handle
   if (_twopence_init_handle(handle, filename) < 0)

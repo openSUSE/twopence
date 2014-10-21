@@ -35,7 +35,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define LONG_TIMEOUT 60                // Timeout (in seconds) that is big enough for a command to run without any output
 
 // This structure encapsulates in an opaque way the behaviour of the library
-// It is not 100% opaque because it is publicly known that the first field is the plugin type
+// It is not 100 % opaque, because it is publicly known that the first field is the plugin type
 struct _twopence_opaque
 {
   int type;                            // 1 for ssh
