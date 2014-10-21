@@ -288,6 +288,25 @@ VALUE method_extract_file(VALUE self, VALUE ruby_user, VALUE ruby_remote_file, V
                      INT2NUM(rc), INT2NUM(remote_rc));
 }
 
+// Interrupt command currently executed
+//
+// Example:
+//   rc = target.exit_remote()
+//     rc: the return code of the testing platform
+VALUE method_interrupt_command(VALUE self)
+{
+  void *handle;
+  const struct twopence_plugin *plugin;
+  int rc;
+
+  Data_Get_Struct(self, void, handle);
+
+  plugin = get_plugin(handle);
+  rc = (*plugin->twopence_interrupt_command)(handle);
+
+  return INT2NUM(rc);
+}
+
 // Tell the test server to exit
 //
 // Example:

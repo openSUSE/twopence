@@ -40,7 +40,6 @@ struct _twopence_opaque
   enum { no_output, to_screen, common_buffer, separate_buffers } output_mode;
   char *buffer_out, *end_out;
   char *buffer_err, *end_err;
-  bool interruptible;
   struct sockaddr_un address;
 };
 
@@ -60,9 +59,6 @@ int _twopence_init_handle(struct _twopence_opaque *handle, const char *sockname)
   if (strlen(sockname) >= UNIX_PATH_MAX)
     return -1;
   strcpy(handle->address.sun_path, sockname);
-
-  // Interruptible only in some well-defined parts
-  handle->interruptible = false;
 
   return 0;
 }

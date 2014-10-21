@@ -40,7 +40,6 @@ struct _twopence_opaque
   enum { no_output, to_screen, common_buffer, separate_buffers } output_mode;
   char *buffer_out, *end_out;
   char *buffer_err, *end_err;
-  bool interruptible;
   char device_path[UNIX_PATH_MAX];
 };
 
@@ -58,9 +57,6 @@ int _twopence_init_handle(struct _twopence_opaque *handle, const char *devname)
   if (strlen(devname) >= UNIX_PATH_MAX)
     return -1;
   strcpy(handle->device_path, devname);
-
-  // Interruptible only in some well-defined parts
-  handle->interruptible = false;
 
   return 0;
 }

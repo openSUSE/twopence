@@ -12,6 +12,8 @@ $user = ENV['USER']
 $target = Twopence::init( YOUR_TARGET_HERE )
 #######################################################################
 
+trap("INT") { $target.interrupt_command(); exit() }
+
 printf("\ncommand='ls -l'\n")
 rc, major, minor = $target.test_and_print_results($user, 'ls -l')
 printf("host=%d server=%d command=%d\n\n", rc, major, minor)
