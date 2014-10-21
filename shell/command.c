@@ -77,7 +77,8 @@ void signal_handler(int signum)
   }
   printf("\nInterrupted.\n");
   interrupt_in_progress = true;
-  (*interrupt_command)(twopence_handle);
+  (*interrupt_command)                 // return code is ignored
+    (twopence_handle);
   interrupt_in_progress = false;
 }
 
@@ -145,7 +146,7 @@ int main(int argc, char *argv[])
   const char *opt_target, *opt_command;
   void *dl_handle;
   int target_type;
-  void *init_library; // either twopence_init_virtio_t or twopence_init_ssh_t
+  void *init_library;                  // either twopence_init_virtio_t or twopence_init_ssh_t
   twopence_test_t1 test_command1;
   twopence_test_t1 test_command2;
   twopence_test_t2 test_command3;
