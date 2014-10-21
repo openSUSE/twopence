@@ -5,7 +5,8 @@ LIBDIR ?= /usr/lib64
 all: twopence-0.1.8.gem
 
 twopence-0.1.8.gem: twopence.gemspec Rakefile ext/twopence/extconf.rb \
-                    ext/twopence/glue.c ../library/twopence.h ../util/util.c ../util/util.h
+                    ext/twopence/glue.c ext/twopence/plugins.h ext/twopence/plugins.c ext/twopence/target.h ext/twopence/target.c \
+                    ../util/util.h ../util/util.c ../library/twopence.h
 	cp ../library/twopence.h ext/library/
 	cp ../util/util.c ext/twopence/
 	cp ../util/util.h ext/twopence/
