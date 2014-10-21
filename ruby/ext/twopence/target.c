@@ -33,14 +33,15 @@ void deallocate_target(void *);
 //
 // Example for the virtio plugin:
 //   target = Twopence::init("virtio:/tmp/sut.sock")
-//     target: an object that describes your system under test,
-//             and that you will need for subsequent calls
 //
 // Example for the ssh plugin:
 //   target = Twopence::init("ssh:host.example.com")
 //
 // Example for the serial plugin:
 //   target = Twopence::init("serial:/dev/ttyS0")
+//
+//     target: an object that describes your system under test,
+//             and that you will need for subsequent calls
 VALUE method_init(VALUE self, VALUE ruby_target)
 {
   void *handle;
@@ -92,6 +93,17 @@ VALUE method_init(VALUE self, VALUE ruby_target)
   // Return a new Ruby target wrapping the C handle
   ruby_target_class = rb_const_get(self, rb_intern("Target"));
   return Data_Wrap_Struct(ruby_target_class, NULL, deallocate_target, handle);
+}
+
+// Destructor
+void deallocate_target(void *handle)
+{
+  struct twopence_plugin *plugin;
+
+  plugin = get_plugin(handle);
+  (*plugin->twopence_end)(handle);     // Call the end() function for this target
+
+  end_plugin(plugin);                  // One less reference for this plugin, try to release the library
 }
 
 // ******************* Methods of class Twopence::Target *********************
@@ -294,15 +306,3 @@ VALUE method_exit(VALUE self)
 
   return INT2NUM(rc);
 }
-
-// Destructor
-void deallocate_target(void *handle)
-{
-  struct twopence_plugin *plugin;
-
-  plugin = get_plugin(handle);
-  (*plugin->twopence_end)(handle);     // Call the end() function for this target
-
-  end_plugin(plugin);                  // One less reference for this plugin, try to release the library
-}
-
