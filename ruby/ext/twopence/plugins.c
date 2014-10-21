@@ -74,8 +74,8 @@ int init_plugin(struct twopence_plugin *self, const char *filename)
   if (self->twopence_init == NULL ||
       self->twopence_test_and_print_results == NULL ||
       self->twopence_test_and_drop_results == NULL ||
-      self->twopence_test_and_store_results_separately == NULL ||
       self->twopence_test_and_store_results_together == NULL ||
+      self->twopence_test_and_store_results_separately == NULL ||
       self->twopence_inject_file == NULL ||
       self->twopence_extract_file == NULL ||
       self->twopence_exit_remote == NULL ||

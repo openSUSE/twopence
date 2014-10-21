@@ -238,6 +238,8 @@ int main(int argc, char *argv[])
       test_command1 == NULL ||
       test_command2 == NULL ||
       test_command3 == NULL ||
+      test_command4 == NULL ||
+      interrupt_command == NULL ||
       end_library == NULL)
   {
     dlclose(dl_handle);

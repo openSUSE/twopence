@@ -35,8 +35,10 @@ void Init_twopence()
   // C initializations
   virtio_plugin.refcount = 0;
   virtio_plugin.dl_handle = NULL;
+
   serial_plugin.refcount = 0;
   serial_plugin.dl_handle = NULL;
+
   ssh_plugin.refcount = 0;
   ssh_plugin.dl_handle = NULL;
 
