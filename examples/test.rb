@@ -2,7 +2,7 @@
 
 require "twopence"
 
-$user = ENV['USER']
+$user = "root"
 
 #######################################################################
 # Adapt the following line to your setup
@@ -35,15 +35,15 @@ printf("\ncommand 'cat' (type Ctrl-D to exit)\n")
 rc, major, minor = $target.test_and_print_results($user, 'cat')
 printf("host=%d server=%d command=%d\n\n", rc, major, minor)
 
-printf("\ncommand 'ls -l /oops'\n")
-out, err, rc, major, minor = $target.test_and_store_results_separately($user, 'ls -l /oops')
-printf("stdout='%s'\n", out);
-printf("stderr='%s'\n", err);
+printf("\ncommand 'ls -l . /oops'\n")
+out, rc, major, minor = $target.test_and_store_results_together($user, 'ls -l . /oops')
+printf("output='%s'\n", out);
 printf("host=%d server=%d command=%d\n\n", rc, major, minor)
 
-printf("\ncommand 'find /etc -type s' run as user 'nobody'\n")
-out, rc, major, minor = $target.test_and_store_results_together('nobody', 'find /etc -type s')
-printf("output='%s'\n", out);
+printf("\ncommand 'find /tmp -type s' run as user 'nobody'\n")
+out, err, rc, major, minor = $target.test_and_store_results_separately('nobody', 'find /tmp -type s')
+printf("stdout='%s'\n", out);
+printf("stderr='%s'\n", err);
 printf("host=%d server=%d command=%d\n\n", rc, major, minor)
 
 printf("\ninject '/etc/services' => 'test.txt'\n")
@@ -69,4 +69,3 @@ printf("\nextract 'oops' => 'bang'\n")
 rc, remote_rc = $target.extract_file($user, 'oops', 'bang', true)
 printf("host=%d server=%d\n\n", rc, remote_rc)
 system('rm bang')
-

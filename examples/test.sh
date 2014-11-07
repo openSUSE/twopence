@@ -25,15 +25,15 @@ echo "command 'cat' (type Ctrl-D to exit)"
 twopence_command $TARGET 'cat'
 echo ""
 
-echo "command 'ls -l /oops'"
-twopence_command -o output.txt $TARGET 'ls -l /oops'
-echo "output was:"
+echo "command 'ls -l . /oops'"
+twopence_command -o output.txt $TARGET 'ls -l . /oops'
+echo "output and errors were:"
 cat output.txt
 rm output.txt
 echo ""
 
-echo "command 'find /etc -type s' run as user 'nobody'"
-twopence_command -u nobody -1 output.txt -2 errors.txt $TARGET 'find /etc -type s'
+echo "command 'find /tmp -type s' run as user 'nobody'"
+twopence_command -u nobody -1 output.txt -2 errors.txt $TARGET 'find /tmp -type s'
 echo "output was:"
 cat output.txt
 rm output.txt
@@ -64,4 +64,3 @@ echo "extract 'oops' => 'bang'"
 twopence_extract $TARGET oops bang
 echo ""
 rm bang
-
