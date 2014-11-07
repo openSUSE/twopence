@@ -1,7 +1,3 @@
-KNOWN BUGS
-   o redirecting the output of twopence test server to a log file
-     gives strange results
-
 TODO
    o write Ruby help pages
 

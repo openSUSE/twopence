@@ -510,8 +510,6 @@ void linux_command(const char *username, const char *command, int *new_std)
   int rc;
 
   // Redirect the standard descriptors to the serial ports
-  fflush(stdout);
-  fflush(stderr);
   rc = redirect_std_ports(new_std);
   if (rc != 0)
   {
@@ -756,6 +754,9 @@ void run_command(int serial_fd, char *buffer)
   }
 
   // Fork current process
+  fflush(stdout);
+  fflush(stderr);
+
   pid = fork();
   if (pid < 0)
   {
