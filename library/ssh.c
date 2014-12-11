@@ -37,9 +37,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 // This structure encapsulates in an opaque way the behaviour of the library
 // It is not 100 % opaque, because it is publicly known that the first field is the plugin type
-struct _twopence_opaque
+struct twopence_ssh_target
 {
-  int type;                            // 1 for ssh
+  int type;
   enum { no_output, to_screen, common_buffer, separate_buffers } output_mode;
   char *buffer_out, *end_out;
   char *buffer_err, *end_err;
@@ -70,7 +70,7 @@ int _twopence_tune_stdin(bool blocking)
 //
 // Returns 0 if everything went fine, a negative error code otherwise
 int _twopence_output
-  (struct _twopence_opaque *handle, char c)
+  (struct twopence_ssh_target *handle, char c)
 {
   int written;
 
@@ -98,7 +98,7 @@ int _twopence_output
 //
 // Returns 0 if everything went fine, a negative error code otherwise
 int _twopence_error
-  (struct _twopence_opaque *handle, char c)
+  (struct twopence_ssh_target *handle, char c)
 {
   int written;
 
@@ -130,7 +130,7 @@ int _twopence_error
 //
 // Returns 0 if everything went fine, a negative error code otherwise
 int _twopence_process_chunk
-  (struct _twopence_opaque *handle, const char *buffer, int size, bool error)
+  (struct twopence_ssh_target *handle, const char *buffer, int size, bool error)
 {
   const char *end;
   int rc;
@@ -196,7 +196,7 @@ int _twopence_read_input
 //
 // Returns 0 if everything went fine, a negative error code otherwise
 int _twopence_read_output
-  (struct _twopence_opaque *handle, ssh_channel channel, bool error, bool *nothing, bool *eof)
+  (struct twopence_ssh_target *handle, ssh_channel channel, bool error, bool *nothing, bool *eof)
 {
   char buffer[BUFFER_SIZE];
   int size;
@@ -224,7 +224,7 @@ int _twopence_read_output
 
 // Read the results of a command
 int _twopence_read_results
-  (struct _twopence_opaque *handle, ssh_channel channel)
+  (struct twopence_ssh_target *handle, ssh_channel channel)
 {
   bool nothing_0, eof_0,
        nothing_1, eof_1,
@@ -277,7 +277,7 @@ int _twopence_read_results
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int _twopence_send_file
-  (struct _twopence_opaque *handle, int file_fd, ssh_scp scp, int remaining, int *remote_rc)
+  (struct twopence_ssh_target *handle, int file_fd, ssh_scp scp, int remaining, int *remote_rc)
 {
   char buffer[BUFFER_SIZE];
   int size, received;
@@ -313,7 +313,7 @@ int _twopence_send_file
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int _twopence_receive_file
-  (struct _twopence_opaque *handle, int file_fd, ssh_scp scp, int remaining, int *remote_rc)
+  (struct twopence_ssh_target *handle, int file_fd, ssh_scp scp, int remaining, int *remote_rc)
 {
   char buffer[BUFFER_SIZE];
   int size, received, written;
@@ -352,7 +352,7 @@ int _twopence_receive_file
 //
 // Returns 0 if everything went fine, a negative error code otherwise
 int _twopence_connect_ssh
-  (struct _twopence_opaque *handle, const char *username)
+  (struct twopence_ssh_target *handle, const char *username)
 {
   ssh_session session;
 
@@ -400,7 +400,7 @@ int _twopence_connect_ssh
 //
 // Returns 0 if everything went fine, a negative error code otherwise
 int _twopence_command_ssh
-  (struct _twopence_opaque *handle, const char *command, int *minor)
+  (struct twopence_ssh_target *handle, const char *command, int *minor)
 {
   ssh_session session = handle->session;
   ssh_channel channel;
@@ -455,7 +455,7 @@ int _twopence_command_ssh
 //
 // Returns 0 if everything went fine
 int _twopence_inject_ssh
-  (struct _twopence_opaque *handle, int file_fd, const char *remote_filename, int *remote_rc)
+  (struct twopence_ssh_target *handle, int file_fd, const char *remote_filename, int *remote_rc)
 {
   ssh_session session = handle->session;
   char *copy;
@@ -503,7 +503,7 @@ int _twopence_inject_ssh
 //
 // Returns 0 if everything went fine
 int _twopence_extract_ssh
-      (struct _twopence_opaque *handle, int file_fd, const char *remote_filename, int *remote_rc)
+      (struct twopence_ssh_target *handle, int file_fd, const char *remote_filename, int *remote_rc)
 {
   ssh_session session = handle->session;
   ssh_scp scp;
@@ -565,7 +565,7 @@ int _twopence_extract_ssh
 
 // Disconnect from the remote host
 void _twopence_disconnect_ssh
-  (struct _twopence_opaque *handle)
+  (struct twopence_ssh_target *handle)
 {
   ssh_session session = handle->session;
 
@@ -579,7 +579,7 @@ void _twopence_disconnect_ssh
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int _twopence_interrupt_ssh
-  (struct _twopence_opaque *handle)
+  (struct twopence_ssh_target *handle)
 {
   ssh_channel channel = handle->channel;
 
@@ -604,11 +604,11 @@ int _twopence_interrupt_ssh
 struct twopence_target *twopence_init
   (const char *hostname, unsigned int port)
 {
-  struct _twopence_opaque *handle;
+  struct twopence_ssh_target *handle;
   ssh_session template;
 
   // Allocate the opaque handle
-  handle = malloc(sizeof(struct _twopence_opaque));
+  handle = malloc(sizeof(struct twopence_ssh_target));
   if (handle == NULL) return NULL;
 
   // Store the plugin type
@@ -648,7 +648,7 @@ int twopence_test_and_print_results
   (struct twopence_target *opaque_handle, const char *username, const char *command,
    int *major, int *minor)
 {
-  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
   int rc;
 
   // 'major' makes no sense for SSH and 'minor' defaults to 0
@@ -678,7 +678,7 @@ int twopence_test_and_drop_results
   (struct twopence_target *opaque_handle, const char *username, const char *command,
    int *major, int *minor)
 {
-  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
   int rc;
 
   // 'major' makes no sense for SSH and 'minor' defaults to 0
@@ -709,7 +709,7 @@ int twopence_test_and_store_results_together
    char *buffer_out, int size,
    int *major, int *minor)
 {
-  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
   int rc;
 
   // 'major' makes no sense for SSH and 'minor' defaults to 0
@@ -748,7 +748,7 @@ int twopence_test_and_store_results_separately
    char *buffer_out, char *buffer_err, int size,
    int *major, int *minor)
 {
-  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
   int rc;
 
   // 'major' makes no sense for SSH and 'minor' defaults to 0
@@ -791,7 +791,7 @@ int twopence_inject_file
    const char *local_filename, const char *remote_filename,
    int *remote_rc, bool dots)
 {
-  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
   int fd, rc;
 
   // 'remote_rc' defaults to 0
@@ -836,7 +836,7 @@ int twopence_extract_file
    const char *remote_filename, const char *local_filename,
    int *remote_rc, bool dots)
 {
-  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
   int fd, rc;
 
   // 'remote_rc' defaults to 0
@@ -878,7 +878,7 @@ int twopence_extract_file
 // Returns 0 if everything went fine
 int twopence_interrupt_command(struct twopence_target *opaque_handle)
 {
-  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
 
   return _twopence_interrupt_ssh(handle);
 }
@@ -894,7 +894,7 @@ int twopence_exit_remote(struct twopence_target *opaque_handle)
 // Close the library
 void twopence_end(struct twopence_target *opaque_handle)
 {
-  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
 
   ssh_free(handle->template);
   free(handle);
