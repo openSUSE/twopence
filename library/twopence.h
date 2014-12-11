@@ -35,6 +35,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define TWOPENCE_RECEIVE_FILE_ERROR -9
 #define TWOPENCE_INTERRUPT_COMMAND_ERROR -10
 
+struct twopence_target;
+
 // Initialize the virtio library
 //
 // Input:
@@ -224,5 +226,30 @@ typedef int (*twopence_interrupt_t)(struct twopence_target *);
 //   twopence_end_t twopence_end;
 //   (*twopence_end)(handle);
 typedef void (*twopence_end_t)(struct twopence_target *);
+
+struct twopence_plugin {
+	const char *		name;
+
+	twopence_test_t1	test_and_print_results;
+	twopence_test_t1	test_and_drop_results;
+	twopence_test_t2	test_and_store_results_together;
+	twopence_test_t3	test_and_store_results_separately;
+	twopence_inject_t	inject_file;
+	twopence_extract_t	extract_file;
+	twopence_exit_t		exit_remote;
+	twopence_interrupt_t	interrupt_command;
+};
+
+enum {
+	TWOPENCE_PLUGIN_UNKNOWN = -1,
+	TWOPENCE_PLUGIN_VIRTIO = 0,
+	TWOPENCE_PLUGIN_SSH = 1,
+	TWOPENCE_PLUGIN_SERIAL = 2,
+};
+
+struct twopence_target {
+	unsigned int		plugin_type;
+	const struct twopence_plugin *ops;
+};
 
 #endif /* TWOPENCE_H */
