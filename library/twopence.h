@@ -48,7 +48,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 //   twopence_init_virtio_t twopence_init;
 //   handle = (*twopence_init)
 //              (filename);
-typedef void *(*twopence_init_virtio_t)(const char *);
+typedef struct twopence_target *(*twopence_init_virtio_t)(const char *);
 
 // Initialize the ssh library
 //
@@ -64,7 +64,7 @@ typedef void *(*twopence_init_virtio_t)(const char *);
 //   twopence_init_ssh_t twopence_init;
 //   handle = (*twopence_init)
 //              (hostname, port);
-typedef void *(*twopence_init_ssh_t)(const char *, unsigned int);
+typedef struct twopence_target *(*twopence_init_ssh_t)(const char *, unsigned int);
 
 // Initialize the serial library
 //
@@ -79,7 +79,7 @@ typedef void *(*twopence_init_ssh_t)(const char *, unsigned int);
 //   twopence_init_serial_t twopence_init;
 //   handle = (*twopence_init)
 //              (filename);
-typedef void *(*twopence_init_serial_t)(const char *);
+typedef struct twopence_target *(*twopence_init_serial_t)(const char *);
 
 // Run a test command, and print or drop output
 //
@@ -101,7 +101,7 @@ typedef void *(*twopence_init_serial_t)(const char *);
 //   twopence_test_t1 twopence_test_and_drop_results;
 //   rc = (*twopence_test_and_drop_results)
 //          (handle, username, command, &major, &minor);
-typedef int (*twopence_test_t1)(void *, const char *, const char *, int *, int *);
+typedef int (*twopence_test_t1)(struct twopence_target *, const char *, const char *, int *, int *);
 
 // Run a test command, and store the results in memory in a common buffer
 //
@@ -121,7 +121,7 @@ typedef int (*twopence_test_t1)(void *, const char *, const char *, int *, int *
 //   twopence_test_t2 twopence_test_and_store_results_together;
 //   rc = (*twopence_test_and_store_results_together)
 //          (handle, username, command, buffer, size, &major, &minor);
-typedef int (*twopence_test_t2)(void *, const char *, const char *, char *, int, int *, int *);
+typedef int (*twopence_test_t2)(struct twopence_target *, const char *, const char *, char *, int, int *, int *);
 
 // Run a test command, and store the results in memory in two separate buffers
 //
@@ -142,7 +142,7 @@ typedef int (*twopence_test_t2)(void *, const char *, const char *, char *, int,
 //  twopence_test_t3 twopence_test_and_store_results_separately;
 //  rc = (*twopence_test_and_store_results_separately)
 //         (handle, username, command, buffer_out, buffer_err, size, &major, &minor);
-typedef int (*twopence_test_t3)(void *, const char *, const char *, char *, char *, int, int *, int *);
+typedef int (*twopence_test_t3)(struct twopence_target *, const char *, const char *, char *, char *, int, int *, int *);
 
 // Inject a file into the system under test
 //
@@ -161,7 +161,7 @@ typedef int (*twopence_test_t3)(void *, const char *, const char *, char *, char
 //   twopence_inject_t twopence_inject_file;
 //   rc = (*twopence_inject_file)
 //          (handle, username, local_filename, remote_filename, &remote_rc, false);
-typedef int (*twopence_inject_t)(void *, const char *, const char *, const char *, int *, bool);
+typedef int (*twopence_inject_t)(struct twopence_target *, const char *, const char *, const char *, int *, bool);
 
 // Extract a file from the system under test
 //
@@ -180,7 +180,7 @@ typedef int (*twopence_inject_t)(void *, const char *, const char *, const char 
 //   twopence_extract_t twopence_extract_file;
 //   rc = (*twopence_extract_file)
 //          (handle, username, remote_filename, local_filename, &remote_rc, false);
-typedef int (*twopence_extract_t)(void *, const char *, const char *, const char *, int *, bool);
+typedef int (*twopence_extract_t)(struct twopence_target *, const char *, const char *, const char *, int *, bool);
 
 // Tell the remote test server to exit
 // WARNING: you won't be able to run further tests after that,
@@ -196,7 +196,7 @@ typedef int (*twopence_extract_t)(void *, const char *, const char *, const char
 //   twopence_exit_t twopence_exit_remote;
 //   rc = (*twopence_exit_remote)
 //          (handle);
-typedef int (*twopence_exit_t)(void *);
+typedef int (*twopence_exit_t)(struct twopence_target *);
 
 // Interrupt current command
 //
@@ -210,7 +210,7 @@ typedef int (*twopence_exit_t)(void *);
 //   twopence_interrupt_t twopence_interrupt_command;
 //   (*twopence_interrupt_command)
 //          (handle);
-typedef int (*twopence_interrupt_t)(void *);
+typedef int (*twopence_interrupt_t)(struct twopence_target *);
 
 // Close the library
 //
@@ -223,6 +223,6 @@ typedef int (*twopence_interrupt_t)(void *);
 // Example:
 //   twopence_end_t twopence_end;
 //   (*twopence_end)(handle);
-typedef void (*twopence_end_t)(void *);
+typedef void (*twopence_end_t)(struct twopence_target *);
 
 #endif /* TWOPENCE_H */

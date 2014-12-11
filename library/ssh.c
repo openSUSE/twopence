@@ -601,7 +601,7 @@ int _twopence_interrupt_ssh
 //
 // Returns a "handle" that must be passed to subsequent function calls,
 // or NULL in case of a problem
-void *twopence_init
+struct twopence_target *twopence_init
   (const char *hostname, unsigned int port)
 {
   struct _twopence_opaque *handle;
@@ -636,7 +636,7 @@ void *twopence_init
   handle->template = template;
   handle->session = NULL;
   handle->channel = NULL;
-  return (void *) handle;
+  return (struct twopence_target *) handle;
 };
 
 // Run a test command, and print output
@@ -645,7 +645,7 @@ void *twopence_init
 // 'major' is the return code of the test server (none for SSH)
 // 'minor' is the return code of the command
 int twopence_test_and_print_results
-  (void *opaque_handle, const char *username, const char *command,
+  (struct twopence_target *opaque_handle, const char *username, const char *command,
    int *major, int *minor)
 {
   struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
@@ -675,7 +675,7 @@ int twopence_test_and_print_results
 // 'major' is the return code of the test server (none for SSH)
 // 'minor' is the return code of the command
 int twopence_test_and_drop_results
-  (void *opaque_handle, const char *username, const char *command,
+  (struct twopence_target *opaque_handle, const char *username, const char *command,
    int *major, int *minor)
 {
   struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
@@ -705,7 +705,7 @@ int twopence_test_and_drop_results
 // 'major' is the return code of the test server (none for SSH)
 // 'minor' is the return code of the command
 int twopence_test_and_store_results_together
-  (void *opaque_handle, const char *username, const char *command,
+  (struct twopence_target *opaque_handle, const char *username, const char *command,
    char *buffer_out, int size,
    int *major, int *minor)
 {
@@ -744,7 +744,7 @@ int twopence_test_and_store_results_together
 // 'major' is the return code of the test server (none for SSH)
 // 'minor' is the return code of the command
 int twopence_test_and_store_results_separately
-  (void *opaque_handle, const char *username, const char *command,
+  (struct twopence_target *opaque_handle, const char *username, const char *command,
    char *buffer_out, char *buffer_err, int size,
    int *major, int *minor)
 {
@@ -787,7 +787,7 @@ int twopence_test_and_store_results_separately
 //
 // Returns 0 if everything went fine
 int twopence_inject_file
-  (void *opaque_handle, const char *username,
+  (struct twopence_target *opaque_handle, const char *username,
    const char *local_filename, const char *remote_filename,
    int *remote_rc, bool dots)
 {
@@ -832,7 +832,7 @@ int twopence_inject_file
 //
 // Returns 0 if everything went fine
 int twopence_extract_file
-  (void *opaque_handle, const char *username,
+  (struct twopence_target *opaque_handle, const char *username,
    const char *remote_filename, const char *local_filename,
    int *remote_rc, bool dots)
 {
@@ -876,7 +876,7 @@ int twopence_extract_file
 // Interrupt current command
 //
 // Returns 0 if everything went fine
-int twopence_interrupt_command(void *opaque_handle)
+int twopence_interrupt_command(struct twopence_target *opaque_handle)
 {
   struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
 
@@ -886,13 +886,13 @@ int twopence_interrupt_command(void *opaque_handle)
 // Tell the remote test server to exit
 //
 // Returns 0 if everything went fine
-int twopence_exit_remote(void *opaque_handle)
+int twopence_exit_remote(struct twopence_target *opaque_handle)
 {
   return -1;                           // Makes no sense with SSH
 }
 
 // Close the library
-void twopence_end(void *opaque_handle)
+void twopence_end(struct twopence_target *opaque_handle)
 {
   struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
 

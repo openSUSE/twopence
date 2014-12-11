@@ -247,7 +247,7 @@ int _twopence_send_buffer
 //
 // Returns a "handle" that must be passed to subsequent function calls,
 // or NULL in case of a problem
-void *twopence_init(const char *filename)
+struct twopence_target *twopence_init(const char *filename)
 {
   struct _twopence_opaque *handle;
 
@@ -262,6 +262,6 @@ void *twopence_init(const char *filename)
     return NULL;
   }
 
-  return (void *) handle;
+  return (struct twopence_target *) handle;
 };
 
