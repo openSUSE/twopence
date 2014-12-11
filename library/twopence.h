@@ -18,6 +18,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
+#ifndef TWOPENCE_H
+#define TWOPENCE_H
+
 #include <stdbool.h>
 
 // Error codes
@@ -222,3 +225,4 @@ typedef int (*twopence_interrupt_t)(void *);
 //   (*twopence_end)(handle);
 typedef void (*twopence_end_t)(void *);
 
+#endif /* TWOPENCE_H */
