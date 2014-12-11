@@ -1,18 +1,20 @@
 .PHONY: all install clean
 
+CFLAGS	= -D_GNU_SOURCE
+
 LIBDIR ?= /usr/lib64
 INCDIR ?= /usr/include
 
 all: virtio.so ssh.so serial.so
 
 virtio.so: protocol.c virtio.c twopence.h
-	gcc --shared -fPIC -Wl,-soname,libtwopence_virtio.so.0 virtio.c protocol.c -o virtio.so
+	$(CC) $(CFLAGS) --shared -fPIC -Wl,-soname,libtwopence_virtio.so.0 virtio.c protocol.c -o virtio.so
 
 ssh.so: ssh.c twopence.h
-	gcc --shared -fPIC -Wl,-soname,libtwopence_ssh.so.0    ssh.c    -lssh      -o ssh.so
+	$(CC) $(CFLAGS) --shared -fPIC -Wl,-soname,libtwopence_ssh.so.0    ssh.c    -lssh      -o ssh.so
 
 serial.so: protocol.c serial.c twopence.h
-	gcc --shared -fPIC -Wl,-soname,libtwopence_serial.so.0 serial.c protocol.c -o serial.so
+	$(CC) $(CFLAGS) --shared -fPIC -Wl,-soname,libtwopence_serial.so.0 serial.c protocol.c -o serial.so
 
 install: virtio.so ssh.so serial.so twopence.h
 	mkdir -p $(DESTDIR)$(LIBDIR)
