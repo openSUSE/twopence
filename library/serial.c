@@ -27,6 +27,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <termios.h>
 #include <errno.h>
 
+#include "twopence.h"
+#include "protocol.h"
+
 #define BUFFER_SIZE 32768              // Size in bytes of the work buffer for receiving data from the remote
 #define TIMEOUT 5000                   // Timeout in milliseconds
 #define LONG_TIMEOUT 60000             // Timeout that is big enough for a command to run without any output
@@ -34,26 +37,25 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 // This structure encapsulates in an opaque way the behaviour of the library
 // It is not 100 % opaque, because it is publicly known that the first field is the plugin type
-struct _twopence_opaque
-{
-  int type;                            // 2 for serial
-  enum { no_output, to_screen, common_buffer, separate_buffers } output_mode;
-  char *buffer_out, *end_out;
-  char *buffer_err, *end_err;
+struct twopence_serial_target {
+  struct twopence_pipe_target pipe;
+
   char device_path[UNIX_PATH_MAX];
 };
+
+extern const struct twopence_plugin twopence_serial_ops;
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
 
 // Initialize the handle
 //
 // Returns 0 if everything went fine, or -1 in case of error
-int _twopence_init_handle(struct _twopence_opaque *handle, const char *devname)
-{                                      // Copy the device's filename if not too long
-  // Store the plugin type
-  handle->type = 2;                    // serial
+int _twopence_init_handle(struct twopence_serial_target *handle, const char *devname)
+{
+  twopence_pipe_target_init(&handle->pipe, TWOPENCE_PLUGIN_SERIAL, &twopence_serial_ops);
 
   // Initialize the device name
+  // FIXME: use PATH_MAX
   if (strlen(devname) >= UNIX_PATH_MAX)
     return -1;
   strcpy(handle->device_path, devname);
@@ -64,7 +66,7 @@ int _twopence_init_handle(struct _twopence_opaque *handle, const char *devname)
 // Open the UNIX character device
 //
 // Returns the file descriptor if successful, or -1 if failed
-int _twopence_open_link(const struct _twopence_opaque *handle)
+int _twopence_open_link(const struct twopence_serial_target *handle)
 {
   int device_fd;
   struct termios tio;
@@ -241,17 +243,17 @@ int _twopence_send_buffer
 //
 // Returns a "handle" that must be passed to subsequent function calls,
 // or NULL in case of a problem
-struct twopence_target *twopence_init(const char *filename)
+struct twopence_target *
+twopence_init(const char *filename)
 {
-  struct _twopence_opaque *handle;
+  struct twopence_serial_target *handle;
 
   // Allocate the opaque handle
-  handle = malloc(sizeof(struct _twopence_opaque));
+  handle = calloc(1, sizeof(struct twopence_serial_target));
   if (handle == NULL) return NULL;
 
   // Initialize the handle
-  if (_twopence_init_handle(handle, filename) < 0)
-  {
+  if (_twopence_init_handle(handle, filename) < 0) {
     free(handle);
     return NULL;
   }
@@ -259,3 +261,18 @@ struct twopence_target *twopence_init(const char *filename)
   return (struct twopence_target *) handle;
 };
 
+/*
+ * Define the plugin ops vector
+ */
+const struct twopence_plugin twopence_serial_ops = {
+	.name		= "serial",
+
+	.test_and_print_results	= twopence_test_and_print_results,
+	.test_and_drop_results	= twopence_test_and_drop_results,
+	.test_and_store_results_together = twopence_test_and_store_results_together,
+	.test_and_store_results_separately = twopence_test_and_store_results_separately,
+	.inject_file = twopence_inject_file,
+	.extract_file = twopence_extract_file,
+	.exit_remote = twopence_exit_remote,
+	.interrupt_command = twopence_interrupt_command,
+};

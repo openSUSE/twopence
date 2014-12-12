@@ -22,6 +22,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <sys/stat.h>
 #include <stdio.h>                     // For snprintf() parsing facility. Most I/O is low-level and unbuffered.
 #include <stdlib.h>
+#include <string.h>
 #include <fcntl.h>
 #include <errno.h>
 
@@ -31,17 +32,17 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define BUFFER_SIZE 32768              // Size in bytes of the work buffer for receiving data from the remote
 #define COMMAND_BUFFER_SIZE 8192       // Size in bytes of the work buffer for sending data to the remote
 
-// This structure encapsulates in an opaque way the behaviour of the library
-// It is not 100 % opaque, because it is publicly known that the first field is the plugin type
-struct _twopence_opaque
+/*
+ * Class initialization
+ */
+void
+twopence_pipe_target_init(struct twopence_pipe_target *target, int plugin_type, const struct twopence_plugin *ops)
 {
-  int type;
-  enum { no_output, to_screen, common_buffer, separate_buffers } output_mode;
-  char *buffer_out, *end_out;
-  char *buffer_err, *end_err;
-  // More fields here according to real type
-  // Yes, this is class inheritance written in C...
-};
+  memset(target, 0, sizeof(*target));
+
+  target->base.plugin_type = plugin_type;
+  target->base.ops = ops;
+}
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
 
@@ -80,7 +81,7 @@ int compute_length(const unsigned char *buffer)
 //
 // Returns 0 if everything went fine, -1 otherwise
 int _twopence_output
-  (struct _twopence_opaque *handle, char c)
+  (struct twopence_pipe_target *handle, char c)
 {
   int written;
 
@@ -108,7 +109,7 @@ int _twopence_output
 //
 // Returns 0 if everything went fine, -1 otherwise
 int _twopence_error
-  (struct _twopence_opaque *handle, char c)
+  (struct twopence_pipe_target *handle, char c)
 {
   int written;
 
@@ -268,7 +269,7 @@ int _twopence_read_chunk_2(int link_fd, char *buffer, bool *end_of_stdin)
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int _twopence_read_results
-  (struct _twopence_opaque *handle, int link_fd, int *major, int *minor)
+  (struct twopence_pipe_target *handle, int link_fd, int *major, int *minor)
 {
   int state;                           // 0 = processing results, 1 = major received, 2 = minor received
   bool end_of_stdin;
@@ -416,7 +417,7 @@ int _twopence_read_size
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int _twopence_send_file
-  (struct _twopence_opaque *handle, int file_fd, int link_fd, int remaining)
+  (struct twopence_pipe_target *handle, int file_fd, int link_fd, int remaining)
 {
   char buffer[BUFFER_SIZE];
   int size, received;
@@ -454,7 +455,7 @@ int _twopence_send_file
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int _twopence_receive_file
-  (struct _twopence_opaque *handle, int file_fd, int link_fd, int remaining)
+  (struct twopence_pipe_target *handle, int file_fd, int link_fd, int remaining)
 {
   char buffer[BUFFER_SIZE];
   int rc, received, written;
@@ -500,7 +501,7 @@ int _twopence_receive_file
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int _twopence_command_virtio_serial
-  (struct _twopence_opaque *handle, const char *username, const char *linux_command, int *major, int *minor)
+  (struct twopence_pipe_target *handle, const char *username, const char *linux_command, int *major, int *minor)
 {
   char command[COMMAND_BUFFER_SIZE];
   int n;
@@ -566,7 +567,7 @@ int _twopence_command_virtio_serial
 //
 // Returns 0 if everything went fine
 int _twopence_inject_virtio_serial
-  (struct _twopence_opaque *handle, const char *username, int file_fd, const char *remote_filename, int *remote_rc)
+  (struct twopence_pipe_target *handle, const char *username, int file_fd, const char *remote_filename, int *remote_rc)
 {
   char command[COMMAND_BUFFER_SIZE];
   int n;
@@ -639,7 +640,7 @@ int _twopence_inject_virtio_serial
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int _twopence_extract_virtio_serial
-  (struct _twopence_opaque *handle, const char *username, int file_fd, const char *remote_filename, int *remote_rc)
+  (struct twopence_pipe_target *handle, const char *username, int file_fd, const char *remote_filename, int *remote_rc)
 {
   char command[COMMAND_BUFFER_SIZE];
   int n;
@@ -700,7 +701,7 @@ int _twopence_extract_virtio_serial
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int _twopence_exit_virtio_serial
-  (struct _twopence_opaque *handle)
+  (struct twopence_pipe_target *handle)
 {
   char command[COMMAND_BUFFER_SIZE];
   int n;
@@ -736,7 +737,7 @@ int _twopence_exit_virtio_serial
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int _twopence_interrupt_virtio_serial
-  (struct _twopence_opaque *handle)
+  (struct twopence_pipe_target *handle)
 {
   char command[COMMAND_BUFFER_SIZE];
   int n;
@@ -779,7 +780,7 @@ int twopence_test_and_print_results
   (struct twopence_target *opaque_handle, const char *username, const char *command,
    int *major, int *minor)
 {
-  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
   handle->output_mode = to_screen;
 
@@ -796,7 +797,7 @@ int twopence_test_and_drop_results
   (struct twopence_target *opaque_handle, const char *username, const char *command,
    int *major, int *minor)
 {
-  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
   handle->output_mode = no_output;
 
@@ -814,7 +815,7 @@ int twopence_test_and_store_results_together
    char *buffer_out, int size,
    int *major, int *minor)
 {
-  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   int rc;
 
   handle->output_mode = common_buffer;
@@ -844,7 +845,7 @@ int twopence_test_and_store_results_separately
    char *buffer_out, char *buffer_err, int size,
    int *major, int *minor)
 {
-  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   int rc;
 
   handle->output_mode = separate_buffers;
@@ -880,7 +881,7 @@ int twopence_inject_file
    const char *local_filename, const char *remote_filename,
    int *remote_rc, bool dots)
 {
-  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   int fd, rc;
 
   handle->output_mode = dots? to_screen: no_output;
@@ -911,7 +912,7 @@ int twopence_extract_file
    const char *remote_filename, const char *local_filename,
    int *remote_rc, bool dots)
 {
-  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   int fd, rc;
 
   handle->output_mode = dots? to_screen: no_output;
@@ -939,7 +940,7 @@ int twopence_extract_file
 // Returns 0 if everything went fine
 int twopence_interrupt_command(struct twopence_target *opaque_handle)
 {
-  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
   return _twopence_interrupt_virtio_serial(handle);
 }
@@ -949,7 +950,7 @@ int twopence_interrupt_command(struct twopence_target *opaque_handle)
 // Returns 0 if everything went fine
 int twopence_exit_remote(struct twopence_target *opaque_handle)
 {
-  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
   handle->output_mode = no_output;
 
@@ -959,7 +960,7 @@ int twopence_exit_remote(struct twopence_target *opaque_handle)
 // Close the library
 void twopence_end(struct twopence_target *opaque_handle)
 {
-  struct _twopence_opaque *handle = (struct _twopence_opaque *) opaque_handle;
+  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
   free(handle);
 }

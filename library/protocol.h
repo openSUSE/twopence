@@ -6,9 +6,21 @@
 #ifndef PROTOCOL_H
 #define PROTOCOL_H
 
+/* Base class for all targets using the twopence pipe protocol */
+struct twopence_pipe_target {
+  struct twopence_target base;
+
+  enum { no_output, to_screen, common_buffer, separate_buffers } output_mode;
+  char *buffer_out, *end_out;
+  char *buffer_err, *end_err;
+};
+
+
 /* Once we've changed to a pure function vector interface into the library,
  * these functions should be renamed to __twopence_pipe_*
  */
+
+extern void	twopence_pipe_target_init(struct twopence_pipe_target *, int plugin_type, const struct twopence_plugin *);
 
 extern int	twopence_test_and_print_results(struct twopence_target *, const char *, const char *, int *, int *);
 extern int	twopence_test_and_drop_results(struct twopence_target *, const char *, const char *, int *, int *);
