@@ -1,18 +1,24 @@
 .PHONY: all install clean
 
+CFLAGS	= -D_GNU_SOURCE -fPIC
+
 LIBDIR ?= /usr/lib64
 INCDIR ?= /usr/include
 
+VIRTIO_OBJS	= protocol.o virtio.o
+SSH_OBJS	= ssh.o
+SERIAL_OBJS	= protocol.o serial.o
+
 all: virtio.so ssh.so serial.so
 
-virtio.so: protocol.c virtio.c twopence.h
-	gcc --shared -fPIC -Wl,-soname,libtwopence_virtio.so.0 virtio.c protocol.c -o virtio.so
+virtio.so: twopence.h $(VIRTIO_OBJS)
+	$(CC) $(CFLAGS) -o $@ --shared -Wl,-soname,libtwopence_$@.0 $(VIRTIO_OBJS)
 
-ssh.so: ssh.c twopence.h
-	gcc --shared -fPIC -Wl,-soname,libtwopence_ssh.so.0    ssh.c    -lssh      -o ssh.so
+ssh.so: twopence.h $(SSH_OBJS)
+	$(CC) $(CFLAGS) -o $@ --shared -Wl,-soname,libtwopence_$@.0 $(SSH_OBJS) -lssh
 
-serial.so: protocol.c serial.c twopence.h
-	gcc --shared -fPIC -Wl,-soname,libtwopence_serial.so.0 serial.c protocol.c -o serial.so
+serial.so: twopence.h $(SERIAL_OBJS)
+	$(CC) $(CFLAGS) -o $@ --shared -Wl,-soname,libtwopence_$@.0 $(SERIAL_OBJS)
 
 install: virtio.so ssh.so serial.so twopence.h
 	mkdir -p $(DESTDIR)$(LIBDIR)
@@ -23,6 +29,7 @@ install: virtio.so ssh.so serial.so twopence.h
 	cp twopence.h $(DESTDIR)$(INCDIR)
 
 clean:
+	rm -f *.o
 	rm -f virtio.so
 	rm -f ssh.so
 	rm -f serial.so
