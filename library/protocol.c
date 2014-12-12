@@ -26,6 +26,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <errno.h>
 
 #include "twopence.h"
+#include "protocol.h"
 
 #define BUFFER_SIZE 32768              // Size in bytes of the work buffer for receiving data from the remote
 #define COMMAND_BUFFER_SIZE 8192       // Size in bytes of the work buffer for sending data to the remote

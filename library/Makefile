@@ -11,13 +11,13 @@ SERIAL_OBJS	= protocol.o serial.o
 
 all: virtio.so ssh.so serial.so
 
-virtio.so: twopence.h $(VIRTIO_OBJS)
+virtio.so: twopence.h protocol.h $(VIRTIO_OBJS)
 	$(CC) $(CFLAGS) -o $@ --shared -Wl,-soname,libtwopence_$@.0 $(VIRTIO_OBJS)
 
-ssh.so: twopence.h $(SSH_OBJS)
+ssh.so: twopence.h protocol.h $(SSH_OBJS)
 	$(CC) $(CFLAGS) -o $@ --shared -Wl,-soname,libtwopence_$@.0 $(SSH_OBJS) -lssh
 
-serial.so: twopence.h $(SERIAL_OBJS)
+serial.so: twopence.h protocol.h $(SERIAL_OBJS)
 	$(CC) $(CFLAGS) -o $@ --shared -Wl,-soname,libtwopence_$@.0 $(SERIAL_OBJS)
 
 install: virtio.so ssh.so serial.so twopence.h
