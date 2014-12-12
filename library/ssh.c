@@ -604,8 +604,8 @@ int _twopence_interrupt_ssh
 //
 // Returns a "handle" that must be passed to subsequent function calls,
 // or NULL in case of a problem
-struct twopence_target *twopence_init
-  (const char *hostname, unsigned int port)
+struct twopence_target *
+twopence_init(const char *hostname, unsigned int port)
 {
   struct twopence_ssh_target *handle;
   ssh_session template;
@@ -642,6 +642,57 @@ struct twopence_target *twopence_init
   handle->channel = NULL;
   return (struct twopence_target *) handle;
 };
+
+//////////////////////////////////////////////////////////////////
+// This is the new way of initializign the library.
+// This function expects just the part of the target spec following
+// the "ssh:" plugin type.
+//////////////////////////////////////////////////////////////////
+struct twopence_target *
+twopence_init_new(const char *arg)
+{
+  char *copy_spec, *s, *hostname;
+  struct twopence_target *target = NULL;
+  unsigned long port;
+
+  /* The arg can have a trailing ":<portnum>" portion. Split
+   * that off. */
+  if (strrchr(arg, ':') == NULL) {
+    /* Just a hostname */
+    return twopence_init(arg, 22);
+  }
+
+  copy_spec = strdup(arg);
+  s = strrchr(copy_spec, ':');
+  *s++ = '\0';
+ 
+  port = strtoul(s, &s, 10);
+  if (*s != '\0' || port >= 65535) {
+    /* FIXME: we should complain about an invalid port number.
+     * Right now, we just fail silently - as we do with every
+     * other invalid piece of input. 
+     */
+    free(copy_spec);
+    return NULL;
+  }
+
+  /* The hostname portion may actually be an IPv6 like [::1].
+   * Strip off the outer brackets */
+  hostname = copy_spec;
+  if (*hostname == '[') {
+    int n = strlen(hostname);
+
+    if (hostname[n-1] == ']') {
+      hostname[n-1] = '\0';
+      ++hostname;
+    }
+  }
+
+  target = twopence_init(hostname, port);
+
+  free(copy_spec);
+  return target;
+}
 
 // Run a test command, and print output
 //
