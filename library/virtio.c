@@ -27,35 +27,33 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <poll.h>
 #include <errno.h>
 
+#include "twopence.h"
+#include "protocol.h"
+
 #define BUFFER_SIZE 32768              // Size in bytes of the work buffer for receiving data from the remote
 #define TIMEOUT 5000                   // Timeout in milliseconds
 #define LONG_TIMEOUT 60000             // Timeout that is big enough for a command to run without any output
 #define UNIX_PATH_MAX 108              // Value correct for Linux only; used in /usr/include/sys/un.h
 
-// This structure encapsulates in an opaque way the behaviour of the library
-// It is not 100 % opaque, because it is publicly known that the first field is the plugin type
-struct _twopence_opaque
-{
-  int type;                            // 0 for virtio
-  enum { no_output, to_screen, common_buffer, separate_buffers } output_mode;
-  char *buffer_out, *end_out;
-  char *buffer_err, *end_err;
+struct twopence_virtio_target {
+  struct twopence_pipe_target pipe;
+
   struct sockaddr_un address;
 };
+
+extern const struct twopence_plugin twopence_virtio_ops;
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
 
 // Initialize the handle
 //
 // Returns 0 if everything went fine, or -1 in case of error
-int _twopence_init_handle(struct _twopence_opaque *handle, const char *sockname)
+int _twopence_init_handle(struct twopence_virtio_target *handle, const char *sockname)
 {
-  // Store the plugin type
-  handle->type = 0;                    // virtio
+  twopence_pipe_target_init(&handle->pipe, TWOPENCE_PLUGIN_VIRTIO, &twopence_virtio_ops);
 
   // Initialize the socket address
-  handle->address.sun_family =         // UNIX domain sockets
-    AF_LOCAL;
+  handle->address.sun_family = AF_LOCAL;
   if (strlen(sockname) >= UNIX_PATH_MAX)
     return -1;
   strcpy(handle->address.sun_path, sockname);
@@ -66,7 +64,7 @@ int _twopence_init_handle(struct _twopence_opaque *handle, const char *sockname)
 // Open the UNIX domain socket
 //
 // Returns the file descriptor if successful, or -1 if failed
-int _twopence_open_link(const struct _twopence_opaque *handle)
+int _twopence_open_link(const struct twopence_virtio_target *handle)
 {
   int socket_fd, flags;
 
@@ -249,10 +247,10 @@ int _twopence_send_buffer
 // or NULL in case of a problem
 struct twopence_target *twopence_init(const char *filename)
 {
-  struct _twopence_opaque *handle;
+  struct twopence_virtio_target *handle;
 
   // Allocate the opaque handle
-  handle = malloc(sizeof(struct _twopence_opaque));
+  handle = malloc(sizeof(struct twopence_virtio_target));
   if (handle == NULL) return NULL;
 
   // Initialize the handle
@@ -265,3 +263,18 @@ struct twopence_target *twopence_init(const char *filename)
   return (struct twopence_target *) handle;
 };
 
+/*
+ * Define the plugin ops vector
+ */
+const struct twopence_plugin twopence_virtio_ops = {
+	.name		= "virtio",
+
+	.test_and_print_results	= twopence_test_and_print_results,
+	.test_and_drop_results	= twopence_test_and_drop_results,
+	.test_and_store_results_together = twopence_test_and_store_results_together,
+	.test_and_store_results_separately = twopence_test_and_store_results_separately,
+	.inject_file = twopence_inject_file,
+	.extract_file = twopence_extract_file,
+	.exit_remote = twopence_exit_remote,
+	.interrupt_command = twopence_interrupt_command,
+};
