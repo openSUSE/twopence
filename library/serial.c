@@ -25,6 +25,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <fcntl.h>
 #include <poll.h>
 #include <termios.h>
+#include <limits.h>
 #include <errno.h>
 
 #include "twopence.h"
@@ -33,14 +34,13 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define BUFFER_SIZE 32768              // Size in bytes of the work buffer for receiving data from the remote
 #define TIMEOUT 5000                   // Timeout in milliseconds
 #define LONG_TIMEOUT 60000             // Timeout that is big enough for a command to run without any output
-#define UNIX_PATH_MAX 108              // Value correct for Linux only; used in /usr/include/sys/un.h
 
 // This structure encapsulates in an opaque way the behaviour of the library
 // It is not 100 % opaque, because it is publicly known that the first field is the plugin type
 struct twopence_serial_target {
   struct twopence_pipe_target pipe;
 
-  char device_path[UNIX_PATH_MAX];
+  char device_path[PATH_MAX];
 };
 
 extern const struct twopence_plugin twopence_serial_ops;
@@ -56,7 +56,7 @@ int _twopence_init_handle(struct twopence_serial_target *handle, const char *dev
 
   // Initialize the device name
   // FIXME: use PATH_MAX
-  if (strlen(devname) >= UNIX_PATH_MAX)
+  if (strlen(devname) >= PATH_MAX)
     return -1;
   strcpy(handle->device_path, devname);
 
