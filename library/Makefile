@@ -16,9 +16,9 @@ serial.so: protocol.c serial.c twopence.h
 
 install: virtio.so ssh.so serial.so twopence.h
 	mkdir -p $(DESTDIR)$(LIBDIR)
-	cp virtio.so $(DESTDIR)$(LIBDIR)/libtwopence_virtio.so.0.2.0
-	cp ssh.so    $(DESTDIR)$(LIBDIR)/libtwopence_ssh.so.0.2.0
-	cp serial.so $(DESTDIR)$(LIBDIR)/libtwopence_serial.so.0.2.0
+	cp virtio.so $(DESTDIR)$(LIBDIR)/libtwopence_virtio.so.0.2.1
+	cp ssh.so    $(DESTDIR)$(LIBDIR)/libtwopence_ssh.so.0.2.1
+	cp serial.so $(DESTDIR)$(LIBDIR)/libtwopence_serial.so.0.2.1
 	mkdir -p $(DESTDIR)$(INCDIR)
 	cp twopence.h $(DESTDIR)$(INCDIR)
 

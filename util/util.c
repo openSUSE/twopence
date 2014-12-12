@@ -176,7 +176,7 @@ void *get_function(void *dl_handle, const char *symbol)
 // Returns a utility error code
 //         -1: parameter error
 //         -6: error during the execution of request
-//         -7: unknown error
+//         -8: unknown error
 int print_error(int rc)
 {
   switch (rc)
@@ -210,5 +210,5 @@ int print_error(int rc)
       return -6;
   }
   fprintf(stderr, "Unknow error\n");
-  return -7;
+  return -8;
 }

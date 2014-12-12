@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name    = "twopence"
-  s.version = "0.2.0"
+  s.version = "0.2.1"
   s.summary = "Twopence test executor"
   s.description = "A test executor that can run tests in a KVM virtual machine without using the network, or that can run more traditional tests in a remote machine through SSH or serial lines."
   s.author  = "SUSE"
