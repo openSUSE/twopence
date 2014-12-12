@@ -33,7 +33,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define BUFFER_SIZE 32768              // Size in bytes of the work buffer for receiving data from the remote
 #define TIMEOUT 5000                   // Timeout in milliseconds
 #define LONG_TIMEOUT 60000             // Timeout that is big enough for a command to run without any output
-#define UNIX_PATH_MAX 108              // Value correct for Linux only; used in /usr/include/sys/un.h
 
 struct twopence_virtio_target {
   struct twopence_pipe_target pipe;
@@ -54,7 +53,7 @@ int _twopence_init_handle(struct twopence_virtio_target *handle, const char *soc
 
   // Initialize the socket address
   handle->address.sun_family = AF_LOCAL;
-  if (strlen(sockname) >= UNIX_PATH_MAX)
+  if (strlen(sockname) >= sizeof(handle->address.sun_path))
     return -1;
   strcpy(handle->address.sun_path, sockname);
 
