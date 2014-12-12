@@ -39,7 +39,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 // It is not 100 % opaque, because it is publicly known that the first field is the plugin type
 struct twopence_ssh_target
 {
-  int type;
+  struct twopence_target base;
+
   enum { no_output, to_screen, common_buffer, separate_buffers } output_mode;
   char *buffer_out, *end_out;
   char *buffer_err, *end_err;
@@ -47,6 +48,8 @@ struct twopence_ssh_target
               session;
   ssh_channel channel;                 // Set during remote command execution only
 };
+
+extern const struct twopence_plugin twopence_ssh_ops;
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
 
@@ -608,11 +611,12 @@ struct twopence_target *twopence_init
   ssh_session template;
 
   // Allocate the opaque handle
-  handle = malloc(sizeof(struct twopence_ssh_target));
+  handle = calloc(1, sizeof(struct twopence_ssh_target));
   if (handle == NULL) return NULL;
 
   // Store the plugin type
-  handle->type = 1;                    // ssh
+  handle->base.plugin_type = TWOPENCE_PLUGIN_SSH;
+  handle->base.ops = &twopence_ssh_ops;
 
   // Create the SSH session template
   template = ssh_new();
@@ -899,3 +903,19 @@ void twopence_end(struct twopence_target *opaque_handle)
   ssh_free(handle->template);
   free(handle);
 }
+
+/*
+ * Define the plugin ops vector
+ */
+const struct twopence_plugin twopence_ssh_ops = {
+	.name		= "ssh",
+
+	.test_and_print_results	= twopence_test_and_print_results,
+	.test_and_drop_results	= twopence_test_and_drop_results,
+	.test_and_store_results_together = twopence_test_and_store_results_together,
+	.test_and_store_results_separately = twopence_test_and_store_results_separately,
+	.inject_file = twopence_inject_file,
+	.extract_file = twopence_extract_file,
+	.exit_remote = twopence_exit_remote,
+	.interrupt_command = twopence_interrupt_command,
+};
