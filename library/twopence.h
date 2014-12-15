@@ -238,6 +238,7 @@ struct twopence_plugin {
 	twopence_extract_t	extract_file;
 	twopence_exit_t		exit_remote;
 	twopence_interrupt_t	interrupt_command;
+	twopence_end_t		end;
 };
 
 enum {

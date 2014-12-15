@@ -276,4 +276,5 @@ const struct twopence_plugin twopence_virtio_ops = {
 	.extract_file = twopence_extract_file,
 	.exit_remote = twopence_exit_remote,
 	.interrupt_command = twopence_interrupt_command,
+	.end = twopence_end,
 };
