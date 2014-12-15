@@ -200,6 +200,92 @@ twopence_target_free(struct twopence_target *target)
 }
 
 /*
+ * General API
+ */
+int
+twopence_test_and_print_results(struct twopence_target *target, const char *username, const char *command, int *major_ret, int *minor_ret)
+{
+  if (target->ops->test_and_print_results == NULL)
+    return TWOPENCE_NOT_SUPPORTED;
+
+  return target->ops->test_and_print_results(target, username, command, major_ret, minor_ret);
+}
+
+int
+twopence_test_and_drop_results(struct twopence_target *target, const char *username, const char *command, int *major_ret, int *minor_ret)
+{
+  if (target->ops->test_and_drop_results == NULL)
+    return TWOPENCE_NOT_SUPPORTED;
+
+  return target->ops->test_and_drop_results(target, username, command, major_ret, minor_ret);
+}
+
+int
+twopence_test_and_store_results_together(struct twopence_target *target, const char *username, const char *command,
+		char *buffer, int size, int *major_ret, int *minor_ret)
+{
+  if (target->ops->test_and_store_results_together == NULL)
+    return TWOPENCE_NOT_SUPPORTED;
+
+  return target->ops->test_and_store_results_together(target, username, command,
+		  			buffer, size,
+					major_ret, minor_ret);
+}
+
+int
+twopence_test_and_store_results_separately(struct twopence_target *target, const char *username, const char *command,
+		char *stdout_buffer, char *stderr_buffer, int size, int *major_ret, int *minor_ret)
+{
+  if (target->ops->test_and_store_results_separately == NULL)
+    return TWOPENCE_NOT_SUPPORTED;
+
+  return target->ops->test_and_store_results_separately(target, username, command,
+		  			stdout_buffer, stderr_buffer, size,
+					major_ret, minor_ret);
+}
+
+int
+twopence_inject_file(struct twopence_target *target, const char *username,
+		const char *local_path, const char *remote_path,
+		int *remote_rc, bool blabla)
+{
+  if (target->ops->inject_file == NULL)
+    return TWOPENCE_NOT_SUPPORTED;
+
+  return target->ops->inject_file(target, username, local_path, remote_path, remote_rc, blabla);
+}
+
+int
+twopence_extract_file(struct twopence_target *target, const char *username,
+		const char *remote_path, const char *local_path,
+		int *remote_rc, bool blabla)
+{
+  if (target->ops->extract_file == NULL)
+    return TWOPENCE_NOT_SUPPORTED;
+
+  return target->ops->extract_file(target, username, remote_path, local_path, remote_rc, blabla);
+}
+
+int
+twopence_exit_remote(struct twopence_target *target)
+{
+  if (target->ops->exit_remote == NULL)
+    return TWOPENCE_NOT_SUPPORTED;
+
+  return target->ops->exit_remote(target);
+}
+
+int
+twopence_interrupt_command(struct twopence_target *target)
+{
+  if (target->ops->interrupt_command == NULL)
+    return TWOPENCE_NOT_SUPPORTED;
+
+  return target->ops->interrupt_command(target);
+}
+
+
+/*
  * Convert twopence error code to string message
  */
 const char *

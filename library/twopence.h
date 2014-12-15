@@ -266,6 +266,29 @@ struct twopence_target {
 };
 
 extern int		twopence_target_new(const char *target_spec, struct twopence_target **ret);
+extern int		twopence_test_and_print_results(struct twopence_target *target,
+					const char *username, const char *command,
+					int *major_ret, int *minor_ret);
+extern int		twopence_test_and_drop_results(struct twopence_target *target,
+					const char *username, const char *command,
+					int *major_ret, int *minor_ret);
+extern int		twopence_test_and_store_results_together(struct twopence_target *target,
+					const char *username, const char *command,
+					char *buffer, int size,
+					int *major_ret, int *minor_ret);
+extern int		twopence_test_and_store_results_separately(struct twopence_target *target,
+					const char *username, const char *command,
+					char *stdout_buffer, char *stderr_buffer, int size,
+					int *major_ret, int *minor_ret);
+extern int		twopence_inject_file(struct twopence_target *target,
+					const char *username, const char *local_path, const char *remote_path,
+					int *remote_rc, bool blabla);
+extern int		twopence_extract_file(struct twopence_target *target,
+					const char *username, const char *remote_path, const char *local_path,
+					int *remote_rc, bool blabla);
+extern int		twopence_exit_remote(struct twopence_target *target);
+extern int		twopence_interrupt_command(struct twopence_target *target);
+extern void		twopence_target_free(struct twopence_target *target);
 extern const char *	twopence_strerror(int rc);
 
 #endif /* TWOPENCE_H */
