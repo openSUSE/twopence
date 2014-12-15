@@ -760,9 +760,10 @@ int _twopence_interrupt_virtio_serial
 // Returns 0 if everything went fine
 // 'major' is the return code of the test server
 // 'minor' is the return code of the command
-int twopence_test_and_print_results
-  (struct twopence_target *opaque_handle, const char *username, const char *command,
-   int *major, int *minor)
+int
+twopence_pipe_test_and_print_results(struct twopence_target *opaque_handle,
+		const char *username, const char *command,
+		int *major, int *minor)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
@@ -777,9 +778,10 @@ int twopence_test_and_print_results
 // Returns 0 if everything went fine
 // 'major' is the return code of the test server
 // 'minor' is the return code of the command
-int twopence_test_and_drop_results
-  (struct twopence_target *opaque_handle, const char *username, const char *command,
-   int *major, int *minor)
+int
+twopence_pipe_test_and_drop_results(struct twopence_target *opaque_handle,
+		const char *username, const char *command,
+		int *major, int *minor)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
@@ -794,10 +796,11 @@ int twopence_test_and_drop_results
 // Returns 0 if everything went fine
 // 'major' is the return code of the test server
 // 'minor' is the return code of the command
-int twopence_test_and_store_results_together
-  (struct twopence_target *opaque_handle, const char *username, const char *command,
-   char *buffer_out, int size,
-   int *major, int *minor)
+int
+twopence_pipe_test_and_store_results_together(struct twopence_target *opaque_handle,
+		const char *username, const char *command,
+		char *buffer_out, int size,
+		int *major, int *minor)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   int rc;
@@ -824,10 +827,11 @@ int twopence_test_and_store_results_together
 // Returns 0 if everything went fine
 // 'major' is the return code of the test server
 // 'minor' is the return code of the command
-int twopence_test_and_store_results_separately
-  (struct twopence_target *opaque_handle, const char *username, const char *command,
-   char *buffer_out, char *buffer_err, int size,
-   int *major, int *minor)
+int
+twopence_pipe_test_and_store_results_separately(struct twopence_target *opaque_handle,
+		const char *username, const char *command,
+		char *buffer_out, char *buffer_err, int size,
+		int *major, int *minor)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   int rc;
@@ -860,10 +864,11 @@ int twopence_test_and_store_results_separately
 // Inject a file into the Virtual Machine
 //
 // Returns 0 if everything went fine
-int twopence_inject_file
-  (struct twopence_target *opaque_handle, const char *username,
-   const char *local_filename, const char *remote_filename,
-   int *remote_rc, bool dots)
+int
+twopence_pipe_inject_file(struct twopence_target *opaque_handle,
+		const char *username,
+		const char *local_filename, const char *remote_filename,
+		int *remote_rc, bool dots)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   int fd, rc;
@@ -891,10 +896,11 @@ int twopence_inject_file
 // Extract a file from the Virtual Machine
 //
 // Returns 0 if everything went fine
-int twopence_extract_file
-  (struct twopence_target *opaque_handle, const char *username,
-   const char *remote_filename, const char *local_filename,
-   int *remote_rc, bool dots)
+int
+twopence_pipe_extract_file(struct twopence_target *opaque_handle,
+		const char *username,
+		const char *remote_filename, const char *local_filename,
+		int *remote_rc, bool dots)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   int fd, rc;
@@ -922,7 +928,8 @@ int twopence_extract_file
 // Interrupt current command
 //
 // Returns 0 if everything went fine
-int twopence_interrupt_command(struct twopence_target *opaque_handle)
+int
+twopence_pipe_interrupt_command(struct twopence_target *opaque_handle)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
@@ -932,7 +939,8 @@ int twopence_interrupt_command(struct twopence_target *opaque_handle)
 // Tell the remote test server to exit
 //
 // Returns 0 if everything went fine
-int twopence_exit_remote(struct twopence_target *opaque_handle)
+int
+twopence_pipe_exit_remote(struct twopence_target *opaque_handle)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
@@ -942,7 +950,8 @@ int twopence_exit_remote(struct twopence_target *opaque_handle)
 }
 
 // Close the library
-void twopence_end(struct twopence_target *opaque_handle)
+void
+twopence_pipe_end(struct twopence_target *opaque_handle)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 

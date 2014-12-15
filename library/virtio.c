@@ -47,7 +47,7 @@ extern const struct twopence_plugin twopence_virtio_ops;
 // Initialize the handle
 //
 // Returns 0 if everything went fine, or -1 in case of error
-int _twopence_init_handle(struct twopence_virtio_target *handle, const char *sockname)
+int __twopence_virtio_init(struct twopence_virtio_target *handle, const char *sockname)
 {
   twopence_pipe_target_init(&handle->pipe, TWOPENCE_PLUGIN_VIRTIO, &twopence_virtio_ops);
 
@@ -244,17 +244,18 @@ int _twopence_send_buffer
 //
 // Returns a "handle" that must be passed to subsequent function calls,
 // or NULL in case of a problem
-struct twopence_target *twopence_init(const char *filename)
+static struct twopence_target *
+twopence_virtio_init(const char *filename)
 {
   struct twopence_virtio_target *handle;
 
   // Allocate the opaque handle
-  handle = malloc(sizeof(struct twopence_virtio_target));
-  if (handle == NULL) return NULL;
+  handle = calloc(1, sizeof(struct twopence_virtio_target));
+  if (handle == NULL)
+    return NULL;
 
   // Initialize the handle
-  if (_twopence_init_handle(handle, filename) < 0)
-  {
+  if (__twopence_virtio_init(handle, filename) < 0) {
     free(handle);
     return NULL;
   }
@@ -268,14 +269,14 @@ struct twopence_target *twopence_init(const char *filename)
 const struct twopence_plugin twopence_virtio_ops = {
 	.name		= "virtio",
 
-	.init = twopence_init,
-	.test_and_print_results	= twopence_test_and_print_results,
-	.test_and_drop_results	= twopence_test_and_drop_results,
-	.test_and_store_results_together = twopence_test_and_store_results_together,
-	.test_and_store_results_separately = twopence_test_and_store_results_separately,
-	.inject_file = twopence_inject_file,
-	.extract_file = twopence_extract_file,
-	.exit_remote = twopence_exit_remote,
-	.interrupt_command = twopence_interrupt_command,
-	.end = twopence_end,
+	.init = twopence_virtio_init,
+	.test_and_print_results	= twopence_pipe_test_and_print_results,
+	.test_and_drop_results	= twopence_pipe_test_and_drop_results,
+	.test_and_store_results_together = twopence_pipe_test_and_store_results_together,
+	.test_and_store_results_separately = twopence_pipe_test_and_store_results_separately,
+	.inject_file = twopence_pipe_inject_file,
+	.extract_file = twopence_pipe_extract_file,
+	.exit_remote = twopence_pipe_exit_remote,
+	.interrupt_command = twopence_pipe_interrupt_command,
+	.end = twopence_pipe_end,
 };
