@@ -21,7 +21,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <string.h>
 #include <malloc.h>
 #include <ctype.h>
-#include <dlfcn.h>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -83,67 +82,24 @@ twopence_target_split(char **target_spec_p)
   return plugin;
 }
 
-/*
- * Open the shared library for this plugin type
- */
-static void *
-twopence_load_library(const char *plugin)
-{
-  char libname[256];
-  void *dl_handle;
-
-  snprintf(libname, sizeof(libname), "libtwopence_%s.so.%u", plugin, TWOPENCE_API_MAJOR_VERSION);
-  dl_handle = dlopen(libname, RTLD_LAZY); 
-  if (dl_handle == NULL)
-    fprintf(stderr, "Cannot open shared library \"%s\"\n", libname);
-  return dl_handle;
-}
-
-/*
- * Get a symbol from the DLL
- */
-static void *
-twopence_get_symbol(void *dl_handle, const char *sym_name)
-{
-  return dlsym(dl_handle, sym_name);
-}
-
 static int
 __twopence_get_plugin_ops(const char *name, const struct twopence_plugin **ret)
 {
-  static void *plugin_dl_handles[__TWOPENCE_PLUGIN_MAX];
-  const struct twopence_plugin *plugin;
+  static const struct twopence_plugin *plugins[__TWOPENCE_PLUGIN_MAX] = {
+  [TWOPENCE_PLUGIN_VIRTIO]	= &twopence_virtio_ops,
+  [TWOPENCE_PLUGIN_SERIAL]	= &twopence_serial_ops,
+  [TWOPENCE_PLUGIN_SSH]		= &twopence_ssh_ops,
+  };
   int type;
-  void *dl_handle;
 
   type = twopence_plugin_type(name);
-  if (type == TWOPENCE_PLUGIN_UNKNOWN 
-   || type >= __TWOPENCE_PLUGIN_MAX)
+  if (type < 0 || type >= __TWOPENCE_PLUGIN_MAX)
     return TWOPENCE_UNKNOWN_PLUGIN;
 
-  dl_handle = plugin_dl_handles[type];
-  if (dl_handle == NULL) {
-    dl_handle = twopence_load_library(name);
-    if (dl_handle == NULL)
-      return TWOPENCE_UNKNOWN_PLUGIN;
+  *ret = plugins[type];
+  if (*ret == NULL)
+    return TWOPENCE_UNKNOWN_PLUGIN;
 
-    plugin_dl_handles[type] = dl_handle;
-  }
-
-  plugin = (const struct twopence_plugin *) twopence_get_symbol(dl_handle, "twopence_plugin");
-  if (plugin == NULL) {
-    char symbol[128];
-
-    snprintf(symbol, sizeof(symbol), "twopence_%s_ops", name);
-    plugin = (const struct twopence_plugin *) twopence_get_symbol(dl_handle, symbol);
-  }
- 
-  if (plugin == NULL) {
-    fprintf(stderr, "plugin \"%s\" does not provide a function vector\n", name);
-    return TWOPENCE_INCOMPATIBLE_PLUGIN;
-  }
-
-  *ret = plugin;
   return 0;
 }
 

@@ -7,7 +7,7 @@ CCOPT	= -Wall -O2 -g
 endif
 
 CFLAGS	= -I../library $(CCOPT)
-LINK	+= -L../library -ltwopence -ldl
+LINK	+= -L../library -ltwopence
 
 BINDIR ?= /usr/bin
 MANDIR ?= /usr/share/man

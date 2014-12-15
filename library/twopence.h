@@ -90,6 +90,10 @@ enum {
 	__TWOPENCE_PLUGIN_MAX
 };
 
+extern const struct twopence_plugin twopence_ssh_ops;
+extern const struct twopence_plugin twopence_virtio_ops;
+extern const struct twopence_plugin twopence_serial_ops;
+
 /*
  * Output related data types.
  * At some point, we probably want to support concurrent execution of several
