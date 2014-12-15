@@ -179,36 +179,17 @@ void *get_function(void *dl_handle, const char *symbol)
 //         -7: unknown error
 int print_error(int rc)
 {
-  switch (rc)
-  {
-    case TWOPENCE_PARAMETER_ERROR:
-      fprintf(stderr, "Invalid command parameter.\n");
-      return -1;
-    case TWOPENCE_OPEN_SESSION_ERROR:
-      fprintf(stderr, "Error opening the communication with the system under test.\n");
-      return -6;
-    case TWOPENCE_SEND_COMMAND_ERROR:
-      fprintf(stderr, "Error sending command to the system under test.\n");
-      return -6;
-    case TWOPENCE_FORWARD_INPUT_ERROR:
-      fprintf(stderr, "Error forwarding keyboard input.\n");
-      return -6;
-    case TWOPENCE_RECEIVE_RESULTS_ERROR:
-      fprintf(stderr, "Error receiving the results of action.\n");
-      return -6;
-    case TWOPENCE_LOCAL_FILE_ERROR:
-      fprintf(stderr, "Local error while transferring file.\n");
-      return -6;
-    case TWOPENCE_SEND_FILE_ERROR:
-      fprintf(stderr, "Error sending file to the system under test.\n");
-      return -6;
-    case TWOPENCE_REMOTE_FILE_ERROR:
-      fprintf(stderr, "Remote error while transferring file.\n");
-      return -6;
-    case TWOPENCE_RECEIVE_FILE_ERROR:
-      fprintf(stderr, "Error receiving file from the system under test.\n");
-      return -6;
+  const char *msg;
+  int ret = -6;
+
+  if ((msg = twopence_strerror(rc)) == NULL) {
+    msg = "Unknown error";
+    ret = -7;
   }
-  fprintf(stderr, "Unknow error\n");
-  return -7;
+
+  if (rc == TWOPENCE_PARAMETER_ERROR)
+    ret = -1;
+
+  fprintf(stderr, "twopence: %s.\n", msg);
+  return ret;
 }

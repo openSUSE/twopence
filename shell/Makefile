@@ -1,21 +1,24 @@
 .PHONY: all install clean
 
+CFLAGS	+= -I../library
+LINK	+= -L../library -ltwopence -ldl
+
 BINDIR ?= /usr/bin
 MANDIR ?= /usr/share/man
 
 all: command inject extract exit
 
 command: command.c ../util/util.c ../util/util.h ../library/twopence.h
-	gcc command.c ../util/util.c -ldl -o command
+	$(CC) $(CFLAGS) command.c ../util/util.c $(LINK) -o command
 
 inject: inject.c ../util/util.c ../util/util.h ../library/twopence.h
-	gcc inject.c ../util/util.c -ldl -o inject
+	$(CC) $(CFLAGS) inject.c ../util/util.c $(LINK) -o inject
 
 extract: extract.c ../util/util.c ../util/util.h ../library/twopence.h
-	gcc extract.c ../util/util.c -ldl -o extract
+	$(CC) $(CFLAGS) extract.c ../util/util.c $(LINK) -o extract
 
 exit: exit.c ../util/util.c ../util/util.h ../library/twopence.h
-	gcc exit.c ../util/util.c -ldl -o exit
+	$(CC) $(CFLAGS) exit.c ../util/util.c $(LINK) -o exit
 
 install: command inject extract exit command.1 inject.1 extract.1 exit.1
 	mkdir -p $(DESTDIR)$(BINDIR)

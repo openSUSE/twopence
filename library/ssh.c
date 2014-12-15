@@ -644,7 +644,7 @@ twopence_init(const char *hostname, unsigned int port)
 };
 
 //////////////////////////////////////////////////////////////////
-// This is the new way of initializign the library.
+// This is the new way of initializing the library.
 // This function expects just the part of the target spec following
 // the "ssh:" plugin type.
 //////////////////////////////////////////////////////////////////
@@ -961,6 +961,7 @@ void twopence_end(struct twopence_target *opaque_handle)
 const struct twopence_plugin twopence_ssh_ops = {
 	.name		= "ssh",
 
+	.init = twopence_init_new,
 	.test_and_print_results	= twopence_test_and_print_results,
 	.test_and_drop_results	= twopence_test_and_drop_results,
 	.test_and_store_results_together = twopence_test_and_store_results_together,

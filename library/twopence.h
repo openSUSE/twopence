@@ -23,6 +23,11 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <stdbool.h>
 
+/* API versioning. These values correspond directly to the
+ * shared library version numbers */
+#define TWOPENCE_API_MAJOR_VERSION	0
+#define TWOPENCE_API_MINOR_VERSION	2
+
 // Error codes
 #define TWOPENCE_PARAMETER_ERROR -1
 #define TWOPENCE_OPEN_SESSION_ERROR -2
@@ -34,6 +39,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define TWOPENCE_REMOTE_FILE_ERROR -8
 #define TWOPENCE_RECEIVE_FILE_ERROR -9
 #define TWOPENCE_INTERRUPT_COMMAND_ERROR -10
+#define TWOPENCE_INVALID_TARGET_SPEC -11
+#define TWOPENCE_UNKNOWN_PLUGIN -12
+#define TWOPENCE_INCOMPATIBLE_PLUGIN -13
+#define TWOPENCE_NOT_SUPPORTED -14
 
 struct twopence_target;
 
@@ -230,6 +239,7 @@ typedef void (*twopence_end_t)(struct twopence_target *);
 struct twopence_plugin {
 	const char *		name;
 
+	struct twopence_target *(*init)(const char *);
 	twopence_test_t1	test_and_print_results;
 	twopence_test_t1	test_and_drop_results;
 	twopence_test_t2	test_and_store_results_together;
@@ -246,11 +256,16 @@ enum {
 	TWOPENCE_PLUGIN_VIRTIO = 0,
 	TWOPENCE_PLUGIN_SSH = 1,
 	TWOPENCE_PLUGIN_SERIAL = 2,
+
+	__TWOPENCE_PLUGIN_MAX
 };
 
 struct twopence_target {
 	unsigned int		plugin_type;
 	const struct twopence_plugin *ops;
 };
+
+extern int		twopence_target_new(const char *target_spec, struct twopence_target **ret);
+extern const char *	twopence_strerror(int rc);
 
 #endif /* TWOPENCE_H */

@@ -41,31 +41,6 @@ struct option long_options[] = {
   { NULL, 0, NULL, 0 }
 };
 
-// Get the hostname and the port
-int get_hostname_and_port
-  (char **hostname, unsigned int *port, const char *target)
-{
-  char *h;
-  int p;
-
-  h = target_ssh_hostname(target);
-  if (h == NULL)
-  {
-    return -1;
-  }
-
-  p = target_ssh_port(target);
-  if (p < 0 || p > 65535)
-  {
-    free(h);
-    return -1;
-  }
-
-  *hostname = h;
-  *port = (unsigned int) p;
-  return 0;
-}
-
 void signal_handler(int signum)
 {
   static bool interrupt_in_progress = false;
@@ -144,14 +119,7 @@ int main(int argc, char *argv[])
   const char *opt_user, *opt_output, *opt_stdout, *opt_stderr;
   bool opt_quiet; int opt_type;
   const char *opt_target, *opt_command;
-  void *dl_handle;
-  int target_type;
-  void *init_library;                  // either twopence_init_virtio_t or twopence_init_ssh_t
-  twopence_test_t1 test_command1;
-  twopence_test_t1 test_command2;
-  twopence_test_t2 test_command3;
-  twopence_test_t3 test_command4;
-  twopence_end_t end_library;
+  struct twopence_target *target;
   struct sigaction old_action;
   int major, minor, rc;
 
@@ -205,114 +173,18 @@ int main(int argc, char *argv[])
   opt_target = argv[optind++];
   opt_command = argv[optind++];
 
-  // Load library
-  target_type = target_plugin(opt_target);
-  switch (target_type)
-  {
-    case 0:                            // virtio
-      dl_handle = open_library("libtwopence_virtio.so.0");
-      break;
-    case 1:                            // ssh
-      dl_handle = open_library("libtwopence_ssh.so.0");
-      break;
-    case 2:                            // serial
-      dl_handle = open_library("libtwopence_serial.so.0");
-      break;
-    default:                           // unknown
-      fprintf(stderr, "Unknown target: %s\n", opt_target);
-      exit(-1);
-  }
-  if (dl_handle == NULL) exit(-2);
-
-  // Get symbols
-  init_library = get_function(dl_handle, "twopence_init");
-  test_command1 = get_function(dl_handle, "twopence_test_and_print_results");
-  test_command2 = get_function(dl_handle, "twopence_test_and_drop_results");
-  test_command3 = get_function(dl_handle, "twopence_test_and_store_results_together");
-  test_command4 = get_function(dl_handle, "twopence_test_and_store_results_separately");
-  interrupt_command = get_function(dl_handle, "twopence_interrupt_command");
-  end_library = get_function(dl_handle, "twopence_end");
-
-  // Check symbols
-  if (init_library == NULL ||
-      test_command1 == NULL ||
-      test_command2 == NULL ||
-      test_command3 == NULL ||
-      test_command4 == NULL ||
-      interrupt_command == NULL ||
-      end_library == NULL)
-  {
-    dlclose(dl_handle);
-    exit(-3);
-  }
-
-  // Init library
-  switch (target_type)
-  {
-    case 0:                            // virtio
-      {
-        char *socketname;
-
-        socketname = target_virtio_serial_filename(opt_target);
-
-        if (socketname == NULL)
-        {
-          dlclose(dl_handle);
-          exit(-1);
-        }
-
-        twopence_handle = (*(twopence_init_virtio_t) init_library)
-                            (socketname);
-        free(socketname);
-      }
-      break;
-    case 1:                            // ssh
-      {
-        char *hostname;
-        unsigned int port;
-
-        if (get_hostname_and_port(&hostname, &port, opt_target) < 0)
-        {
-          dlclose(dl_handle);
-          exit(-1);
-        }
-
-        twopence_handle = (*(twopence_init_ssh_t) init_library)
-                            (hostname, port);
-        free(hostname);
-      }
-      break;
-    case 2:                            // serial
-      {
-        char *devicename;
-
-        devicename = target_virtio_serial_filename(opt_target);
-
-        if (devicename == NULL)
-        {
-          dlclose(dl_handle);
-          exit(-1);
-        }
-
-        twopence_handle = (*(twopence_init_serial_t) init_library)
-                            (devicename);
-        free(devicename);
-      }
-      break;
-  }
-  if (twopence_handle == NULL)
-  {
+  rc = twopence_target_new(argv[1], &target);
+  if (rc < 0) {
     fprintf(stderr, "Error while initializing library\n");
-    dlclose(dl_handle);
-    exit(-4);
+    print_error(rc);
+    exit(1);
   }
 
   // Install signal handler
   if (install_handler(SIGINT, &old_action))
   {
     fprintf(stderr, "Error installing signal handler\n");
-    (*end_library)(twopence_handle);
-    dlclose(dl_handle);
+    twopence_target_free(target);
     exit(-5);
   }
 
@@ -320,19 +192,19 @@ int main(int argc, char *argv[])
   switch (opt_type)
   {
     case 1:
-      rc = (*test_command1)(twopence_handle, opt_user, opt_command,
+      rc = target->ops->test_and_print_results(target, opt_user, opt_command,
                             &major, &minor);
       break;
     case 2:
-      rc = (*test_command2)(twopence_handle, opt_user, opt_command,
+      rc = target->ops->test_and_drop_results(target, opt_user, opt_command,
                             &major, &minor);
       break;
     case 3:
-      rc = (*test_command3)(twopence_handle, opt_user, opt_command,
+      rc = target->ops->test_and_store_results_together(target, opt_user, opt_command,
                             buffer, 65536, &major, &minor);
       break;
     case 4:
-      rc = (*test_command4)(twopence_handle, opt_user, opt_command,
+      rc = target->ops->test_and_store_results_separately(target, opt_user, opt_command,
                             buffer, buffer + 32768, 32768, &major, &minor);
   }
   if (rc == 0)
@@ -346,8 +218,7 @@ int main(int argc, char *argv[])
   if (restore_handler(SIGINT, &old_action))
   {
     fprintf(stderr, "Error removing signal handler\n");
-    (*end_library)(twopence_handle);
-    dlclose(dl_handle);
+    twopence_target_free(target);
     exit(-5);
   }
 
@@ -364,7 +235,6 @@ int main(int argc, char *argv[])
   }
 
   // End library
-  (*end_library)(twopence_handle);
-  dlclose(dl_handle);
+  twopence_target_free(target);
   return rc;
 }

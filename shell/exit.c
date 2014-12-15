@@ -48,12 +48,7 @@ Target: serial:<character device>\n\
 // Main program
 int main(int argc, const char *argv[])
 {
-  void *dl_handle;
-  int target_type;
-  twopence_init_virtio_t init_library;
-  twopence_exit_t exit_remote;
-  twopence_end_t end_library;
-  void *twopence_handle;
+  struct twopence_target *target;
   int rc;
 
   // Check arguments
@@ -63,98 +58,21 @@ int main(int argc, const char *argv[])
     exit(-1);
   }
 
-  // Load library
-  target_type = target_plugin(argv[1]);
-  switch (target_type)
-  {
-    case 0:                            // virtio
-      dl_handle = open_library("libtwopence_virtio.so.0");
-      break;
-    case 1:                            // ssh
-      dl_handle = open_library("libtwopence_ssh.so.0");
-      break;
-    case 2:                            // serial
-      dl_handle = open_library("libtwopence_serial.so.0");
-      break;
-    default:                           // unknown
-      fprintf(stderr, "Unknown target: %s\n", argv[1]);
-      exit(-1);
-  }
-  if (dl_handle == NULL) exit(-2);
-
-  // Get symbols
-  init_library = get_function(dl_handle, "twopence_init");
-  exit_remote = get_function(dl_handle, "twopence_exit_remote");
-  end_library = get_function(dl_handle, "twopence_end");
-
-  // Check symbols
-  if (init_library == NULL ||
-      exit_remote == NULL ||
-      end_library == NULL)
-  {
-    dlclose(dl_handle);
-    exit(-3);
-  }
-
-  // Init library
-  switch (target_type)
-  {
-    case 0:                            // virtio
-      {
-        char *socketname;
-
-        socketname = target_virtio_serial_filename(argv[1]);
-        if (socketname == NULL)
-        {
-          dlclose(dl_handle);
-          exit(-1);
-        }
-
-        twopence_handle = (*init_library)
-                            (socketname);
-
-        free(socketname);
-      }
-      break;
-    case 1:                            // ssh
-      fprintf(stderr, "Can't exit the remote test server with the SSH plugin, \
-because there's no remote test server\n");
-      dlclose(dl_handle);
-      exit(-1);
-    case 2:                            // serial
-      {
-        char *devicename;
-
-        devicename = target_virtio_serial_filename(argv[1]);
-
-        if (devicename == NULL)
-        {
-          dlclose(dl_handle);
-          exit(-1);
-        }
-
-        twopence_handle = (*(twopence_init_serial_t) init_library)
-                            (devicename);
-        free(devicename);
-      }
-      break;
-  }
-  if (twopence_handle == NULL)
-  {
+  rc = twopence_target_new(argv[1], &target);
+  if (rc < 0) {
     fprintf(stderr, "Error while initializing library\n");
-    dlclose(dl_handle);
-    exit(-4);
+    print_error(rc);
+    exit(1);
   }
 
   // Let the remote test server exit
-  rc = (*exit_remote)(twopence_handle);
+  rc = target->ops->exit_remote(target);
   if (rc == 0)
     printf("Asked the test server to exit.\n");
   else
     rc = print_error(rc);
 
   // End library
-  (*end_library)(twopence_handle);
-  dlclose(dl_handle);
+  twopence_target_free(target);
   return rc;
 }

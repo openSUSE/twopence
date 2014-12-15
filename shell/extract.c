@@ -32,31 +32,6 @@ struct option long_options[] = {
   { NULL, 0, NULL, 0 }
 };
 
-// Get the hostname and the port
-int get_hostname_and_port
-  (char **hostname, unsigned int *port, const char *target)
-{
-  char *h;
-  int p;
-
-  h = target_ssh_hostname(target);
-  if (h == NULL)
-  {
-    return -1;
-  }
-
-  p = target_ssh_port(target);
-  if (p < 0 || p > 65535)
-  {
-    free(h);
-    return -1;
-  }
-
-  *hostname = h;
-  *port = (unsigned int) p;
-  return 0;
-}
-
 // Display a message about the command usage
 void usage(const char *program_name)
 {
@@ -88,12 +63,7 @@ int main(int argc, char *argv[])
   int option;
   const char *opt_user,
              *opt_target, *opt_remote, *opt_local;
-  void *dl_handle;
-  int target_type;
-  void *init_library; // either twopence_init_virtio_t or twopence_init_ssh_t
-  twopence_extract_t extract_file;
-  twopence_end_t end_library;
-  void *twopence_handle;
+  struct twopence_target *target;
   int rc, remote_error;
 
   // Parse options
@@ -119,110 +89,24 @@ int main(int argc, char *argv[])
   opt_remote = argv[optind++];
   opt_local = argv[optind++];
 
-  // Load library
-  target_type = target_plugin(opt_target);
-  switch (target_type)
-  {
-    case 0: // virtio
-      dl_handle = open_library("libtwopence_virtio.so.0");
-      break;
-    case 1: // ssh
-      dl_handle = open_library("libtwopence_ssh.so.0");
-      break;
-    case 2:                            // serial
-      dl_handle = open_library("libtwopence_serial.so.0");
-      break;
-    default: // unknown
-      fprintf(stderr, "Unknown target: %s\n", opt_target);
-      exit(-1);
-  }
-  if (dl_handle == NULL) exit(-2);
-
-  // Get symbols
-  init_library = get_function(dl_handle, "twopence_init");
-  extract_file = get_function(dl_handle, "twopence_extract_file");
-  end_library = get_function(dl_handle, "twopence_end");
-
-  // Check symbols
-  if (init_library == NULL ||
-      extract_file == NULL ||
-      end_library == NULL)
-  {
-    dlclose(dl_handle);
-    exit(-3);
-  }
-
-  // Init library
-  switch (target_type)
-  {
-    case 0:                            // virtio
-      {
-        char *socketname;
-
-        socketname = target_virtio_serial_filename(opt_target);
-
-        if (socketname == NULL)
-        {
-          dlclose(dl_handle);
-          exit(-1);
-        }
-
-        twopence_handle = (*(twopence_init_virtio_t) init_library)
-                            (socketname);
-      }
-      break;
-    case 1:                            // ssh
-      {
-        char *hostname;
-        unsigned int port;
-
-        if (get_hostname_and_port(&hostname, &port, opt_target) < 0)
-        {
-          dlclose(dl_handle);
-          exit(-1);
-        }
-
-        twopence_handle = (*(twopence_init_ssh_t) init_library)
-                            (hostname, port);
-
-        free(hostname);
-      }
-      break;
-    case 2:                            // serial
-      {
-        char *devicename;
-
-        devicename = target_virtio_serial_filename(opt_target);
-
-        if (devicename == NULL)
-        {
-          dlclose(dl_handle);
-          exit(-1);
-        }
-
-        twopence_handle = (*(twopence_init_serial_t) init_library)
-                            (devicename);
-        free(devicename);
-      }
-      break;
-  }
-  if (twopence_handle == NULL)
-  {
+  rc = twopence_target_new(opt_target, &target);
+  if (rc < 0) {
     fprintf(stderr, "Error while initializing library\n");
-    dlclose(dl_handle);
-    exit(-4);
+    print_error(rc);
+    exit(1);
   }
 
   // Extract file
-  rc = (*extract_file)(twopence_handle, opt_user, opt_remote, opt_local,
+  rc = target->ops->extract_file(target, opt_user, opt_remote, opt_local,
                        &remote_error, true);
-  if (rc == 0) printf("File successfully extracted\n");
-  else rc = print_error(rc);
+  if (rc == 0)
+    printf("File successfully extracted\n");
+  else
+    rc = print_error(rc);
   if (remote_error != 0)
     fprintf(stderr, "Remote error code: %d\n", remote_error);
 
   // End library
-  (*end_library)(twopence_handle);
-  dlclose(dl_handle);
+  twopence_target_free(target);
   return rc;
 }

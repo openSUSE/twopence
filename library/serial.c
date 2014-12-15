@@ -267,6 +267,7 @@ twopence_init(const char *filename)
 const struct twopence_plugin twopence_serial_ops = {
 	.name		= "serial",
 
+	.init = twopence_init,
 	.test_and_print_results	= twopence_test_and_print_results,
 	.test_and_drop_results	= twopence_test_and_drop_results,
 	.test_and_store_results_together = twopence_test_and_store_results_together,
