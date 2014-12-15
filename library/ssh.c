@@ -147,8 +147,8 @@ void _twopence_sleep()
 ///////////////////////////// Middle layer //////////////////////////////////////
 
 // Read the input from the keyboard or a pipe
-int _twopence_read_input
-  (ssh_channel channel, bool *nothing, bool *eof)
+static int
+__twopence_ssh_read_input(ssh_channel channel, bool *nothing, bool *eof)
 {
   char buffer[BUFFER_SIZE];
   int size, written;
@@ -182,8 +182,8 @@ int _twopence_read_input
 //   'fd': 1 for stdout, 2 for stderr
 //
 // Returns 0 if everything went fine, a negative error code otherwise
-int _twopence_read_output
-  (struct twopence_ssh_target *handle, ssh_channel channel, bool error, bool *nothing, bool *eof)
+static int
+__twopence_ssh_read_output(struct twopence_ssh_target *handle, ssh_channel channel, bool error, bool *nothing, bool *eof)
 {
   char buffer[BUFFER_SIZE];
   int size;
@@ -210,8 +210,8 @@ int _twopence_read_output
 }
 
 // Read the results of a command
-int _twopence_read_results
-  (struct twopence_ssh_target *handle, ssh_channel channel)
+static int
+__twopence_ssh_read_results(struct twopence_ssh_target *handle, ssh_channel channel)
 {
   bool nothing_0, eof_0,
        nothing_1, eof_1,
@@ -227,21 +227,21 @@ int _twopence_read_results
     // Nonblocking read from stdin
     if (!eof_0)
     {
-      if (_twopence_read_input(channel, &nothing_0, &eof_0) < 0)
+      if (__twopence_ssh_read_input(channel, &nothing_0, &eof_0) < 0)
         return -1;
     }
 
     // Nonblocking read from stdout
     if (!eof_1)
     {
-      if (_twopence_read_output(handle, channel, false, &nothing_1, &eof_1) < 0)
+      if (__twopence_ssh_read_output(handle, channel, false, &nothing_1, &eof_1) < 0)
         return -2;
     }
 
     // Nonblocking read from stderr
     if (!eof_2)
     {
-      if (_twopence_read_output(handle, channel, true, &nothing_2, &eof_2) < 0)
+      if (__twopence_ssh_read_output(handle, channel, true, &nothing_2, &eof_2) < 0)
         return -3;
     }
 
@@ -426,8 +426,7 @@ int _twopence_command_ssh
   handle->channel = NULL;
 
   // Read "standard output", "standard error", and remote error code
-  rc = _twopence_read_results
-    (handle, channel);
+  rc = __twopence_ssh_read_results(handle, channel);
 
   // Get remote error code and terminate the channel
   ssh_channel_send_eof(channel);

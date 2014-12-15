@@ -24,7 +24,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <getopt.h>
 #include <signal.h>
 
-#include "../util/util.h"
+#include "twopence.h"
 
 char buffer[65536];
 twopence_interrupt_t interrupt_command;

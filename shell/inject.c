@@ -24,7 +24,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <getopt.h>
 
 #include "twopence.h"
-#include "../util/util.h"
 
 char *short_options = "u:h";
 struct option long_options[] = {

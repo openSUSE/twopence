@@ -25,7 +25,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "../util/util.h"
+#include "twopence.h"
 
 // Display a message about the command usage
 void usage(const char *program_name)

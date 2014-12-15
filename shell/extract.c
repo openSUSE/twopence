@@ -23,7 +23,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <stdlib.h>
 #include <getopt.h>
 
-#include "../util/util.h"
+#include "twopence.h"
 
 char *short_options = "u:h";
 struct option long_options[] = {
