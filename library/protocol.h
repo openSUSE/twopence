@@ -9,14 +9,20 @@
 /* Base class for all targets using the twopence pipe protocol */
 struct twopence_pipe_target {
   struct twopence_target base;
+
+  unsigned long link_timeout;
+  const struct twopence_pipe_ops *link_ops;
 };
 
 
-/* Once we've changed to a pure function vector interface into the library,
- * these functions should be renamed to __twopence_pipe_*
- */
+struct twopence_pipe_ops {
+  int		(*open)(struct twopence_pipe_target *);
+  int		(*recv)(struct twopence_pipe_target *, int, char *buffer, size_t count);
+  int		(*send)(struct twopence_pipe_target *, int, const char *buffer, size_t count);
+};
 
-extern void	twopence_pipe_target_init(struct twopence_pipe_target *, int plugin_type, const struct twopence_plugin *);
+extern void	twopence_pipe_target_init(struct twopence_pipe_target *, int plugin_type, const struct twopence_plugin *,
+			const struct twopence_pipe_ops *);
 
 extern int	twopence_pipe_test_and_print_results(struct twopence_target *, const char *, const char *, int *, int *);
 extern int	twopence_pipe_test_and_drop_results(struct twopence_target *, const char *, const char *, int *, int *);

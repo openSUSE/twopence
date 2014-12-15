@@ -43,6 +43,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define TWOPENCE_UNKNOWN_PLUGIN -12
 #define TWOPENCE_INCOMPATIBLE_PLUGIN -13
 #define TWOPENCE_NOT_SUPPORTED -14
+#define TWOPENCE_PROTOCOL_ERROR -15
 
 struct twopence_target;
 

@@ -20,6 +20,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 */
 
 #include <sys/stat.h>
+#include <sys/poll.h>
 #include <stdio.h>                     // For snprintf() parsing facility. Most I/O is low-level and unbuffered.
 #include <stdlib.h>
 #include <string.h>
@@ -36,12 +37,15 @@ with this program; if not, write to the Free Software Foundation, Inc.,
  * Class initialization
  */
 void
-twopence_pipe_target_init(struct twopence_pipe_target *target, int plugin_type, const struct twopence_plugin *ops)
+twopence_pipe_target_init(struct twopence_pipe_target *target, int plugin_type, const struct twopence_plugin *plugin_ops,
+			const struct twopence_pipe_ops *link_ops)
 {
   memset(target, 0, sizeof(*target));
 
   target->base.plugin_type = plugin_type;
-  target->base.ops = ops;
+  target->base.ops = plugin_ops;
+  target->link_timeout = 60000; /* 1 minute */
+  target->link_ops = link_ops;
 
   twopence_sink_init_none(&target->base.current.sink);
 }
@@ -82,7 +86,8 @@ __twopence_pipe_error(struct twopence_pipe_target *handle, char c)
 }
 
 // Check for invalid usernames
-bool _twopence_invalid_username(const char *username)
+static bool
+_twopence_invalid_username(const char *username)
 {
   const char *p;
 
@@ -98,148 +103,228 @@ bool _twopence_invalid_username(const char *username)
   return false;
 }
 
-// Send a number of bytes in a buffer to the device
-// Send it in several times to accomodate for slow lines
-//
-// Returns true if everything went fine, false otherwise
-bool _twopence_send_big_buffer
-  (int device_fd, char *buffer, int size)
+/*
+ * Wrap the link functions
+ */
+static int
+__twopence_pipe_open_link(struct twopence_pipe_target *handle)
 {
-  int sent;
+  return handle->link_ops->open(handle);
+}
 
-  while (size > 0)
-  {
-    sent = _twopence_send_buffer
-      (device_fd, buffer, size);
-    if (sent == -1) return false;
+static inline int
+__twopence_pipe_poll(int link_fd, int events, unsigned long timeout)
+{
+  struct pollfd pfd;
+  int n;
 
-    buffer += sent;
-    size -= sent;
+  /* It's not quite clear why we're not just using blocking input here. */
+  pfd.fd = link_fd;
+  pfd.events = events;
+
+  n = poll(&pfd, 1, timeout);
+  if ((n == 1) && !(pfd.revents & events))
+    n = 0;
+
+  return n;
+}
+
+static int
+__twopence_pipe_recvbuf(struct twopence_pipe_target *handle, int link_fd, char *buffer, size_t size)
+{
+  size_t received = 0;
+
+  while (received < size) {
+    int n, rc;
+
+    /* It's not quite clear why we're not just using blocking input here. */
+    n = __twopence_pipe_poll(link_fd, POLLIN, handle->link_timeout);
+    if (n < 0) {
+      perror("poll error");
+      return TWOPENCE_PROTOCOL_ERROR;
+    }
+
+    if (n == 0) {
+      fprintf(stderr, "timeout on link");
+      return TWOPENCE_PROTOCOL_ERROR;
+    }
+
+    /* Read some data from the link */
+    rc = handle->link_ops->recv(handle, link_fd, buffer + received, size - received);
+    if (rc < 0)
+      return rc;
+
+    if (rc == 0) {
+      fprintf(stderr, "unexpected EOF on link");
+      return TWOPENCE_PROTOCOL_ERROR;
+    }
+
+    received += rc;
   }
 
-  return size == 0;
+  return received;
+}
+
+static int
+__twopence_pipe_sendbuf(struct twopence_pipe_target *handle, int link_fd, const char *buffer, size_t count)
+{
+  size_t sent = 0;
+
+  while (sent < count) {
+    int n, rc;
+
+    /* It's not quite clear why we're not just using blocking input here. */
+    n = __twopence_pipe_poll(link_fd, POLLOUT, handle->link_timeout);
+    if (n < 0) {
+      perror("poll error");
+      return TWOPENCE_PROTOCOL_ERROR;
+    }
+
+    if (n == 0) {
+      fprintf(stderr, "timeout on link");
+      return TWOPENCE_PROTOCOL_ERROR;
+    }
+
+    rc = handle->link_ops->send(handle, link_fd, buffer + sent, count - sent);
+    if (rc < 0)
+      return rc;
+
+    sent += rc;
+  }
+
+  return sent;
+}
+
+/*
+ * Read a chunk (normally called a packet or frame) from the link
+ */
+static int
+__twopence_pipe_read_frame(struct twopence_pipe_target *handle, int link_fd, char *buffer, size_t size)
+{
+  int remaining;
+  char *p;
+  int rc, length;
+
+  /* First try to read the header */
+  rc = __twopence_pipe_recvbuf(handle, link_fd, buffer, 4);
+  if (rc < 0)
+    return rc;
+
+  length = compute_length(buffer);     // Decode the announced amount of data
+  if (length > size)
+    return TWOPENCE_PROTOCOL_ERROR;
+
+  /* SECURITY: prevent buffer overflow */
+  if (length < 4)
+    return TWOPENCE_PROTOCOL_ERROR;
+
+  /* Read the announced amount of data */
+  rc = __twopence_pipe_recvbuf(handle, link_fd, buffer + 4, length - 4);
+  if (rc < 0)
+    return rc;
+
+  return 0;
+}
+
+
+/*
+ * Helper function to read from either link or stdin
+ */
+static int
+__twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, int link_fd, int stdin_fd, char *buffer, size_t size)
+{
+  unsigned long timeout = 60000; /* 1 minute */
+
+  while (true) {
+    struct pollfd pfd[2];
+    int nfds = 0, n;
+
+    pfd[nfds].fd = link_fd;
+    pfd[nfds].events = POLLIN;
+    nfds++;
+
+    if (stdin_fd >= 0) {
+      pfd[nfds].fd = stdin_fd;
+      pfd[nfds].events = POLLIN;
+      nfds++;
+    }
+
+    n = poll(pfd, nfds, timeout);
+    if (n < 0) {
+      if (errno == EINTR)
+	continue;
+      perror("poll");
+      return TWOPENCE_PROTOCOL_ERROR;
+    }
+    if (n == 0) {
+      fprintf(stderr, "recv timeout on link\n");
+      return TWOPENCE_PROTOCOL_ERROR;
+    }
+
+    if (pfd[0].revents & POLLIN) {
+      /* Incoming data on the link. Read the complete frame right away (blocking until we have it) */
+      return __twopence_pipe_read_frame(handle, link_fd, buffer, size);
+    }
+
+    if (nfds > 1 && (pfd[0].revents & POLLIN)) {
+      int count;
+
+      count = read(stdin_fd, buffer + 4, size - 4);
+      if (count < 0) {
+	if (errno == EINTR)
+	  continue;
+	return count;
+      }
+
+      if (count == 0) {
+        buffer[0] = 'E'; /* EOF on standard input */
+      } else {
+	buffer[0] = '0'; /* Data on standard input */
+      }
+
+      store_length(count + 4, buffer);
+      return count + 4;
+    }
+
+    /* Can we get here? */
+  }
+
+  return 0;
 }
 
 ///////////////////////////// Middle layer //////////////////////////////////////
-
-// Read a chunk from the link
-//
-// Returns 0 when everything went fine,
-// a Linux error code otherwise.
-int _twopence_read_chunk(int link_fd, char *buffer)
-{
-  int remaining;
-  char *p;
-  int rc, size, length;
-
-  remaining = 4;                       // First try to read the header
-  p = buffer;
-  while (remaining > 0)
-  {
-    size = _twopence_receive_buffer    // Receive less than the remaining amount of data
-      (link_fd, p, remaining, &rc);
-    if (size < 0)
-      return rc;
-
-    remaining -= size;
-    p += size;
-  }
-
-  length = compute_length(buffer);     // Decode the announced amount of data
-  if (length > BUFFER_SIZE)
-    return ENOMEM;
-
-  remaining = length - 4;              // Read the announced amount of data
-  while (remaining > 0)
-  {
-    size = _twopence_receive_buffer    // Receive less than the remaining amount of data
-      (link_fd, p, remaining, &rc);
-    if (size < 0)
-      return rc;
-
-    remaining -= size;
-    p += size;
-  }
-
-  return 0;
-}
-
-// Read a chunk from the link or from the standard input
-//
-// Returns 0 when everything went fine,
-// a Linux error code otherwise.
-int _twopence_read_chunk_2(int link_fd, char *buffer, bool *end_of_stdin)
-{
-  int remaining;
-  char *p;
-  int rc, size, length;
-
-  remaining = 4;                       // First try to read the header
-  p = buffer;
-  while (remaining > 0)
-  {
-    size = _twopence_receive_buffer_2  // Receive less than the remaining amount of data
-      (link_fd, p, remaining, &rc, end_of_stdin);
-    if (size < 0)
-      return rc;
-
-    remaining -= size;
-    p += size;
-  }
-
-  if (buffer[0] == '0' ||              // If that was input on stdin, we're done
-      buffer[0] == 'E') return 0;
-
-  length = compute_length(buffer);     // Decode the announced amount of data
-  if (length > BUFFER_SIZE)
-    return ENOMEM;
-
-  remaining = length - 4;              // Read the announced amount of data
-  while (remaining > 0)
-  {
-    size = _twopence_receive_buffer    // Receive less than the remaining amount of data
-      (link_fd, p, remaining, &rc);
-    if (size < 0)
-      return rc;
-
-    remaining -= size;
-    p += size;
-  }
-
-  return 0;
-}
-
 // Read stdin, stdout, stderr, and both error codes
 //
 // Returns 0 if everything went fine, or a negative error code if failed
-int _twopence_read_results
-  (struct twopence_pipe_target *handle, int link_fd, int *major, int *minor)
+int
+_twopence_read_results(struct twopence_pipe_target *handle, int link_fd, int *major, int *minor)
 {
   int state;                           // 0 = processing results, 1 = major received, 2 = minor received
-  bool end_of_stdin;
+  int stdin_fd;
   char buffer[BUFFER_SIZE];
   int rc, received, sent;
   const char *p;
 
+  stdin_fd = 0; /* Initially, we will try to read from stdin */
   state = 0;
-  end_of_stdin = false;
+
   while (state != 2)
   {
-    rc = _twopence_read_chunk_2        // Receive a chunk of data
-      (link_fd, buffer, &end_of_stdin);
+    rc = __twopence_pipe_recvbuf_both(handle, link_fd, stdin_fd, buffer, sizeof(buffer));
     if (rc != 0)
       return TWOPENCE_RECEIVE_RESULTS_ERROR;
-    received = compute_length(buffer);
 
-    switch (buffer[0])                 // Parse received data
-    {
-      case '0':                        // stdin
+    received = compute_length(buffer);
+    switch (buffer[0]) {
       case 'E':                        // End of file on stdin
+	stdin_fd = -1;
+	/* fallthru */
+      case '0':                        // Data on stdin
         if (state != 0)
           return TWOPENCE_FORWARD_INPUT_ERROR;
-        sent = _twopence_send_buffer   // Forward it to the system under test
-          (link_fd, buffer, received);
-        if (sent != received)
+	// Forward it to the system under test
+        sent = __twopence_pipe_sendbuf(handle, link_fd, buffer, received);
+        if (sent < 0)
           return TWOPENCE_FORWARD_INPUT_ERROR;
         break;
 
@@ -288,14 +373,14 @@ int _twopence_read_results
 // Read major error code
 //
 // Returns 0 if everything went fine, or a negative error code if failed
-int _twopence_read_major
-  (int link_fd, int *major)
+static int
+_twopence_read_major(struct twopence_pipe_target *handle, int link_fd, int *major)
 {
   char buffer[BUFFER_SIZE];
   int rc, received;
 
-  rc = _twopence_read_chunk            // Receive a chunk of data
-    (link_fd, buffer);
+  // Receive a chunk of data
+  rc = __twopence_pipe_read_frame(handle, link_fd, buffer, sizeof(buffer));
   if (rc != 0)
     return TWOPENCE_RECEIVE_FILE_ERROR;
 
@@ -309,14 +394,14 @@ int _twopence_read_major
 // Read minor error code
 //
 // Returns 0 if everything went fine, or a negative error code if failed
-int _twopence_read_minor
-  (int link_fd, int *minor)
+static int
+_twopence_read_minor(struct twopence_pipe_target *handle, int link_fd, int *minor)
 {
   char buffer[BUFFER_SIZE];
   int rc, received;
 
-  rc = _twopence_read_chunk            // Receive a chunk of data
-    (link_fd, buffer);
+  // Receive a chunk of data
+  rc = __twopence_pipe_read_frame(handle, link_fd, buffer, sizeof(buffer));
   if (rc != 0)
     return TWOPENCE_RECEIVE_FILE_ERROR;
 
@@ -331,14 +416,13 @@ int _twopence_read_minor
 // It can also get a remote error code if, for example, the remote file does not exist
 //
 // Returns 0 if everything went fine, or a negative error code if failed
-int _twopence_read_size
-  (int link_fd, int *size, int *remote_rc)
+static int
+_twopence_read_size(struct twopence_pipe_target *handle, int link_fd, int *size, int *remote_rc)
 {
   char buffer[BUFFER_SIZE];
   int rc, received;
 
-  rc = _twopence_read_chunk            // Receive a chunk of data
-    (link_fd, buffer);
+  rc = __twopence_pipe_read_frame(handle, link_fd, buffer, sizeof(buffer));
   if (rc != 0)
     return TWOPENCE_RECEIVE_FILE_ERROR;
 
@@ -381,8 +465,7 @@ int _twopence_send_file
 
     buffer[0] = 'd';                   // Send them to the remote host, together with 4 bytes of header
     store_length(received + 4, buffer);
-    if (!_twopence_send_big_buffer
-      (link_fd, buffer, received + 4))
+    if (!__twopence_pipe_sendbuf(handle, link_fd, buffer, received + 4))
     {
       __twopence_pipe_output(handle, '\n');
       return TWOPENCE_SEND_FILE_ERROR;
@@ -406,8 +489,7 @@ int _twopence_receive_file
 
   while (remaining > 0)
   {
-    rc = _twopence_read_chunk          // Receive a chunk of data
-      (link_fd, buffer);
+    rc = __twopence_pipe_read_frame(handle, link_fd, buffer, sizeof(buffer));
     if (rc != 0)
     {
       __twopence_pipe_output(handle, '\n');
@@ -444,8 +526,8 @@ int _twopence_receive_file
 // Send a Linux command to the remote host
 //
 // Returns 0 if everything went fine, or a negative error code if failed
-int _twopence_command_virtio_serial
-  (struct twopence_pipe_target *handle, const char *username, const char *linux_command, int *major, int *minor)
+int
+__twopence_pipe_command(struct twopence_pipe_target *handle, const char *username, const char *linux_command, int *major, int *minor)
 {
   char command[COMMAND_BUFFER_SIZE];
   int n;
@@ -476,7 +558,7 @@ int _twopence_command_virtio_serial
     return TWOPENCE_OPEN_SESSION_ERROR;
 
   // Open communication link
-  link_fd = _twopence_open_link(handle);
+  link_fd = __twopence_pipe_open_link(handle);
   if (link_fd < 0)
   {
     twopence_tune_stdin(true);
@@ -484,8 +566,7 @@ int _twopence_command_virtio_serial
   }
 
   // Send command (including terminating NUL)
-  sent = _twopence_send_buffer
-           (link_fd, command, n + 1);
+  sent = __twopence_pipe_sendbuf(handle, link_fd, command, n + 1);
   if (sent != n + 1)
   {
     twopence_tune_stdin(true);
@@ -536,13 +617,12 @@ int _twopence_inject_virtio_serial
   store_length(n + 1, command);
 
   // Open communication link
-  link_fd = _twopence_open_link(handle);
+  link_fd = __twopence_pipe_open_link(handle);
   if (link_fd < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
   // Send command (including terminating NUL)
-  sent = _twopence_send_buffer
-           (link_fd, command, n + 1);
+  sent = __twopence_pipe_sendbuf(handle, link_fd, command, n + 1);
   if (sent != n + 1)
   {
     close(link_fd);
@@ -551,8 +631,7 @@ int _twopence_inject_virtio_serial
 
   // Read first return code before we start transferring the file
   // This enables to detect a remote problem even before we start the transfer
-  rc = _twopence_read_major
-         (link_fd, remote_rc);
+  rc = _twopence_read_major(handle, link_fd, remote_rc);
   if (*remote_rc != 0)
   {
     close(link_fd);
@@ -568,8 +647,7 @@ int _twopence_inject_virtio_serial
   }
 
   // Read second return code from remote
-  rc = _twopence_read_minor
-         (link_fd, remote_rc);
+  rc = _twopence_read_minor(handle, link_fd, remote_rc);
   if (rc < 0)
   {
     close(link_fd);
@@ -608,13 +686,12 @@ int _twopence_extract_virtio_serial
   store_length(n + 1, command);
 
   // Open link for transmitting the command
-  link_fd = _twopence_open_link(handle);
+  link_fd = __twopence_pipe_open_link(handle);
   if (link_fd < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
   // Send command (including terminating NUL)
-  sent = _twopence_send_buffer
-           (link_fd, command, n + 1);
+  sent = __twopence_pipe_sendbuf(handle, link_fd, command, n + 1);
   if (sent != n + 1)
   {
     close(link_fd);
@@ -622,7 +699,7 @@ int _twopence_extract_virtio_serial
   }
 
   // Read the size of the file to receive
-  rc = _twopence_read_size(link_fd, &size, remote_rc);
+  rc = _twopence_read_size(handle, link_fd, &size, remote_rc);
   if (rc < 0)
   {
     close(link_fd);
@@ -660,13 +737,12 @@ int _twopence_exit_virtio_serial
   store_length(n + 1, command);
 
   // Open link for sending exit command
-  link_fd = _twopence_open_link(handle);
+  link_fd = __twopence_pipe_open_link(handle);
   if (link_fd < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
   // Send command (including terminating NUL)
-  sent = _twopence_send_buffer
-           (link_fd, command, n + 1);
+  sent = __twopence_pipe_sendbuf(handle, link_fd, command, n + 1);
   if (sent != n + 1)
   {
     close(link_fd);
@@ -696,13 +772,12 @@ int _twopence_interrupt_virtio_serial
   store_length(n + 1, command);
 
   // Open link for sending interrupt command
-  link_fd = _twopence_open_link(handle);
+  link_fd = __twopence_pipe_open_link(handle);
   if (link_fd < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
   // Send command (including terminating NUL)
-  sent = _twopence_send_buffer
-           (link_fd, command, n + 1);
+  sent = __twopence_pipe_sendbuf(handle, link_fd, command, n + 1);
   if (sent != n + 1)
   {
     close(link_fd);
@@ -728,7 +803,7 @@ twopence_pipe_test_and_print_results(struct twopence_target *opaque_handle,
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
   twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL, 0);
-  return _twopence_command_virtio_serial
+  return __twopence_pipe_command
            (handle, username, command, major, minor);
 }
 
@@ -745,7 +820,7 @@ twopence_pipe_test_and_drop_results(struct twopence_target *opaque_handle,
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
   twopence_sink_init_none(&handle->base.current.sink);
-  return _twopence_command_virtio_serial
+  return __twopence_pipe_command
            (handle, username, command, major, minor);
 }
 
@@ -764,7 +839,7 @@ twopence_pipe_test_and_store_results_together(struct twopence_target *opaque_han
   int rc;
 
   twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_BUFFER, buffer_out, NULL, size);
-  rc = _twopence_command_virtio_serial
+  rc = __twopence_pipe_command
          (handle, username, command, major, minor);
 
   // Store final NUL
@@ -790,7 +865,7 @@ twopence_pipe_test_and_store_results_separately(struct twopence_target *opaque_h
   int rc;
 
   twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_BUFFER_SEPARATELY, buffer_out, buffer_err, size);
-  rc = _twopence_command_virtio_serial
+  rc = __twopence_pipe_command
          (handle, username, command, major, minor);
 
   // Store final NULs

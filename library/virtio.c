@@ -41,6 +41,7 @@ struct twopence_virtio_target {
 };
 
 extern const struct twopence_plugin twopence_virtio_ops;
+extern const struct twopence_pipe_ops twopence_virtio_link_ops;
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
 
@@ -49,7 +50,7 @@ extern const struct twopence_plugin twopence_virtio_ops;
 // Returns 0 if everything went fine, or -1 in case of error
 int __twopence_virtio_init(struct twopence_virtio_target *handle, const char *sockname)
 {
-  twopence_pipe_target_init(&handle->pipe, TWOPENCE_PLUGIN_VIRTIO, &twopence_virtio_ops);
+  twopence_pipe_target_init(&handle->pipe, TWOPENCE_PLUGIN_VIRTIO, &twopence_virtio_ops, &twopence_virtio_link_ops);
 
   // Initialize the socket address
   handle->address.sun_family = AF_LOCAL;
@@ -63,8 +64,10 @@ int __twopence_virtio_init(struct twopence_virtio_target *handle, const char *so
 // Open the UNIX domain socket
 //
 // Returns the file descriptor if successful, or -1 if failed
-int _twopence_open_link(const struct twopence_virtio_target *handle)
+static int
+__twopence_virtio_open(struct twopence_pipe_target *pipe_handle)
 {
+  struct twopence_virtio_target *handle = (struct twopence_virtio_target *) pipe_handle;
   int socket_fd, flags;
 
   // Create the file descriptor
@@ -97,144 +100,26 @@ int _twopence_open_link(const struct twopence_virtio_target *handle)
 // Receive a maximum amount of bytes from the socket into a buffer
 //
 // Returns the number of bytes received, -1 otherwise
-int _twopence_receive_buffer
-  (int socket_fd, char *buffer, int maximum, int *rc)
+static int
+__twopence_virtio_recv(struct twopence_pipe_target *pipe_handle, int socket_fd, char *buffer, size_t size)
 {
-  struct pollfd fds[1];
-  int n, size;
-
-  *rc = 0;
-
-  fds[0].fd = socket_fd;               // Wait either for input on the socket or for a timeout
-  fds[0].events = POLLIN;
-  n = poll(fds, 1, TIMEOUT);
-  if (n < 0)
-  {
-    *rc = errno;
-    return -1;
-  }
-  if (n == 0)
-  {
-    *rc = ETIME;
-    return -1;
-  }
-
-  if (fds[0].revents & POLLIN)         // Read the data
-  {
-    size = recv
-      (socket_fd, buffer, maximum, 0);
-    if (size < 0 && errno != EAGAIN)
-    {
-      *rc = errno;
-      return -1;
-    }
-    return size;
-  }
-
-  return 0;
-}
-
-// Receive a maximum amount of bytes from the socket or from stdin into a buffer
-//
-// Returns the number of bytes received, -1 otherwise
-int _twopence_receive_buffer_2
-  (int socket_fd, char *buffer, int maximum, int *rc, bool *end_of_stdin)
-{
-  struct pollfd fds[2];
-  int n, size;
-
-  *rc = 0;
-
-  fds[0].fd = 0;                       // Wait either for input on the keyboard, for input from the socket, or for a timeout
-  fds[0].events = POLLIN;
-  fds[1].fd = socket_fd;
-  fds[1].events = POLLIN;
-  if (*end_of_stdin)
-    n = poll(fds + 1, 1, LONG_TIMEOUT);
-  else
-    n = poll(fds, 2, LONG_TIMEOUT);
-  if (n < 0)
-  {
-    *rc = errno;
-    return -1;
-  }
-  if (n == 0)
-  {
-    *rc = ETIME;
-    return -1;
-  }
-
-  if (!*end_of_stdin)                  // If not end of input on stdin
-  {
-    if (fds[0].revents & POLLIN)       // Receive a chunk of data on real standard input
-    {
-      size = read
-        (0, buffer + 4, BUFFER_SIZE - 4, 0);
-      if (size < 0)
-      {
-        *rc = errno;
-        return -1;
-      }
-      if (size > 0)
-      {
-        buffer[0] = '0';
-        store_length(size + 4, buffer);
-        return size + 4;
-      }                                // Catch Ctrl-D at the beginning of line
-      *end_of_stdin = true;            // We reached end of input
-      buffer[0] = 'E';
-      store_length(4, buffer);
-      return 4;
-    }
-    else if (!isatty(0))               // Catch end of pipe as well
-    {
-      *end_of_stdin = true;            // We also reached end of input
-      buffer[0] = 'E';
-      store_length(4, buffer);
-      return 4;
-    }
-  }
-
-  if (fds[1].revents & POLLIN)         // Receive a chunk of data on the socket
-  {
-    size = recv
-      (socket_fd, buffer, maximum, 0);
-    if (size < 0 && errno != EAGAIN)
-    {
-      *rc = errno;
-      return -1;
-    }
-    if (size > 0) return size;
-  }
-
-  return 0;
+  return recv(socket_fd, buffer, size, MSG_DONTWAIT);
 }
 
 // Send a number of bytes in a buffer to the socket
 //
 // Returns the number of bytes sent, or -1 in case of error
-int _twopence_send_buffer
-  (int socket_fd, char *buffer, int size)
+static int
+__twopence_virtio_send(struct twopence_pipe_target *pipe_handle, int socket_fd, const char *buffer, size_t size)
 {
-  struct pollfd fds[1];
-  int n, sent;
-
-  fds[0].fd = socket_fd;               // Wait either for output possible on the socket or for a timeout
-  fds[0].events = POLLOUT;
-  n = poll(fds, 1, TIMEOUT);
-  if (n <= 0)
-    return -1;
-
-  sent = 0;                            // Send the data
-  if (fds[0].revents & POLLOUT)
-  {
-    sent = send
-      (socket_fd, buffer, size, 0);
-    if (sent < 0)
-      return -1;
-  }
-  return sent;
+  return send(socket_fd, buffer, size, 0);
 }
+
+const struct twopence_pipe_ops twopence_virtio_link_ops = {
+  .open = __twopence_virtio_open,
+  .recv = __twopence_virtio_recv,
+  .send = __twopence_virtio_send,
+};
 
 ///////////////////////////// Public interface //////////////////////////////////
 
