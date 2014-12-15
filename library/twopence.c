@@ -22,6 +22,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <malloc.h>
 #include <ctype.h>
 #include <dlfcn.h>
+#include <fcntl.h>
 
 #include "twopence.h"
 
@@ -233,4 +234,23 @@ twopence_strerror(int rc)
       return "Incompatible plugin";
   }
   return "Unknow error";
+}
+
+/*
+ * Switch stdin blocking mode
+ */
+int
+twopence_tune_stdin(bool blocking)
+{
+  int flags;
+
+  flags = fcntl(0, F_GETFL, 0);        // Get old flags
+  if (flags == -1)
+    return -1;
+
+  flags &= ~O_NONBLOCK;
+  if (blocking)
+    flags |= O_NONBLOCK;
+
+  return fcntl(0, F_SETFL, flags);
 }

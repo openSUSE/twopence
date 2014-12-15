@@ -53,22 +53,6 @@ extern const struct twopence_plugin twopence_ssh_ops;
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
 
-// Tune stdin to be blocking or nonblocking
-//
-// Returns 0 if everything went fine, or -1 if failed.
-int _twopence_tune_stdin(bool blocking)
-{
-  int flags;
-
-  flags = fcntl(0, F_GETFL, 0);        // Get old flags
-  if (flags == -1) return -1;
-  flags = blocking?                    // Set new flags
-          flags & ~O_NONBLOCK:
-          flags | O_NONBLOCK;
-  if (fcntl(0, F_SETFL, flags) == -1)
-    return -1;
-}
-
 // Output a "stdout" character through one of the available methods
 //
 // Returns 0 if everything went fine, a negative error code otherwise
@@ -410,7 +394,7 @@ int _twopence_command_ssh
   int rc;
 
   // Tune stdin so it is nonblocking
-  if (_twopence_tune_stdin(false) < 0)
+  if (twopence_tune_stdin(false) < 0)
   {
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
@@ -419,13 +403,13 @@ int _twopence_command_ssh
   channel = ssh_channel_new(session);
   if (channel == NULL)
   {
-    _twopence_tune_stdin(true);
+    twopence_tune_stdin(true);
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
   if (ssh_channel_open_session(channel) != SSH_OK)
   {
     ssh_channel_free(channel);
-    _twopence_tune_stdin(true);
+    twopence_tune_stdin(true);
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
   handle->channel = channel;
@@ -436,7 +420,7 @@ int _twopence_command_ssh
     handle->channel = NULL;
     ssh_channel_close(channel);
     ssh_channel_free(channel);
-    _twopence_tune_stdin(true);
+    twopence_tune_stdin(true);
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
   handle->channel = NULL;
@@ -450,7 +434,7 @@ int _twopence_command_ssh
   ssh_channel_close(channel);
   *minor = ssh_channel_get_exit_status(channel);
   ssh_channel_free(channel);
-  _twopence_tune_stdin(true);
+  twopence_tune_stdin(true);
   return rc;
 }
 

@@ -46,22 +46,6 @@ twopence_pipe_target_init(struct twopence_pipe_target *target, int plugin_type, 
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
 
-// Tune stdin to be blocking or nonblocking
-//
-// Returns 0 if everything went fine, or -1 if failed
-int _twopence_tune_stdin(bool blocking)
-{
-  int flags;
-
-  flags = fcntl(0, F_GETFL, 0);        // Get old flags
-  if (flags == -1) return -1;
-  flags = blocking?                    // Set new flags
-          flags & ~O_NONBLOCK:
-          flags | O_NONBLOCK;
-  if (fcntl(0, F_SETFL, flags) == -1)
-    return -1;
-}
-
 // Store length of data chunk to send
 void store_length(int length, char *buffer)
 {
@@ -528,14 +512,14 @@ int _twopence_command_virtio_serial
   store_length(n + 1, command);
 
   // Tune stdin so it is nonblocking
-  if (_twopence_tune_stdin(false) < 0)
+  if (twopence_tune_stdin(false) < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
   // Open communication link
   link_fd = _twopence_open_link(handle);
   if (link_fd < 0)
   {
-    _twopence_tune_stdin(true);
+    twopence_tune_stdin(true);
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
 
@@ -544,7 +528,7 @@ int _twopence_command_virtio_serial
            (link_fd, command, n + 1);
   if (sent != n + 1)
   {
-    _twopence_tune_stdin(true);
+    twopence_tune_stdin(true);
     close(link_fd);
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
@@ -553,12 +537,12 @@ int _twopence_command_virtio_serial
   rc = _twopence_read_results(handle, link_fd, major, minor);
   if (rc < 0)
   {
-    _twopence_tune_stdin(true);
+    twopence_tune_stdin(true);
     close(link_fd);
     return TWOPENCE_RECEIVE_RESULTS_ERROR;
   }
 
-  _twopence_tune_stdin(true);
+  twopence_tune_stdin(true);
   close(link_fd);
   return 0;
 }
