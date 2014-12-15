@@ -1,7 +1,7 @@
 .\" Process this file with
 .\" groff -man -Tascii command.1
 .\"
-.TH TWOPENCE_COMMAND "1" "November 2014" "Twopence 0.2.0" "User Commands"
+.TH TWOPENCE_COMMAND "1" "December 2014" "Twopence 0.2.2" "User Commands"
 
 .SH NAME
 twopence_command \- execute a test command
@@ -55,8 +55,11 @@ stderr going to the second file.
 Options \fB\-o\fR, \fB\-1\fR/\fB\-2\fR, and \fBq\fR are mutually exclusive.
 .IP \fB\-q\fR
 .IP \fB\-\-quiet\fR
-Do not output anything, apart from the error codes.
+Do not output stdout nor stderr.
 Options \fB\-o\fR, \fB\-1\fR/\fB\-2\fR, and \fBq\fR are mutually exclusive.
+.IP \fB\-b\fR
+.IP \fB\-\-batch\fR
+Do not display status messages at the end.
 .IP \fB\-h\fR
 .IP \fB\-\-help\fR
 Display a short error message.
@@ -100,7 +103,7 @@ Example syntax for the ssh plugin:
 .IP \fBtwopence_command\ \-\-user=johndoe\ ssh:host.example.com\ "ls\ \-l"\fR
 it is functionally equivalent to
 \fBssh\ johndoe@host.example.com\ ls\ \-l\fR
-so it is not very interesting when used from the shell...
+without server footprint verification.
 .PP
 Example syntax for the serial plugin:
 .IP \fBtwopence_command\ serial:/dev/ttyS0\ "ls\ \-l"\fR
@@ -108,13 +111,7 @@ Example syntax for the serial plugin:
 .SH BUGS
 Do not expect any security from Twopence. Use with care. You've been warned.
 .PP
-For the moment, only one session with the remote host can be used at
-a time.
-.PP
-For the moment, the serial port speed and parity have to be set up
-by some other utility, like
-.BR minicom (1)
-. 
+For the moment, only one session with the remote host can be used at a time.
 
 .SH AUTHOR
 The Twopence developpers at SUSE Linux.

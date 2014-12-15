@@ -54,7 +54,7 @@ Target: serial:<character device>\n\
 //
 //   it is functionally equivalent to
 //   "scp johndoe@host.example.com:remote_file.txt local_file.txt",
-//   so it is not very interesting when used from the shell...
+//   without server footprint verification.
 //
 // Example syntax for serial plugin:
 //   ./twopence_extract serial:/dev/ttyS0 remote_file.txt local_file.txt

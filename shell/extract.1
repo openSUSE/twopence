@@ -1,7 +1,7 @@
 .\" Process this file with
 .\" groff -man -Tascii extract.1
 .\"
-.TH TWOPENCE_EXTRACT "1" "November 2014" "Twopence 0.2.0" "User Commands"
+.TH TWOPENCE_EXTRACT "1" "December 2014" "Twopence 0.2.2" "User Commands"
 
 .SH NAME
 twopence_extract \- extract a test result
@@ -86,7 +86,7 @@ Example syntax for the ssh plugin:
 .IP \fBtwopence_extract\ \-\-user=johndoe\ ssh:host.example.com\ remote_file.txt\ local_file.txt\fR
 it is functionally equivalent to
 \fBscp\ johndoe@host.example.com:remote_file.txt\ local_file.txt\fR
-so it is not very interesting when used from the shell...
+without server footprint verification.
 .PP
 Example syntax for the serial plugin:
 .IP \fBtwopence_command\ serial:/dev/ttyS0\ remote_file.txt\ local_file.txt\fR
@@ -96,11 +96,6 @@ Do not expect any security from Twopence. Use with care. You've been warned.
 .PP
 For the moment, only one session with the remote host can be used at
 a time.
-.PP
-For the moment, the serial port speed and parity have to be set up
-by some other utility, like
-.BR minicom (1)
-. 
 .PP
 For the moment, it is not possible to use jokers like * or ? to transfer
 several files at once. It is also not possible to transfer recursively a

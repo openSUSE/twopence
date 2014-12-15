@@ -463,6 +463,7 @@ __twopence_ssh_extract_ssh(struct twopence_ssh_target *handle, int file_fd, cons
     return TWOPENCE_RECEIVE_FILE_ERROR;
   }
   size = ssh_scp_request_get_size(scp);
+  if (!size) return 0;
 
   // Accept the transfer request
   if (ssh_scp_accept_request(scp) != SSH_OK)

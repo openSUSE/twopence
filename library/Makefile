@@ -32,9 +32,9 @@ libtwopence.so: twopence.h $(LIB_OBJS)
 
 install: virtio.so ssh.so serial.so twopence.h
 	mkdir -p $(DESTDIR)$(LIBDIR)
-	cp virtio.so $(DESTDIR)$(LIBDIR)/libtwopence_virtio.so.0.2.0
-	cp ssh.so    $(DESTDIR)$(LIBDIR)/libtwopence_ssh.so.0.2.0
-	cp serial.so $(DESTDIR)$(LIBDIR)/libtwopence_serial.so.0.2.0
+	cp virtio.so $(DESTDIR)$(LIBDIR)/libtwopence_virtio.so.0.2.2
+	cp ssh.so    $(DESTDIR)$(LIBDIR)/libtwopence_ssh.so.0.2.2
+	cp serial.so $(DESTDIR)$(LIBDIR)/libtwopence_serial.so.0.2.2
 	mkdir -p $(DESTDIR)$(INCDIR)
 	cp twopence.h $(DESTDIR)$(INCDIR)
 

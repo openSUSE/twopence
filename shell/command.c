@@ -30,13 +30,14 @@ char buffer[65536];
 twopence_interrupt_t interrupt_command;
 void *twopence_handle;
 
-char *short_options = "u:o:1:2:qh";
+char *short_options = "u:o:1:2:qbh";
 struct option long_options[] = {
   { "user", 1, NULL, 'u' },
   { "output", 1, NULL, 'o' },
   { "stdout", 1, NULL, '1' },
   { "stderr", 1, NULL, '2' },
   { "quiet", 0, NULL, 'q' },
+  { "batch", 0, NULL, 'b' },
   { "help", 0, NULL, 'h' },
   { NULL, 0, NULL, 0 }
 };
@@ -104,7 +105,8 @@ void usage(const char *program_name)
 Options: -u|--user <user>: user running the command (default: root)\n\
          -o|--output <file>: store both the output and the errors in the same file\n\
          -1|--stdout <file1> -2|--stderr <file2>: store them separately\n\
-         -q|--quiet: do not display anything\n\
+         -q|--quiet: do not display command output nor errors\n\
+         -b|--batch: do not display status messages\n\
          -h|--help: print this help message\n\
 Target: serial:<character device>\n\
         ssh:<address and port>\n\
@@ -117,18 +119,17 @@ int main(int argc, char *argv[])
 {
   int option;
   const char *opt_user, *opt_output, *opt_stdout, *opt_stderr;
-  bool opt_quiet; int opt_type;
+  bool opt_quiet, opt_batch;
+  int opt_type;
   const char *opt_target, *opt_command;
   struct twopence_target *target;
   struct sigaction old_action;
-  int major, minor, rc;
+  int major, minor, rc, rc2;
 
   // Parse options
   opt_user = NULL;
-  opt_output = NULL;
-  opt_stdout = NULL;
-  opt_stderr = NULL;
-  opt_quiet = false;
+  opt_output = NULL; opt_stdout = NULL; opt_stderr = NULL;
+  opt_quiet = false; opt_batch = false;
   while ((option = getopt_long(argc, argv, short_options, long_options, NULL))
          != -1) switch(option)         // parse individual options
   {
@@ -141,6 +142,8 @@ int main(int argc, char *argv[])
     case '2': opt_stderr = optarg;
               break;
     case 'q': opt_quiet = true;
+              break;
+    case 'b': opt_batch = true;
               break;
     case 'h': usage(argv[0]);
               exit(0);
@@ -206,9 +209,13 @@ int main(int argc, char *argv[])
       rc = twopence_test_and_store_results_separately(target, opt_user, opt_command,
                             buffer, buffer + 32768, 32768, &major, &minor);
   }
+
   if (rc == 0) {
-    printf("Return code from the test server: %d\n", major);
-    printf("Return code of tested command: %d\n", minor);
+    if (!opt_batch) {
+      printf("Return code from the test server: %d\n", major);
+      printf("Return code of tested command: %d\n", minor);
+    }
+    if (major || minor) rc = -7;
   } else {
     twopence_perror("Unable to execute command", rc);
   }
@@ -218,19 +225,21 @@ int main(int argc, char *argv[])
   {
     fprintf(stderr, "Error removing signal handler\n");
     twopence_target_free(target);
-    exit(-5);
+    if (rc == 0) rc = -5;
   }
 
   // Write captured stdout and stderr to 0, 1, or 2 files
   switch (opt_type)
   {
     case 3:
-      rc = write_output(opt_output, buffer);
+      rc2 = write_output(opt_output, buffer);
+      if (rc == 0) rc = rc2;
       break;
     case 4:
-      rc = write_output(opt_stdout, buffer);
-      if (rc == 0)
-        rc = write_output(opt_stderr, buffer + 32768);
+      rc2 = write_output(opt_stdout, buffer);
+      if (rc == 0) rc = rc2;
+      rc2 = write_output(opt_stderr, buffer + 32768);
+      if (rc == 0) rc = rc2;
   }
 
   // End library
