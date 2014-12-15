@@ -68,7 +68,7 @@ void deallocate_target(void *handle)
 {
   struct twopence_target *target = (struct twopence_target *) handle;
 
-  target->ops->end(target);
+  twopence_target_free(target);
 }
 
 // ******************* Methods of class Twopence::Target *********************
@@ -89,7 +89,7 @@ VALUE method_test_and_print_results(VALUE self, VALUE ruby_user, VALUE ruby_comm
   Check_Type(ruby_command, T_STRING);
   Data_Get_Struct(self, struct twopence_target, target);
 
-  rc = target->ops->test_and_print_results
+  rc = twopence_test_and_print_results
     (target, StringValueCStr(ruby_user), StringValueCStr(ruby_command),
      &major, &minor);
 
@@ -113,7 +113,7 @@ VALUE method_test_and_drop_results(VALUE self, VALUE ruby_user, VALUE ruby_comma
   Check_Type(ruby_command, T_STRING);
   Data_Get_Struct(self, struct twopence_target, target);
 
-  rc = target->ops->test_and_drop_results
+  rc = twopence_test_and_drop_results
     (target, StringValueCStr(ruby_user), StringValueCStr(ruby_command),
      &major, &minor);
 
@@ -138,7 +138,7 @@ VALUE method_test_and_store_results_together(VALUE self, VALUE ruby_user, VALUE 
   Check_Type(ruby_command, T_STRING);
   Data_Get_Struct(self, struct twopence_target, target);
 
-  rc = target->ops->test_and_store_results_together
+  rc = twopence_test_and_store_results_together
     (target, StringValueCStr(ruby_user), StringValueCStr(ruby_command),
      output_buffer, 65536,
      &major, &minor);
@@ -168,7 +168,7 @@ VALUE method_test_and_store_results_separately(VALUE self, VALUE ruby_user, VALU
   Check_Type(ruby_command, T_STRING);
   Data_Get_Struct(self, struct twopence_target, target);
 
-  rc = target->ops->test_and_store_results_separately
+  rc = twopence_test_and_store_results_separately
     (target, StringValueCStr(ruby_user), StringValueCStr(ruby_command),
      buffer_out, buffer_err, 32768,
      &major, &minor);
@@ -202,7 +202,7 @@ VALUE method_inject_file(VALUE self, VALUE ruby_user, VALUE ruby_local_file, VAL
   }
   Data_Get_Struct(self, struct twopence_target, target);
 
-  rc = target->ops->inject_file
+  rc = twopence_inject_file
     (target, StringValueCStr(ruby_user), StringValueCStr(ruby_local_file), StringValueCStr(ruby_remote_file),
      &remote_rc, dots);
 
@@ -233,7 +233,7 @@ VALUE method_extract_file(VALUE self, VALUE ruby_user, VALUE ruby_remote_file, V
   }
   Data_Get_Struct(self, struct twopence_target, target);
 
-  rc = target->ops->extract_file
+  rc = twopence_extract_file
     (target, StringValueCStr(ruby_user), StringValueCStr(ruby_remote_file), StringValueCStr(ruby_local_file),
      &remote_rc, dots);
 
@@ -253,7 +253,7 @@ VALUE method_interrupt_command(VALUE self)
 
   Data_Get_Struct(self, struct twopence_target, target);
 
-  rc = target->ops->interrupt_command(target);
+  rc = twopence_interrupt_command(target);
 
   return INT2NUM(rc);
 }
@@ -270,7 +270,7 @@ VALUE method_exit(VALUE self)
 
   Data_Get_Struct(self, struct twopence_target, target);
 
-  rc = target->ops->exit_remote(target);
+  rc = twopence_exit_remote(target);
 
   return INT2NUM(rc);
 }

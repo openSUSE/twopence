@@ -175,8 +175,7 @@ int main(int argc, char *argv[])
 
   rc = twopence_target_new(argv[1], &target);
   if (rc < 0) {
-    fprintf(stderr, "Error while initializing library\n");
-    print_error(rc);
+    twopence_perror("Error while initializing library", rc);
     exit(1);
   }
 
@@ -192,27 +191,27 @@ int main(int argc, char *argv[])
   switch (opt_type)
   {
     case 1:
-      rc = target->ops->test_and_print_results(target, opt_user, opt_command,
+      rc = twopence_test_and_print_results(target, opt_user, opt_command,
                             &major, &minor);
       break;
     case 2:
-      rc = target->ops->test_and_drop_results(target, opt_user, opt_command,
+      rc = twopence_test_and_drop_results(target, opt_user, opt_command,
                             &major, &minor);
       break;
     case 3:
-      rc = target->ops->test_and_store_results_together(target, opt_user, opt_command,
+      rc = twopence_test_and_store_results_together(target, opt_user, opt_command,
                             buffer, 65536, &major, &minor);
       break;
     case 4:
-      rc = target->ops->test_and_store_results_separately(target, opt_user, opt_command,
+      rc = twopence_test_and_store_results_separately(target, opt_user, opt_command,
                             buffer, buffer + 32768, 32768, &major, &minor);
   }
-  if (rc == 0)
-  {
+  if (rc == 0) {
     printf("Return code from the test server: %d\n", major);
     printf("Return code of tested command: %d\n", minor);
+  } else {
+    twopence_perror("Unable to execute command", rc);
   }
-  else rc = print_error(rc);
 
   // Restore original signal handler
   if (restore_handler(SIGINT, &old_action))

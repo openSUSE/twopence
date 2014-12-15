@@ -60,17 +60,17 @@ int main(int argc, const char *argv[])
 
   rc = twopence_target_new(argv[1], &target);
   if (rc < 0) {
-    fprintf(stderr, "Error while initializing library\n");
-    print_error(rc);
+    twopence_perror("Error while initializing library", rc);
     exit(1);
   }
 
   // Let the remote test server exit
-  rc = target->ops->exit_remote(target);
-  if (rc == 0)
+  rc = twopence_exit_remote(target);
+  if (rc == 0) {
     printf("Asked the test server to exit.\n");
-  else
-    rc = print_error(rc);
+  } else {
+    twopence_perror("Unable to stop server", rc);
+  }
 
   // End library
   twopence_target_free(target);
