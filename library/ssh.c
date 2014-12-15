@@ -77,7 +77,8 @@ __twopence_ssh_process_chunk(struct twopence_ssh_target *handle, const char *buf
 }
 
 // Avoid active wait by sleeping
-void _twopence_sleep()
+static void
+__twopence_ssh_sleep()
 {
   struct timespec t;
 
@@ -188,11 +189,15 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, ssh_channel chan
         return -3;
     }
 
+    /* The following looks wrong to me. There has to be some select based
+     * mechanism to handle this sort of sleep/poll cycle. --okir 
+     */
+
     // If we had nothing to read
     if (nothing_0 && nothing_1 && nothing_2)
     {
       // Then avoid active wait
-      _twopence_sleep();
+      __twopence_ssh_sleep();
 
       // And check for timeout
       if (time(NULL) > too_late)
@@ -206,8 +211,8 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, ssh_channel chan
 // Send a file in chunks through SCP
 //
 // Returns 0 if everything went fine, or a negative error code if failed
-int _twopence_send_file
-  (struct twopence_ssh_target *handle, int file_fd, ssh_scp scp, int remaining, int *remote_rc)
+static int
+__twopence_ssh_send_file(struct twopence_ssh_target *handle, int file_fd, ssh_scp scp, int remaining, int *remote_rc)
 {
   char buffer[BUFFER_SIZE];
   int size, received;
@@ -242,8 +247,8 @@ int _twopence_send_file
 // Receive a file in chunks through SCP
 //
 // Returns 0 if everything went fine, or a negative error code if failed
-int _twopence_receive_file
-  (struct twopence_ssh_target *handle, int file_fd, ssh_scp scp, int remaining, int *remote_rc)
+static int
+__twopence_ssh_receive_file(struct twopence_ssh_target *handle, int file_fd, ssh_scp scp, int remaining, int *remote_rc)
 {
   char buffer[BUFFER_SIZE];
   int size, received, written;
@@ -281,8 +286,8 @@ int _twopence_receive_file
 // Open a SSH session as some user
 //
 // Returns 0 if everything went fine, a negative error code otherwise
-int _twopence_connect_ssh
-  (struct twopence_ssh_target *handle, const char *username)
+static int
+__twopence_ssh_connect_ssh(struct twopence_ssh_target *handle, const char *username)
 {
   ssh_session session;
 
@@ -329,8 +334,8 @@ int _twopence_connect_ssh
 // Submit a command to the remote host
 //
 // Returns 0 if everything went fine, a negative error code otherwise
-int _twopence_command_ssh
-  (struct twopence_ssh_target *handle, const char *command, int *minor)
+static int
+__twopence_ssh_command_ssh(struct twopence_ssh_target *handle, const char *command, int *minor)
 {
   ssh_session session = handle->session;
   ssh_channel channel;
@@ -383,8 +388,8 @@ int _twopence_command_ssh
 // Inject a file into the remote host through SSH
 //
 // Returns 0 if everything went fine
-int _twopence_inject_ssh
-  (struct twopence_ssh_target *handle, int file_fd, const char *remote_filename, int *remote_rc)
+static int
+__twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, int file_fd, const char *remote_filename, int *remote_rc)
 {
   ssh_session session = handle->session;
   char *copy;
@@ -419,8 +424,7 @@ int _twopence_inject_ssh
   free(copy);
 
   // Send the file
-  rc = _twopence_send_file
-        (handle, file_fd, scp, filestats.st_size, remote_rc);
+  rc = __twopence_ssh_send_file(handle, file_fd, scp, filestats.st_size, remote_rc);
 
   // Close the SCP session
   ssh_scp_close(scp);
@@ -431,8 +435,8 @@ int _twopence_inject_ssh
 // Extract a file from the remote host through SSH
 //
 // Returns 0 if everything went fine
-int _twopence_extract_ssh
-      (struct twopence_ssh_target *handle, int file_fd, const char *remote_filename, int *remote_rc)
+static int
+__twopence_ssh_extract_ssh(struct twopence_ssh_target *handle, int file_fd, const char *remote_filename, int *remote_rc)
 {
   ssh_session session = handle->session;
   ssh_scp scp;
@@ -468,7 +472,7 @@ int _twopence_extract_ssh
   }
 
   // Receive the file
-  rc = _twopence_receive_file
+  rc = __twopence_ssh_receive_file
         (handle, file_fd, scp, size, remote_rc);
   if (rc < 0)
   {
@@ -493,8 +497,8 @@ int _twopence_extract_ssh
 }
 
 // Disconnect from the remote host
-void _twopence_disconnect_ssh
-  (struct twopence_ssh_target *handle)
+void
+__twopence_ssh_disconnect_ssh(struct twopence_ssh_target *handle)
 {
   ssh_session session = handle->session;
 
@@ -507,8 +511,8 @@ void _twopence_disconnect_ssh
 // Interrupt current command
 //
 // Returns 0 if everything went fine, or a negative error code if failed
-int _twopence_interrupt_ssh
-  (struct twopence_ssh_target *handle)
+static int
+__twopence_ssh_interrupt_ssh(struct twopence_ssh_target *handle)
 {
   ssh_channel channel = handle->channel;
 
@@ -530,8 +534,8 @@ int _twopence_interrupt_ssh
 //
 // Returns a "handle" that must be passed to subsequent function calls,
 // or NULL in case of a problem
-struct twopence_target *
-twopence_init(const char *hostname, unsigned int port)
+static struct twopence_target *
+__twopence_ssh_init(const char *hostname, unsigned int port)
 {
   struct twopence_ssh_target *handle;
   ssh_session template;
@@ -587,7 +591,7 @@ twopence_init_new(const char *arg)
    * that off. */
   if (strrchr(arg, ':') == NULL) {
     /* Just a hostname */
-    return twopence_init(arg, 22);
+    return __twopence_ssh_init(arg, 22);
   }
 
   copy_spec = strdup(arg);
@@ -616,7 +620,7 @@ twopence_init_new(const char *arg)
     }
   }
 
-  target = twopence_init(hostname, port);
+  target = __twopence_ssh_init(hostname, port);
 
   free(copy_spec);
   return target;
@@ -642,14 +646,14 @@ twopence_ssh_test_and_print_results(struct twopence_target *opaque_handle,
   twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL, 0);
 
   // Connect to the remote host
-  if (_twopence_connect_ssh(handle, username) < 0)
+  if (__twopence_ssh_connect_ssh(handle, username) < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
   // Execute the command
-  rc = _twopence_command_ssh(handle, command, minor);
+  rc = __twopence_ssh_command_ssh(handle, command, minor);
 
   // Disconnect from remote host
-  _twopence_disconnect_ssh(handle);
+  __twopence_ssh_disconnect_ssh(handle);
   return rc;
 }
 
@@ -673,14 +677,14 @@ twopence_ssh_test_and_drop_results(struct twopence_target *opaque_handle,
   twopence_sink_init_none(&handle->base.current.sink);
 
   // Connect to the remote host
-  if (_twopence_connect_ssh(handle, username) < 0)
+  if (__twopence_ssh_connect_ssh(handle, username) < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
   // Execute the command
-  rc = _twopence_command_ssh(handle, command, minor);
+  rc = __twopence_ssh_command_ssh(handle, command, minor);
 
   // Disconnect from remote host
-  _twopence_disconnect_ssh(handle);
+  __twopence_ssh_disconnect_ssh(handle);
   return rc;
 }
 
@@ -705,14 +709,14 @@ twopence_ssh_test_and_store_results_together(struct twopence_target *opaque_hand
   twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_BUFFER, buffer_out, NULL, size);
 
   // Connect to the remote host
-  if (_twopence_connect_ssh(handle, username) < 0)
+  if (__twopence_ssh_connect_ssh(handle, username) < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
   // Execute the command
-  rc = _twopence_command_ssh(handle, command, minor);
+  rc = __twopence_ssh_command_ssh(handle, command, minor);
 
   // Disconnect from remote host
-  _twopence_disconnect_ssh(handle);
+  __twopence_ssh_disconnect_ssh(handle);
 
   // Store final NUL
   if (rc == 0)
@@ -744,14 +748,14 @@ twopence_ssh_test_and_store_results_separately(struct twopence_target *opaque_ha
   twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_BUFFER_SEPARATELY, buffer_out, buffer_err, size);
 
   // Connect to the remote host
-  if (_twopence_connect_ssh(handle, username) < 0)
+  if (__twopence_ssh_connect_ssh(handle, username) < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
   // Execute the command
-  rc = _twopence_command_ssh(handle, command, minor);
+  rc = __twopence_ssh_command_ssh(handle, command, minor);
 
   // Disconnect from remote host
-  _twopence_disconnect_ssh(handle);
+  __twopence_ssh_disconnect_ssh(handle);
 
   // Store final NULs
   if (rc == 0)
@@ -792,20 +796,20 @@ twopence_ssh_inject_file(struct twopence_target *opaque_handle,
            TWOPENCE_LOCAL_FILE_ERROR;
 
   // Connect to the remote host
-  if (_twopence_connect_ssh(handle, username) < 0)
+  if (__twopence_ssh_connect_ssh(handle, username) < 0)
   {
     close(fd);
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
 
   // Inject the file
-  rc = _twopence_inject_ssh
+  rc = __twopence_ssh_inject_ssh
          (handle, fd, remote_filename, remote_rc);
   if (rc == 0 && *remote_rc != 0)
     rc = TWOPENCE_REMOTE_FILE_ERROR;
 
   // Disconnect from remote host
-  _twopence_disconnect_ssh(handle);
+  __twopence_ssh_disconnect_ssh(handle);
 
   // Close the file
   close(fd);
@@ -838,20 +842,20 @@ twopence_ssh_extract_file(struct twopence_target *opaque_handle,
            TWOPENCE_LOCAL_FILE_ERROR;
 
   // Connect to the remote host
-  if (_twopence_connect_ssh(handle, username) < 0)
+  if (__twopence_ssh_connect_ssh(handle, username) < 0)
   {
     close(fd);
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
 
   // Extract the file
-  rc = _twopence_extract_ssh
+  rc = __twopence_ssh_extract_ssh
          (handle, fd, remote_filename, remote_rc);
   if (rc == 0 && *remote_rc != 0)
     rc = TWOPENCE_REMOTE_FILE_ERROR;
 
   // Disconnect from remote host
-  _twopence_disconnect_ssh(handle);
+  __twopence_ssh_disconnect_ssh(handle);
 
   // Close the file
   close(fd);
@@ -867,7 +871,7 @@ twopence_ssh_interrupt_command(struct twopence_target *opaque_handle)
 {
   struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
 
-  return _twopence_interrupt_ssh(handle);
+  return __twopence_ssh_interrupt_ssh(handle);
 }
 
 // Tell the remote test server to exit
