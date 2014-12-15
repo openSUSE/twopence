@@ -26,6 +26,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <fcntl.h>
 #include <poll.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include "twopence.h"
 #include "protocol.h"

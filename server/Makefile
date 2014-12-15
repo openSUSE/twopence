@@ -1,6 +1,12 @@
 .PHONY: all install clean
 
-CFLAGS	= -D_GNU_SOURCE
+ifdef RPM_OPTIMIZE
+CCOPT	= $(RPM_OPTIMIZE)
+else
+CCOPT	= -Wall -O2 -g
+endif
+
+CFLAGS	= -D_GNU_SOURCE $(CCOPT)
 
 all: twopence_test_server
 

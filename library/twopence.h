@@ -338,4 +338,6 @@ extern int		twopence_sink_write(struct twopence_sink *sink, bool is_error, const
 extern int		__twopence_sink_write_stderr(struct twopence_sink *sink, char c);
 extern int		__twopence_sink_write_stdout(struct twopence_sink *sink, char c);
 
+extern int		twopence_tune_stdin(bool blocking);
+
 #endif /* TWOPENCE_H */

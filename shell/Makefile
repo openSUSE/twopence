@@ -1,6 +1,12 @@
 .PHONY: all install clean
 
-CFLAGS	+= -I../library
+ifdef RPM_OPTIMIZE
+CCOPT	= $(RPM_OPTIMIZE)
+else
+CCOPT	= -Wall -O2 -g
+endif
+
+CFLAGS	= -I../library $(CCOPT)
 LINK	+= -L../library -ltwopence -ldl
 
 BINDIR ?= /usr/bin

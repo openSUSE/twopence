@@ -22,12 +22,14 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <libssh/libssh.h>
 
 #include <sys/stat.h>
+#include <time.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <libgen.h>
 
 #include <stdbool.h>
 #include <string.h>
+#include <stdlib.h>
 #include <malloc.h>
 
 #include "twopence.h"

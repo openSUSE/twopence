@@ -26,6 +26,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <string.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include "twopence.h"
 #include "protocol.h"
@@ -53,18 +54,20 @@ twopence_pipe_target_init(struct twopence_pipe_target *target, int plugin_type, 
 ///////////////////////////// Lower layer ///////////////////////////////////////
 
 // Store length of data chunk to send
-void store_length(int length, char *buffer)
+static void
+store_length(unsigned int length, char *buffer)
 {
   buffer[2] = (length & 0xFF00) >> 8;
   buffer[3] = length & 0xFF;
 }
 
 // Compute length of data chunk received
-int compute_length(const unsigned char *buffer)
+static inline unsigned int
+compute_length(const void *data)
 {
-  unsigned int high = buffer[2],
-               low = buffer[3];
-  return (high << 8) | low;
+  const unsigned char *cp = (const unsigned char *) data;
+
+  return (cp[2] << 8) | cp[3];
 }
 
 // Output a "stdout" character through one of the available methods
@@ -201,8 +204,6 @@ __twopence_pipe_sendbuf(struct twopence_pipe_target *handle, int link_fd, const 
 static int
 __twopence_pipe_read_frame(struct twopence_pipe_target *handle, int link_fd, char *buffer, size_t size)
 {
-  int remaining;
-  char *p;
   int rc, length;
 
   /* First try to read the header */
@@ -377,7 +378,7 @@ static int
 _twopence_read_major(struct twopence_pipe_target *handle, int link_fd, int *major)
 {
   char buffer[BUFFER_SIZE];
-  int rc, received;
+  int rc;
 
   // Receive a chunk of data
   rc = __twopence_pipe_read_frame(handle, link_fd, buffer, sizeof(buffer));
@@ -398,7 +399,7 @@ static int
 _twopence_read_minor(struct twopence_pipe_target *handle, int link_fd, int *minor)
 {
   char buffer[BUFFER_SIZE];
-  int rc, received;
+  int rc;
 
   // Receive a chunk of data
   rc = __twopence_pipe_read_frame(handle, link_fd, buffer, sizeof(buffer));
@@ -420,7 +421,7 @@ static int
 _twopence_read_size(struct twopence_pipe_target *handle, int link_fd, int *size, int *remote_rc)
 {
   char buffer[BUFFER_SIZE];
-  int rc, received;
+  int rc;
 
   rc = __twopence_pipe_read_frame(handle, link_fd, buffer, sizeof(buffer));
   if (rc != 0)
@@ -496,8 +497,7 @@ int _twopence_receive_file
       return TWOPENCE_RECEIVE_FILE_ERROR;
     }
 
-    received =                         // Analyze the header
-      compute_length(buffer) - 4;
+    received = compute_length(buffer) - 4;
     if (buffer[0] != 'd' || received < 0 || received > remaining)
     {
       __twopence_pipe_output(handle, '\n');
@@ -599,7 +599,6 @@ int _twopence_inject_virtio_serial
   int link_fd;
   int sent, rc;
   struct stat filestats;
-  char byte1, byte2;
 
   // By default, no remote error
   *remote_rc = 0;
@@ -669,7 +668,6 @@ int _twopence_extract_virtio_serial
   int link_fd;
   int sent, rc;
   int size;
-  char byte1, byte2;
 
   // By default, no remote error
   *remote_rc = 0;

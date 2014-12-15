@@ -23,6 +23,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <ctype.h>
 #include <dlfcn.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include "twopence.h"
 
@@ -58,7 +59,7 @@ twopence_plugin_name_is_valid(const char *name)
 static char *
 twopence_target_split(char **target_spec_p)
 {
-  char *plugin, *s;
+  char *plugin;
   unsigned int len;
 
   if (target_spec_p == NULL || (plugin = *target_spec_p) == NULL)
@@ -453,7 +454,7 @@ __twopence_sink_write_stdout(struct twopence_sink *sink, char c)
 
   switch (sink->mode) {
   case TWOPENCE_OUTPUT_NONE:
-    return;
+    return 0;
 
   case TWOPENCE_OUTPUT_SCREEN:
     written = write(1, &c, 1);
@@ -480,7 +481,7 @@ __twopence_sink_write_stderr(struct twopence_sink *sink, char c)
 
   switch (sink->mode) {
   case TWOPENCE_OUTPUT_NONE:
-    return;
+    return 0;
 
   case TWOPENCE_OUTPUT_SCREEN:
     written = write(2, &c, 1);

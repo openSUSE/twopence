@@ -1,6 +1,12 @@
 .PHONY: all install clean
 
-CFLAGS	= -D_GNU_SOURCE -fPIC -g
+ifdef RPM_OPTIMIZE
+CCOPT	= $(RPM_OPTIMIZE)
+else
+CCOPT	= -Wall -O2 -g
+endif
+
+CFLAGS	= -D_GNU_SOURCE -fPIC $(CCOPT)
 
 LIBDIR ?= /usr/lib64
 INCDIR ?= /usr/include
