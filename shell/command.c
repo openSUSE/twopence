@@ -27,8 +27,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "twopence.h"
 
 char buffer[65536];
-twopence_interrupt_t interrupt_command;
-void *twopence_handle;
+struct twopence_target *twopence_handle;
 
 char *short_options = "u:o:1:2:qbh";
 struct option long_options[] = {
@@ -53,8 +52,7 @@ void signal_handler(int signum)
   }
   printf("\nInterrupted.\n");
   interrupt_in_progress = true;
-  (*interrupt_command)                 // return code is ignored
-    (twopence_handle);
+  twopence_interrupt_command(twopence_handle);
   interrupt_in_progress = false;
 }
 
@@ -183,8 +181,8 @@ int main(int argc, char *argv[])
   }
 
   // Install signal handler
-  if (install_handler(SIGINT, &old_action))
-  {
+  twopence_handle = target;
+  if (install_handler(SIGINT, &old_action)) {
     fprintf(stderr, "Error installing signal handler\n");
     twopence_target_free(target);
     exit(-5);
