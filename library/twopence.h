@@ -289,6 +289,8 @@ extern int		twopence_extract_file(struct twopence_target *target,
 extern int		twopence_exit_remote(struct twopence_target *target);
 extern int		twopence_interrupt_command(struct twopence_target *target);
 extern void		twopence_target_free(struct twopence_target *target);
+
 extern const char *	twopence_strerror(int rc);
+extern void		twopence_perror(const char *, int rc);
 
 #endif /* TWOPENCE_H */

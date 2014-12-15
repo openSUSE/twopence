@@ -322,6 +322,12 @@ twopence_strerror(int rc)
   return "Unknow error";
 }
 
+void
+twopence_perror(const char *msg, int rc)
+{
+   fprintf(stderr, "%s: %s.\n", msg, twopence_strerror(rc));
+}
+
 /*
  * Switch stdin blocking mode
  */
