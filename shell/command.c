@@ -122,7 +122,8 @@ int main(int argc, char *argv[])
   const char *opt_target, *opt_command;
   struct twopence_target *target;
   struct sigaction old_action;
-  int major, minor, rc, rc2;
+  int rc, rc2;
+  twopence_status_t status;
 
   // Parse options
   opt_user = NULL;
@@ -193,27 +194,27 @@ int main(int argc, char *argv[])
   {
     case 1:
       rc = twopence_test_and_print_results(target, opt_user, opt_command,
-                            &major, &minor);
+                            &status);
       break;
     case 2:
       rc = twopence_test_and_drop_results(target, opt_user, opt_command,
-                            &major, &minor);
+                            &status);
       break;
     case 3:
       rc = twopence_test_and_store_results_together(target, opt_user, opt_command,
-                            buffer, 65536, &major, &minor);
+                            buffer, 65536, &status);
       break;
     case 4:
       rc = twopence_test_and_store_results_separately(target, opt_user, opt_command,
-                            buffer, buffer + 32768, 32768, &major, &minor);
+                            buffer, buffer + 32768, 32768, &status);
   }
 
   if (rc == 0) {
     if (!opt_batch) {
-      printf("Return code from the test server: %d\n", major);
-      printf("Return code of tested command: %d\n", minor);
+      printf("Return code from the test server: %d\n", status.major);
+      printf("Return code of tested command: %d\n", status.minor);
     }
-    if (major || minor) rc = -7;
+    if (status.major || status.minor) rc = -7;
   } else {
     twopence_perror("Unable to execute command", rc);
   }

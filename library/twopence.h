@@ -47,28 +47,38 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 struct twopence_target;
 
-typedef int (*twopence_test_t1)(struct twopence_target *, const char *, const char *, int *, int *);
-typedef int (*twopence_test_t2)(struct twopence_target *, const char *, const char *, char *, int, int *, int *);
-typedef int (*twopence_test_t3)(struct twopence_target *, const char *, const char *, char *, char *, int, int *, int *);
-typedef int (*twopence_inject_t)(struct twopence_target *, const char *, const char *, const char *, int *, bool);
-typedef int (*twopence_extract_t)(struct twopence_target *, const char *, const char *, const char *, int *, bool);
-typedef int (*twopence_exit_t)(struct twopence_target *);
-typedef int (*twopence_interrupt_t)(struct twopence_target *);
-typedef void (*twopence_end_t)(struct twopence_target *);
+/*
+ * Executing commands on the SUT always returns two status words -
+ * major:	this is the status of the twopence test server,
+ *		indicating any issues encountered while executing
+ *		the command.
+ * minor:	this is the exit status of the command itself.
+ *
+ * FIXME: we should dissect the status code on the SUT rather than
+ * the system running twopence, as the exit code, signal information
+ * etc is architecture dependent.
+ *
+ * FIXME2: we should probably rename these members to something like
+ * plugin_code and exit_code.
+ */
+typedef struct twopence_status {
+	int			major;
+	int			minor;
+} twopence_status_t;
 
 struct twopence_plugin {
 	const char *		name;
 
 	struct twopence_target *(*init)(const char *);
-	twopence_test_t1	test_and_print_results;
-	twopence_test_t1	test_and_drop_results;
-	twopence_test_t2	test_and_store_results_together;
-	twopence_test_t3	test_and_store_results_separately;
-	twopence_inject_t	inject_file;
-	twopence_extract_t	extract_file;
-	twopence_exit_t		exit_remote;
-	twopence_interrupt_t	interrupt_command;
-	twopence_end_t		end;
+	int			(*test_and_print_results)(struct twopence_target *, const char *, const char *, twopence_status_t *);
+	int			(*test_and_drop_results)(struct twopence_target *, const char *, const char *, twopence_status_t *);
+	int			(*test_and_store_results_together)(struct twopence_target *, const char *, const char *, char *, int, twopence_status_t *);
+	int			(*test_and_store_results_separately)(struct twopence_target *, const char *, const char *, char *, char *, int, twopence_status_t *);
+	int			(*inject_file)(struct twopence_target *, const char *, const char *, const char *, int *, bool);
+	int			(*extract_file)(struct twopence_target *, const char *, const char *, const char *, int *, bool);
+	int			(*exit_remote)(struct twopence_target *);
+	int			(*interrupt_command)(struct twopence_target *);
+	void			(*end)(struct twopence_target *);
 };
 
 enum {
@@ -149,7 +159,7 @@ extern int		twopence_target_new(const char *target_spec, struct twopence_target 
  */
 extern int		twopence_test_and_print_results(struct twopence_target *target,
 					const char *username, const char *command,
-					int *major_ret, int *minor_ret);
+					twopence_status_t *status);
 
 /*
  * Run a test command, and drop all output
@@ -158,7 +168,7 @@ extern int		twopence_test_and_print_results(struct twopence_target *target,
  */
 extern int		twopence_test_and_drop_results(struct twopence_target *target,
 					const char *username, const char *command,
-					int *major_ret, int *minor_ret);
+					twopence_status_t *status);
 
 /*
  * Run a test command, and store the results in memory in a common buffer
@@ -178,7 +188,7 @@ extern int		twopence_test_and_drop_results(struct twopence_target *target,
 extern int		twopence_test_and_store_results_together(struct twopence_target *target,
 					const char *username, const char *command,
 					char *buffer, int size,
-					int *major_ret, int *minor_ret);
+					twopence_status_t *status);
 
 /*
  * Run a test command, and store the results in memory in two separate buffers
@@ -199,7 +209,7 @@ extern int		twopence_test_and_store_results_together(struct twopence_target *tar
 extern int		twopence_test_and_store_results_separately(struct twopence_target *target,
 					const char *username, const char *command,
 					char *stdout_buffer, char *stderr_buffer, int size,
-					int *major_ret, int *minor_ret);
+					twopence_status_t *status);
 
 /*
  * Inject a file into the system under test

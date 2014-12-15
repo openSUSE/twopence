@@ -298,7 +298,7 @@ __twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, int link_fd, i
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int
-_twopence_read_results(struct twopence_pipe_target *handle, int link_fd, int *major, int *minor)
+_twopence_read_results(struct twopence_pipe_target *handle, int link_fd, twopence_status_t *status_ret)
 {
   int state;                           // 0 = processing results, 1 = major received, 2 = minor received
   int stdin_fd;
@@ -353,14 +353,14 @@ _twopence_read_results(struct twopence_pipe_target *handle, int link_fd, int *ma
         if (state != 0)
           return TWOPENCE_RECEIVE_RESULTS_ERROR;
         state = 1;
-        sscanf(buffer + 4, "%d", major);
+        sscanf(buffer + 4, "%d", &status_ret->major);
         break;
 
       case 'm':                        // Minor error code
         if (state != 1)
           return TWOPENCE_RECEIVE_RESULTS_ERROR;
         state = 2;
-        sscanf(buffer + 4, "%d", minor);
+        sscanf(buffer + 4, "%d", &status_ret->minor);
         break;
 
       default:
@@ -527,7 +527,7 @@ int _twopence_receive_file
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int
-__twopence_pipe_command(struct twopence_pipe_target *handle, const char *username, const char *linux_command, int *major, int *minor)
+__twopence_pipe_command(struct twopence_pipe_target *handle, const char *username, const char *linux_command, twopence_status_t *status_ret)
 {
   char command[COMMAND_BUFFER_SIZE];
   int n;
@@ -535,8 +535,7 @@ __twopence_pipe_command(struct twopence_pipe_target *handle, const char *usernam
   int sent, rc;
 
   // By default, no major and no minor
-  *major = 0;
-  *minor = 0;
+  memset(status_ret, 0, sizeof(*status_ret));
 
   // Check that the username is valid
   if (_twopence_invalid_username(username))
@@ -575,7 +574,7 @@ __twopence_pipe_command(struct twopence_pipe_target *handle, const char *usernam
   }
 
   // Read "standard output" and "standard error"
-  rc = _twopence_read_results(handle, link_fd, major, minor);
+  rc = _twopence_read_results(handle, link_fd, status_ret);
   if (rc < 0)
   {
     twopence_tune_stdin(true);
@@ -796,13 +795,12 @@ int _twopence_interrupt_virtio_serial
 int
 twopence_pipe_test_and_print_results(struct twopence_target *opaque_handle,
 		const char *username, const char *command,
-		int *major, int *minor)
+		twopence_status_t *status_ret)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
   twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL, 0);
-  return __twopence_pipe_command
-           (handle, username, command, major, minor);
+  return __twopence_pipe_command(handle, username, command, status_ret);
 }
 
 // Run a test command, and drop output
@@ -813,13 +811,12 @@ twopence_pipe_test_and_print_results(struct twopence_target *opaque_handle,
 int
 twopence_pipe_test_and_drop_results(struct twopence_target *opaque_handle,
 		const char *username, const char *command,
-		int *major, int *minor)
+		twopence_status_t *status_ret)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
   twopence_sink_init_none(&handle->base.current.sink);
-  return __twopence_pipe_command
-           (handle, username, command, major, minor);
+  return __twopence_pipe_command(handle, username, command, status_ret);
 }
 
 // Run a test command, and store the results in memory in a common buffer
@@ -831,14 +828,13 @@ int
 twopence_pipe_test_and_store_results_together(struct twopence_target *opaque_handle,
 		const char *username, const char *command,
 		char *buffer_out, int size,
-		int *major, int *minor)
+		twopence_status_t *status_ret)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   int rc;
 
   twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_BUFFER, buffer_out, NULL, size);
-  rc = __twopence_pipe_command
-         (handle, username, command, major, minor);
+  rc = __twopence_pipe_command(handle, username, command, status_ret);
 
   // Store final NUL
   if (rc == 0) {
@@ -857,14 +853,13 @@ int
 twopence_pipe_test_and_store_results_separately(struct twopence_target *opaque_handle,
 		const char *username, const char *command,
 		char *buffer_out, char *buffer_err, int size,
-		int *major, int *minor)
+		twopence_status_t *status_ret)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   int rc;
 
   twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_BUFFER_SEPARATELY, buffer_out, buffer_err, size);
-  rc = __twopence_pipe_command
-         (handle, username, command, major, minor);
+  rc = __twopence_pipe_command(handle, username, command, status_ret);
 
   // Store final NULs
   if (rc == 0) {

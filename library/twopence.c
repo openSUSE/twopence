@@ -204,45 +204,45 @@ twopence_target_free(struct twopence_target *target)
  * General API
  */
 int
-twopence_test_and_print_results(struct twopence_target *target, const char *username, const char *command, int *major_ret, int *minor_ret)
+twopence_test_and_print_results(struct twopence_target *target, const char *username, const char *command, twopence_status_t *status)
 {
   if (target->ops->test_and_print_results == NULL)
     return TWOPENCE_NOT_SUPPORTED;
 
-  return target->ops->test_and_print_results(target, username, command, major_ret, minor_ret);
+  return target->ops->test_and_print_results(target, username, command, status);
 }
 
 int
-twopence_test_and_drop_results(struct twopence_target *target, const char *username, const char *command, int *major_ret, int *minor_ret)
+twopence_test_and_drop_results(struct twopence_target *target, const char *username, const char *command, twopence_status_t *status)
 {
   if (target->ops->test_and_drop_results == NULL)
     return TWOPENCE_NOT_SUPPORTED;
 
-  return target->ops->test_and_drop_results(target, username, command, major_ret, minor_ret);
+  return target->ops->test_and_drop_results(target, username, command, status);
 }
 
 int
 twopence_test_and_store_results_together(struct twopence_target *target, const char *username, const char *command,
-		char *buffer, int size, int *major_ret, int *minor_ret)
+		char *buffer, int size, twopence_status_t *status)
 {
   if (target->ops->test_and_store_results_together == NULL)
     return TWOPENCE_NOT_SUPPORTED;
 
   return target->ops->test_and_store_results_together(target, username, command,
 		  			buffer, size,
-					major_ret, minor_ret);
+					status);
 }
 
 int
 twopence_test_and_store_results_separately(struct twopence_target *target, const char *username, const char *command,
-		char *stdout_buffer, char *stderr_buffer, int size, int *major_ret, int *minor_ret)
+		char *stdout_buffer, char *stderr_buffer, int size, twopence_status_t *status)
 {
   if (target->ops->test_and_store_results_separately == NULL)
     return TWOPENCE_NOT_SUPPORTED;
 
   return target->ops->test_and_store_results_separately(target, username, command,
 		  			stdout_buffer, stderr_buffer, size,
-					major_ret, minor_ret);
+					status);
 }
 
 int
