@@ -21,7 +21,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "plugins.h"
 #include "target.h"
 
 // The ruby module
@@ -32,16 +31,6 @@ VALUE Twopence = Qnil;
 // Initialize the ruby native implementation
 void Init_twopence()
 {
-  // C initializations
-  virtio_plugin.refcount = 0;
-  virtio_plugin.dl_handle = NULL;
-
-  serial_plugin.refcount = 0;
-  serial_plugin.dl_handle = NULL;
-
-  ssh_plugin.refcount = 0;
-  ssh_plugin.dl_handle = NULL;
-
   // Ruby initializations
   VALUE ruby_target_class;
 

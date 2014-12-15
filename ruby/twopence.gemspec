@@ -7,7 +7,7 @@ Gem::Specification.new do |s|
   s.homepage = "http://www.suse.com"
   s.license = "GPL-2"
 
-  s.files = "ext/twopence/glue.c", "ext/twopence/plugins.h", "ext/twopence/plugins.c", "ext/twopence/target.h", "ext/twopence/target.c",
+  s.files = "ext/twopence/glue.c", "ext/twopence/target.h", "ext/twopence/target.c",
             "ext/library/twopence.h"
   s.extensions = "ext/twopence/extconf.rb"
 

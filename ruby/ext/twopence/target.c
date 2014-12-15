@@ -20,7 +20,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <ruby.h>
 
-#include "plugins.h"
+#include "twopence.h"
 
 // The shared buffer
 char output_buffer[65536];
