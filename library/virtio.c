@@ -30,10 +30,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "twopence.h"
 #include "protocol.h"
 
-#define BUFFER_SIZE 32768              // Size in bytes of the work buffer for receiving data from the remote
-#define TIMEOUT 5000                   // Timeout in milliseconds
-#define LONG_TIMEOUT 60000             // Timeout that is big enough for a command to run without any output
-
 struct twopence_virtio_target {
   struct twopence_pipe_target pipe;
 
@@ -48,7 +44,8 @@ extern const struct twopence_pipe_ops twopence_virtio_link_ops;
 // Initialize the handle
 //
 // Returns 0 if everything went fine, or -1 in case of error
-int __twopence_virtio_init(struct twopence_virtio_target *handle, const char *sockname)
+static int
+__twopence_virtio_init(struct twopence_virtio_target *handle, const char *sockname)
 {
   twopence_pipe_target_init(&handle->pipe, TWOPENCE_PLUGIN_VIRTIO, &twopence_virtio_ops, &twopence_virtio_link_ops);
 
@@ -61,9 +58,11 @@ int __twopence_virtio_init(struct twopence_virtio_target *handle, const char *so
   return 0;
 }
 
-// Open the UNIX domain socket
-//
-// Returns the file descriptor if successful, or -1 if failed
+/*
+ * Open the UNIX domain socket
+ *
+ * Returns the file descriptor if successful, or -1 if failed
+ */
 static int
 __twopence_virtio_open(struct twopence_pipe_target *pipe_handle)
 {
@@ -97,18 +96,22 @@ __twopence_virtio_open(struct twopence_pipe_target *pipe_handle)
   return socket_fd;
 }
 
-// Receive a maximum amount of bytes from the socket into a buffer
-//
-// Returns the number of bytes received, -1 otherwise
+/*
+ * Receive a maximum amount of bytes from the socket into a buffer
+ *
+ * Returns the number of bytes received, -1 otherwise
+ */
 static int
 __twopence_virtio_recv(struct twopence_pipe_target *pipe_handle, int socket_fd, char *buffer, size_t size)
 {
   return recv(socket_fd, buffer, size, MSG_DONTWAIT);
 }
 
-// Send a number of bytes in a buffer to the socket
-//
-// Returns the number of bytes sent, or -1 in case of error
+/*
+ * Send a number of bytes in a buffer to the socket
+ *
+ * Returns the number of bytes sent, or -1 in case of error
+ */
 static int
 __twopence_virtio_send(struct twopence_pipe_target *pipe_handle, int socket_fd, const char *buffer, size_t size)
 {

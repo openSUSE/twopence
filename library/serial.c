@@ -31,12 +31,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "twopence.h"
 #include "protocol.h"
 
-#define BUFFER_SIZE 32768              // Size in bytes of the work buffer for receiving data from the remote
-#define TIMEOUT 5000                   // Timeout in milliseconds
-#define LONG_TIMEOUT 60000             // Timeout that is big enough for a command to run without any output
-
-// This structure encapsulates in an opaque way the behaviour of the library
-// It is not 100 % opaque, because it is publicly known that the first field is the plugin type
 struct twopence_serial_target {
   struct twopence_pipe_target pipe;
 
