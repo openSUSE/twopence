@@ -176,7 +176,7 @@ int main(int argc, char *argv[])
   opt_target = argv[optind++];
   opt_command = argv[optind++];
 
-  rc = twopence_target_new(argv[1], &target);
+  rc = twopence_target_new(opt_target, &target);
   if (rc < 0) {
     twopence_perror("Error while initializing library", rc);
     exit(1);
