@@ -9,10 +9,6 @@
 /* Base class for all targets using the twopence pipe protocol */
 struct twopence_pipe_target {
   struct twopence_target base;
-
-  enum { no_output, to_screen, common_buffer, separate_buffers } output_mode;
-  char *buffer_out, *end_out;
-  char *buffer_err, *end_err;
 };
 
 

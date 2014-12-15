@@ -42,6 +42,8 @@ twopence_pipe_target_init(struct twopence_pipe_target *target, int plugin_type, 
 
   target->base.plugin_type = plugin_type;
   target->base.ops = ops;
+
+  twopence_sink_init_none(&target->base.current.sink);
 }
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
@@ -64,61 +66,19 @@ int compute_length(const unsigned char *buffer)
 // Output a "stdout" character through one of the available methods
 //
 // Returns 0 if everything went fine, -1 otherwise
-int _twopence_output
-  (struct twopence_pipe_target *handle, char c)
+static int
+__twopence_pipe_output(struct twopence_pipe_target *handle, char c)
 {
-  int written;
-
-  switch (handle->output_mode)
-  {
-    case no_output:
-      break;
-    case to_screen:
-      written = write(1, &c, 1);
-      if (written != 1) return -1;
-      break;
-    case separate_buffers:
-    case common_buffer:
-      if (handle->buffer_out >= handle->end_out)
-        return -1;
-      *handle->buffer_out++ = c;
-      break;
-    default:
-      return -1;
-  }
-  return 0;
+  return __twopence_sink_write_stdout(&handle->base.current.sink, c);
 }
 
 // Output a "stderr" character through one of the available methods
 //
 // Returns 0 if everything went fine, -1 otherwise
-int _twopence_error
-  (struct twopence_pipe_target *handle, char c)
+static int
+__twopence_pipe_error(struct twopence_pipe_target *handle, char c)
 {
-  int written;
-
-  switch (handle->output_mode)
-  {
-    case no_output:
-      break;
-    case to_screen:
-      written = write(2, &c, 1);
-      if (written != 1) return -1;
-      break;
-    case separate_buffers:
-      if (handle->buffer_err >= handle->end_err)
-        return -1;
-      *handle->buffer_err++ = c;
-      break;
-    case common_buffer:
-      if (handle->buffer_out >= handle->end_out)
-        return -1;
-      *handle->buffer_out++ = c;
-      break;
-    default:
-      return -1;
-  }
-  return 0;
+  return __twopence_sink_write_stderr(&handle->base.current.sink, c);
 }
 
 // Check for invalid usernames
@@ -288,7 +248,7 @@ int _twopence_read_results
           return TWOPENCE_RECEIVE_RESULTS_ERROR;
         for (p = buffer + 4; received > 4; received--)
         {                              // Output it
-          if (_twopence_output(handle, *p++) < 0)
+          if (__twopence_pipe_output(handle, *p++) < 0)
             return TWOPENCE_RECEIVE_RESULTS_ERROR;
         }
         break;
@@ -298,7 +258,7 @@ int _twopence_read_results
           return TWOPENCE_RECEIVE_RESULTS_ERROR;
         for (p = buffer + 4; received > 4; received--)
         {                              // Output it
-          if (_twopence_error(handle, *p++) < 0)
+          if (__twopence_pipe_error(handle, *p++) < 0)
             return TWOPENCE_RECEIVE_RESULTS_ERROR;
         }
         break;
@@ -415,7 +375,7 @@ int _twopence_send_file
     received = read(file_fd, buffer + 4, size);
     if (received != size)
     {
-      _twopence_output(handle, '\n');
+      __twopence_pipe_output(handle, '\n');
       return TWOPENCE_LOCAL_FILE_ERROR;
     }
 
@@ -424,14 +384,14 @@ int _twopence_send_file
     if (!_twopence_send_big_buffer
       (link_fd, buffer, received + 4))
     {
-      _twopence_output(handle, '\n');
+      __twopence_pipe_output(handle, '\n');
       return TWOPENCE_SEND_FILE_ERROR;
     }
 
-    _twopence_output(handle, '.');     // Progression dots
+    __twopence_pipe_output(handle, '.');     // Progression dots
     remaining -= received;             // One chunk less to send
   }
-  _twopence_output(handle, '\n');
+  __twopence_pipe_output(handle, '\n');
   return 0;
 }
 
@@ -450,7 +410,7 @@ int _twopence_receive_file
       (link_fd, buffer);
     if (rc != 0)
     {
-      _twopence_output(handle, '\n');
+      __twopence_pipe_output(handle, '\n');
       return TWOPENCE_RECEIVE_FILE_ERROR;
     }
 
@@ -458,7 +418,7 @@ int _twopence_receive_file
       compute_length(buffer) - 4;
     if (buffer[0] != 'd' || received < 0 || received > remaining)
     {
-      _twopence_output(handle, '\n');
+      __twopence_pipe_output(handle, '\n');
       return TWOPENCE_RECEIVE_FILE_ERROR;
     }
 
@@ -468,14 +428,14 @@ int _twopence_receive_file
         (file_fd, buffer + 4, received);
       if (written != received)
       {
-        _twopence_output(handle, '\n');
+        __twopence_pipe_output(handle, '\n');
         return TWOPENCE_LOCAL_FILE_ERROR;
       }
-      _twopence_output(handle, '.');   // Progression dots
+      __twopence_pipe_output(handle, '.');   // Progression dots
       remaining -= received;           // One chunk less to write
     }
   }
-  _twopence_output(handle, '\n');
+  __twopence_pipe_output(handle, '\n');
   return 0;
 }
 
@@ -767,8 +727,7 @@ twopence_pipe_test_and_print_results(struct twopence_target *opaque_handle,
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
-  handle->output_mode = to_screen;
-
+  twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL, 0);
   return _twopence_command_virtio_serial
            (handle, username, command, major, minor);
 }
@@ -785,8 +744,7 @@ twopence_pipe_test_and_drop_results(struct twopence_target *opaque_handle,
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
-  handle->output_mode = no_output;
-
+  twopence_sink_init_none(&handle->base.current.sink);
   return _twopence_command_virtio_serial
            (handle, username, command, major, minor);
 }
@@ -805,19 +763,14 @@ twopence_pipe_test_and_store_results_together(struct twopence_target *opaque_han
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   int rc;
 
-  handle->output_mode = common_buffer;
-  handle->buffer_out = buffer_out; handle->end_out = buffer_out + size;
-
+  twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_BUFFER, buffer_out, NULL, size);
   rc = _twopence_command_virtio_serial
          (handle, username, command, major, minor);
 
   // Store final NUL
-  if (rc == 0)
-  {
-    if (handle->buffer_out >= handle->end_out)
+  if (rc == 0) {
+    if (__twopence_pipe_output(handle, '\0') < 0)
       rc = TWOPENCE_RECEIVE_RESULTS_ERROR;
-    else
-      *handle->buffer_out = '\0';
   }
   return rc;
 }
@@ -836,27 +789,15 @@ twopence_pipe_test_and_store_results_separately(struct twopence_target *opaque_h
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   int rc;
 
-  handle->output_mode = separate_buffers;
-  handle->buffer_out = buffer_out; handle->end_out = buffer_out + size;
-  handle->buffer_err = buffer_err; handle->end_err = buffer_err + size;
-
+  twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_BUFFER_SEPARATELY, buffer_out, buffer_err, size);
   rc = _twopence_command_virtio_serial
          (handle, username, command, major, minor);
 
   // Store final NULs
-  if (rc == 0)
-  {
-    if (handle->buffer_out >= handle->end_out)
+  if (rc == 0) {
+    if (__twopence_pipe_output(handle, '\0') < 0
+     || __twopence_pipe_error(handle, '\0') < 0)
       rc = TWOPENCE_RECEIVE_RESULTS_ERROR;
-    else
-      *handle->buffer_out = '\0';
-  }
-  if (rc == 0)
-  {
-    if (handle->buffer_err >= handle->end_err)
-      rc = TWOPENCE_RECEIVE_RESULTS_ERROR;
-    else
-      *handle->buffer_err = '\0';
   }
   return rc;
 }
@@ -873,7 +814,7 @@ twopence_pipe_inject_file(struct twopence_target *opaque_handle,
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   int fd, rc;
 
-  handle->output_mode = dots? to_screen: no_output;
+  twopence_sink_init(&handle->base.current.sink, dots? TWOPENCE_OUTPUT_SCREEN : TWOPENCE_OUTPUT_NONE, NULL, NULL, 0);
 
   // Open the file
   fd = open(local_filename, O_RDONLY);
@@ -905,7 +846,7 @@ twopence_pipe_extract_file(struct twopence_target *opaque_handle,
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   int fd, rc;
 
-  handle->output_mode = dots? to_screen: no_output;
+  twopence_sink_init(&handle->base.current.sink, dots? TWOPENCE_OUTPUT_SCREEN : TWOPENCE_OUTPUT_NONE, NULL, NULL, 0);
 
   // Open the file, creating it if it does not exist (u=rw,g=rw,o=)
   fd = creat(local_filename, 00660);
@@ -944,7 +885,7 @@ twopence_pipe_exit_remote(struct twopence_target *opaque_handle)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
-  handle->output_mode = no_output;
+  twopence_sink_init_none(&handle->base.current.sink);
 
   return _twopence_exit_virtio_serial(handle);
 }

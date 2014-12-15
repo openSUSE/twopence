@@ -41,11 +41,7 @@ struct twopence_ssh_target
 {
   struct twopence_target base;
 
-  enum { no_output, to_screen, common_buffer, separate_buffers } output_mode;
-  char *buffer_out, *end_out;
-  char *buffer_err, *end_err;
-  ssh_session template,
-              session;
+  ssh_session template, session;
   ssh_channel channel;                 // Set during remote command execution only
 };
 
@@ -56,81 +52,28 @@ extern const struct twopence_plugin twopence_ssh_ops;
 // Output a "stdout" character through one of the available methods
 //
 // Returns 0 if everything went fine, a negative error code otherwise
-int _twopence_output
-  (struct twopence_ssh_target *handle, char c)
+static int
+__twopence_ssh_output(struct twopence_ssh_target *handle, char c)
 {
-  int written;
-
-  switch (handle->output_mode)
-  {
-    case no_output:
-      break;
-    case to_screen:
-      written = write(1, &c, 1);
-      if (written != 1) return -1;
-      break;
-    case separate_buffers:
-    case common_buffer:
-      if (handle->buffer_out >= handle->end_out)
-        return -1;
-      *handle->buffer_out++ = c;
-      break;
-    default:
-      return -1;
-  }
-  return 0;
+  return __twopence_sink_write_stdout(&handle->base.current.sink, c);
 }
 
 // Output a "stderr" character through one of the available methods
 //
 // Returns 0 if everything went fine, a negative error code otherwise
-int _twopence_error
-  (struct twopence_ssh_target *handle, char c)
+static int
+__twopence_ssh_error(struct twopence_ssh_target *handle, char c)
 {
-  int written;
-
-  switch (handle->output_mode)
-  {
-    case no_output:
-      break;
-    case to_screen:
-      written = write(2, &c, 1);
-      if (written != 1) return -1;
-      break;
-    case separate_buffers:
-      if (handle->buffer_err >= handle->end_err)
-        return -1;
-      *handle->buffer_err++ = c;
-      break;
-    case common_buffer:
-      if (handle->buffer_out >= handle->end_out)
-        return -1;
-      *handle->buffer_out++ = c;
-      break;
-    default:
-      return -1;
-  }
-  return 0;
+  return __twopence_sink_write_stderr(&handle->base.current.sink, c);
 }
 
 // Process chunk of data sent by the remote host
 //
 // Returns 0 if everything went fine, a negative error code otherwise
-int _twopence_process_chunk
-  (struct twopence_ssh_target *handle, const char *buffer, int size, bool error)
+static int
+__twopence_ssh_process_chunk(struct twopence_ssh_target *handle, const char *buffer, int size, bool error)
 {
-  const char *end;
-  int rc;
-
-  for (end = buffer + size;
-       buffer < end;
-       buffer++)
-  {
-    if (error) rc = _twopence_error(handle, *buffer);
-    else rc = _twopence_output(handle, *buffer);
-    if (rc < 0) return -1;
-  }
-  return 0;
+  return twopence_sink_write(&handle->base.current.sink, error, buffer, size);
 }
 
 // Avoid active wait by sleeping
@@ -202,8 +145,8 @@ __twopence_ssh_read_output(struct twopence_ssh_target *handle, ssh_channel chann
       *nothing = true;
       break;
     default:
-      if (_twopence_process_chunk
-            (handle, buffer, size, error) < 0) return -2;
+      if (__twopence_ssh_process_chunk(handle, buffer, size, error) < 0)
+	      return -2;
       *nothing = false;
   }
   return 0;
@@ -277,7 +220,7 @@ int _twopence_send_file
     received = read(file_fd, buffer, size);
     if (received != size)
     {
-      _twopence_output(handle, '\n');
+      __twopence_ssh_output(handle, '\n');
       return TWOPENCE_LOCAL_FILE_ERROR;
     }
 
@@ -285,14 +228,14 @@ int _twopence_send_file
           (scp, buffer, size) != SSH_OK)
     {
       *remote_rc = ssh_get_error_code(handle->session);
-      _twopence_output(handle, '\n');
+      __twopence_ssh_output(handle, '\n');
       return TWOPENCE_SEND_FILE_ERROR;
     }
 
-    _twopence_output(handle, '.');     // Progression dots
+    __twopence_ssh_output(handle, '.');     // Progression dots
     remaining -= size;                 // That much we don't need to send anymore
   }
-  _twopence_output(handle, '\n');
+  __twopence_ssh_output(handle, '\n');
   return 0;
 }
 
@@ -314,7 +257,7 @@ int _twopence_receive_file
     if (received != size)
     {
       *remote_rc = ssh_get_error_code(handle->session);
-      _twopence_output(handle, '\n');
+      __twopence_ssh_output(handle, '\n');
       return TWOPENCE_RECEIVE_FILE_ERROR;
     }
 
@@ -322,14 +265,14 @@ int _twopence_receive_file
       (file_fd, buffer, size);
     if (written != size)
     {
-      _twopence_output(handle, '\n');
+      __twopence_ssh_output(handle, '\n');
       return TWOPENCE_LOCAL_FILE_ERROR;
     }
 
-    _twopence_output(handle, '.');     // Progression dots
+    __twopence_ssh_output(handle, '.');     // Progression dots
     remaining -= size;                 // That's that much less to receive
   }
-  _twopence_output(handle, '\n');
+  __twopence_ssh_output(handle, '\n');
   return 0;
 }
 
@@ -601,6 +544,8 @@ twopence_init(const char *hostname, unsigned int port)
   handle->base.plugin_type = TWOPENCE_PLUGIN_SSH;
   handle->base.ops = &twopence_ssh_ops;
 
+  twopence_sink_init_none(&handle->base.current.sink);
+
   // Create the SSH session template
   template = ssh_new();
   if (template == NULL)
@@ -694,7 +639,7 @@ twopence_ssh_test_and_print_results(struct twopence_target *opaque_handle,
   *major = *minor = 0;
 
   // Output will happen on the screen
-  handle->output_mode = to_screen;
+  twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL, 0);
 
   // Connect to the remote host
   if (_twopence_connect_ssh(handle, username) < 0)
@@ -725,7 +670,7 @@ twopence_ssh_test_and_drop_results(struct twopence_target *opaque_handle,
   *major = *minor = 0;
 
   // Output will happen on the screen
-  handle->output_mode = no_output;
+  twopence_sink_init_none(&handle->base.current.sink);
 
   // Connect to the remote host
   if (_twopence_connect_ssh(handle, username) < 0)
@@ -757,8 +702,7 @@ twopence_ssh_test_and_store_results_together(struct twopence_target *opaque_hand
   *major = *minor = 0;
 
   // Output will happen in the common buffer
-  handle->output_mode = common_buffer;
-  handle->buffer_out = buffer_out; handle->end_out = buffer_out + size;
+  twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_BUFFER, buffer_out, NULL, size);
 
   // Connect to the remote host
   if (_twopence_connect_ssh(handle, username) < 0)
@@ -773,7 +717,7 @@ twopence_ssh_test_and_store_results_together(struct twopence_target *opaque_hand
   // Store final NUL
   if (rc == 0)
   {
-    if (_twopence_output(handle, '\0') < 0)
+    if (__twopence_ssh_output(handle, '\0') < 0)
       rc = TWOPENCE_RECEIVE_RESULTS_ERROR;
   }
   return rc;
@@ -797,9 +741,7 @@ twopence_ssh_test_and_store_results_separately(struct twopence_target *opaque_ha
   *major = *minor = 0;
 
   // Output will happen in the separate buffers
-  handle->output_mode = separate_buffers;
-  handle->buffer_out = buffer_out; handle->end_out = buffer_out + size;
-  handle->buffer_err = buffer_err; handle->end_err = buffer_err + size;
+  twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_BUFFER_SEPARATELY, buffer_out, buffer_err, size);
 
   // Connect to the remote host
   if (_twopence_connect_ssh(handle, username) < 0)
@@ -814,12 +756,12 @@ twopence_ssh_test_and_store_results_separately(struct twopence_target *opaque_ha
   // Store final NULs
   if (rc == 0)
   {
-    if (_twopence_output(handle, '\0') < 0)
+    if (__twopence_ssh_output(handle, '\0') < 0)
       rc = TWOPENCE_RECEIVE_RESULTS_ERROR;
   }
   if (rc == 0)
   {
-    if (_twopence_error(handle, '\0') < 0)
+    if (__twopence_ssh_error(handle, '\0') < 0)
       rc = TWOPENCE_RECEIVE_RESULTS_ERROR;
   }
   return rc;
@@ -840,7 +782,7 @@ twopence_ssh_inject_file(struct twopence_target *opaque_handle,
   // 'remote_rc' defaults to 0
   *remote_rc = 0;
 
-  handle->output_mode = dots? to_screen: no_output;
+  twopence_sink_init(&handle->base.current.sink, dots? TWOPENCE_OUTPUT_SCREEN : TWOPENCE_OUTPUT_NONE, NULL, NULL, 0);
 
   // Open the file
   fd = open(local_filename, O_RDONLY);
@@ -886,7 +828,7 @@ twopence_ssh_extract_file(struct twopence_target *opaque_handle,
   // 'remote_rc' defaults to 0
   *remote_rc = 0;
 
-  handle->output_mode = dots? to_screen: no_output;
+  twopence_sink_init(&handle->base.current.sink, dots? TWOPENCE_OUTPUT_SCREEN : TWOPENCE_OUTPUT_NONE, NULL, NULL, 0);
 
   // Open the file, creating it if it does not exist (u=rw,g=rw,o=)
   fd = creat(local_filename, 00660);

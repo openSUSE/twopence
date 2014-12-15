@@ -260,8 +260,40 @@ enum {
 	__TWOPENCE_PLUGIN_MAX
 };
 
+/*
+ * Output related data types.
+ * At some point, we probably want to support concurrent execution of several
+ * commands, at which point we'll have to make these per-command.
+ */
+typedef enum {
+	TWOPENCE_OUTPUT_NONE,
+	TWOPENCE_OUTPUT_SCREEN,
+	TWOPENCE_OUTPUT_BUFFER,
+	TWOPENCE_OUTPUT_BUFFER_SEPARATELY,
+} twopence_output_t;
+
+struct twopence_buffer {
+	char *		tail;
+	char *		end;
+};
+
+struct twopence_sink {
+	twopence_output_t mode;
+	struct twopence_buffer outbuf;
+	struct twopence_buffer errbuf;
+};
+
+/*
+ * The target type
+ */
 struct twopence_target {
 	unsigned int		plugin_type;
+
+	/* Data related to current command */
+	struct {
+		struct twopence_sink	sink;
+	} current;
+
 	const struct twopence_plugin *ops;
 };
 
@@ -292,5 +324,17 @@ extern void		twopence_target_free(struct twopence_target *target);
 
 extern const char *	twopence_strerror(int rc);
 extern void		twopence_perror(const char *, int rc);
+
+/*
+ * Output handling functions
+ */
+extern void		twopence_sink_init(struct twopence_sink *, twopence_output_t, char *, char *, size_t);
+extern void		twopence_sink_init_none(struct twopence_sink *);
+extern int		twopence_sink_putc(struct twopence_sink *sink, bool is_error, char c);
+extern int		twopence_sink_write(struct twopence_sink *sink, bool is_error, const char *data, size_t len);
+
+/* These should really go to a private header file, as they're internal to the plugins */
+extern int		__twopence_sink_write_stderr(struct twopence_sink *sink, char c);
+extern int		__twopence_sink_write_stdout(struct twopence_sink *sink, char c);
 
 #endif /* TWOPENCE_H */

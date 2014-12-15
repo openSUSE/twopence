@@ -346,3 +346,157 @@ twopence_tune_stdin(bool blocking)
 
   return fcntl(0, F_SETFL, flags);
 }
+
+/*
+ * Output handling
+ */
+static void
+__twopence_buffer_init(struct twopence_buffer *buf, char *head, size_t size)
+{
+  buf->tail = head;
+  buf->end = head + size;
+}
+
+void
+twopence_sink_init(struct twopence_sink *sink, twopence_output_t mode, char *outbuf, char *errbuf, size_t bufsize)
+{
+  memset(sink, 0, sizeof(*sink));
+  sink->mode = mode;
+
+  switch (mode) {
+  case TWOPENCE_OUTPUT_NONE:
+  case TWOPENCE_OUTPUT_SCREEN:
+    break;
+
+  case TWOPENCE_OUTPUT_BUFFER:
+    if (outbuf && bufsize) {
+      __twopence_buffer_init(&sink->outbuf, outbuf, bufsize);
+    } else {
+      fprintf(stderr, "%s: no buffer supplied for buffered output mode, falling back to OUTPUT_NONE\n", __FUNCTION__);
+      sink->mode = TWOPENCE_OUTPUT_NONE;
+    }
+    break;
+
+  case TWOPENCE_OUTPUT_BUFFER_SEPARATELY:
+    if (outbuf && errbuf && bufsize) {
+      __twopence_buffer_init(&sink->outbuf, outbuf, bufsize);
+      __twopence_buffer_init(&sink->errbuf, errbuf, bufsize);
+    } else {
+      fprintf(stderr, "%s: no buffers supplied for separately buffered output mode, falling back to OUTPUT_NONE\n", __FUNCTION__);
+      sink->mode = TWOPENCE_OUTPUT_NONE;
+    }
+    break;
+
+  default:
+    fprintf(stderr, "%s: unsupported output mode %u, assuming OUTPUT_NONE\n", __FUNCTION__, mode);
+    sink->mode = TWOPENCE_OUTPUT_NONE;
+    break;
+  }
+}
+
+int
+twopence_sink_putc(struct twopence_sink *sink, bool is_error, char c)
+{
+  if (is_error)
+    return __twopence_sink_write_stderr(sink, c);
+  return __twopence_sink_write_stdout(sink, c);
+}
+
+int
+twopence_sink_write(struct twopence_sink *sink, bool is_error, const char *data, size_t len)
+{
+  int count = 0, rc = 0;
+
+  if (is_error) {
+    while (len--) {
+      if ((rc = __twopence_sink_write_stderr(sink, *data++)) < 0)
+	return rc;
+      count++;
+    }
+  } else {
+    while (len--) {
+      if ((rc = __twopence_sink_write_stdout(sink, *data++)) < 0)
+	return rc;
+      count++;
+    }
+  }
+  return count;
+}
+
+void
+twopence_sink_init_none(struct twopence_sink *sink)
+{
+  memset(sink, 0, sizeof(*sink));
+  sink->mode = TWOPENCE_OUTPUT_NONE;
+}
+
+/*
+ * Buffering functions
+ */
+static unsigned int
+__twopence_buffer_putc(struct twopence_buffer *bp, char c)
+{
+  if (bp->tail >= bp->end)
+    return 0;
+
+  *(bp->tail++) = c;
+  return 1;
+}
+
+/*
+ * Write to stdout
+ */
+int
+__twopence_sink_write_stdout(struct twopence_sink *sink, char c)
+{
+  int written = 0;
+
+  switch (sink->mode) {
+  case TWOPENCE_OUTPUT_NONE:
+    return;
+
+  case TWOPENCE_OUTPUT_SCREEN:
+    written = write(1, &c, 1);
+    break;
+
+  case TWOPENCE_OUTPUT_BUFFER:
+  case TWOPENCE_OUTPUT_BUFFER_SEPARATELY:
+    written = __twopence_buffer_putc(&sink->outbuf, c);
+    break;
+  }
+
+  if (written != 1)
+    return -1;
+  return 0;
+}
+
+/*
+ * Write to stderr
+ */
+int
+__twopence_sink_write_stderr(struct twopence_sink *sink, char c)
+{
+  int written = 0;
+
+  switch (sink->mode) {
+  case TWOPENCE_OUTPUT_NONE:
+    return;
+
+  case TWOPENCE_OUTPUT_SCREEN:
+    written = write(2, &c, 1);
+    break;
+
+  case TWOPENCE_OUTPUT_BUFFER:
+    written = __twopence_buffer_putc(&sink->outbuf, c);
+    break;
+
+  case TWOPENCE_OUTPUT_BUFFER_SEPARATELY:
+    written = __twopence_buffer_putc(&sink->errbuf, c);
+    break;
+  }
+
+  if (written != 1)
+    return -1;
+  return 0;
+}
+
