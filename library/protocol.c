@@ -831,97 +831,11 @@ twopence_pipe_run_test(struct twopence_target *opaque_handle,
   return rc;
 }
 
-
-// Run a test command, and print output
-//
-// Returns 0 if everything went fine
-// 'major' is the return code of the test server
-// 'minor' is the return code of the command
-int
-twopence_pipe_test_and_print_results(struct twopence_target *opaque_handle,
-		const char *username, const char *command,
-		twopence_status_t *status_ret)
-{
-  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
-
-  twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL, 0);
-  twopence_source_init_fd(&handle->base.current.source, 0);
-  return __twopence_pipe_command(handle, username, command, status_ret);
-}
-
-// Run a test command, and drop output
-//
-// Returns 0 if everything went fine
-// 'major' is the return code of the test server
-// 'minor' is the return code of the command
-int
-twopence_pipe_test_and_drop_results(struct twopence_target *opaque_handle,
-		const char *username, const char *command,
-		twopence_status_t *status_ret)
-{
-  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
-
-  twopence_sink_init_none(&handle->base.current.sink);
-  twopence_source_init_fd(&handle->base.current.source, 0);
-  return __twopence_pipe_command(handle, username, command, status_ret);
-}
-
-// Run a test command, and store the results in memory in a common buffer
-//
-// Returns 0 if everything went fine
-// 'major' is the return code of the test server
-// 'minor' is the return code of the command
-int
-twopence_pipe_test_and_store_results_together(struct twopence_target *opaque_handle,
-		const char *username, const char *command,
-		char *buffer_out, int size,
-		twopence_status_t *status_ret)
-{
-  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
-  int rc;
-
-  twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_BUFFER, buffer_out, NULL, size);
-  twopence_source_init_fd(&handle->base.current.source, 0);
-  rc = __twopence_pipe_command(handle, username, command, status_ret);
-
-  // Store final NUL
-  if (rc == 0) {
-    if (__twopence_pipe_output(handle, '\0') < 0)
-      rc = TWOPENCE_RECEIVE_RESULTS_ERROR;
-  }
-  return rc;
-}
-
-// Run a test command, and store the results in memory in two separate buffers
-//
-// Returns 0 if everything went fine
-// 'major' is the return code of the test server
-// 'minor' is the return code of the command
-int
-twopence_pipe_test_and_store_results_separately(struct twopence_target *opaque_handle,
-		const char *username, const char *command,
-		char *buffer_out, char *buffer_err, int size,
-		twopence_status_t *status_ret)
-{
-  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
-  int rc;
-
-  twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_BUFFER_SEPARATELY, buffer_out, buffer_err, size);
-  twopence_source_init_fd(&handle->base.current.source, 0);
-  rc = __twopence_pipe_command(handle, username, command, status_ret);
-
-  // Store final NULs
-  if (rc == 0) {
-    if (__twopence_pipe_output(handle, '\0') < 0
-     || __twopence_pipe_error(handle, '\0') < 0)
-      rc = TWOPENCE_RECEIVE_RESULTS_ERROR;
-  }
-  return rc;
-}
-
-// Inject a file into the Virtual Machine
-//
-// Returns 0 if everything went fine
+/*
+ * Inject a file into the Virtual Machine
+ *
+ * Returns 0 if everything went fine
+ */
 int
 twopence_pipe_inject_file(struct twopence_target *opaque_handle,
 		const char *username,

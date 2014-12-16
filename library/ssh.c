@@ -54,7 +54,7 @@ extern const struct twopence_plugin twopence_ssh_ops;
 // Output a "stdout" character through one of the available methods
 //
 // Returns 0 if everything went fine, a negative error code otherwise
-static int
+static inline int
 __twopence_ssh_output(struct twopence_ssh_target *handle, char c)
 {
   return __twopence_sink_write_stdout(&handle->base.current.sink, c);
@@ -63,7 +63,7 @@ __twopence_ssh_output(struct twopence_ssh_target *handle, char c)
 // Output a "stderr" character through one of the available methods
 //
 // Returns 0 if everything went fine, a negative error code otherwise
-static int
+static inline int
 __twopence_ssh_error(struct twopence_ssh_target *handle, char c)
 {
   return __twopence_sink_write_stderr(&handle->base.current.sink, c);
@@ -665,166 +665,10 @@ twopence_ssh_run_test(struct twopence_target *opaque_handle,
 
   // Disconnect from remote host
   __twopence_ssh_disconnect_ssh(handle);
+
   return rc;
 }
 
-
-// Run a test command, and print output
-//
-// Returns 0 if everything went fine
-// 'major' is the return code of the test server (none for SSH)
-// 'minor' is the return code of the command
-static int
-twopence_ssh_test_and_print_results(struct twopence_target *opaque_handle,
-		const char *username, const char *command,
-		twopence_status_t *status_ret)
-{
-  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
-  int rc;
-
-  // 'major' makes no sense for SSH and 'minor' defaults to 0
-  memset(status_ret, 0, sizeof(*status_ret));
-
-  /* Take output from stdin by default */
-  twopence_source_init_fd(&handle->base.current.source, 0);
-
-  // Output will happen on the screen
-  twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL, 0);
-
-  // Connect to the remote host
-  if (__twopence_ssh_connect_ssh(handle, username) < 0)
-    return TWOPENCE_OPEN_SESSION_ERROR;
-
-  // Execute the command
-  rc = __twopence_ssh_command_ssh(handle, command, status_ret);
-
-  // Disconnect from remote host
-  __twopence_ssh_disconnect_ssh(handle);
-  return rc;
-}
-
-// Run a test command, and drop output
-//
-// Returns 0 if everything went fine
-// 'major' is the return code of the test server (none for SSH)
-// 'minor' is the return code of the command
-static int
-twopence_ssh_test_and_drop_results(struct twopence_target *opaque_handle,
-		const char *username, const char *command,
-		twopence_status_t *status_ret)
-{
-  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
-  int rc;
-
-  // 'major' makes no sense for SSH and 'minor' defaults to 0
-  memset(status_ret, 0, sizeof(*status_ret));
-
-  /* Take output from stdin by default */
-  twopence_source_init_fd(&handle->base.current.source, 0);
-
-  // Output will happen on the screen
-  twopence_sink_init_none(&handle->base.current.sink);
-
-  // Connect to the remote host
-  if (__twopence_ssh_connect_ssh(handle, username) < 0)
-    return TWOPENCE_OPEN_SESSION_ERROR;
-
-  // Execute the command
-  rc = __twopence_ssh_command_ssh(handle, command, status_ret);
-
-  // Disconnect from remote host
-  __twopence_ssh_disconnect_ssh(handle);
-  return rc;
-}
-
-// Run a test command, and store the results in memory in a common buffer
-//
-// Returns 0 if everything went fine
-// 'major' is the return code of the test server (none for SSH)
-// 'minor' is the return code of the command
-static int
-twopence_ssh_test_and_store_results_together(struct twopence_target *opaque_handle,
-		const char *username, const char *command,
-		char *buffer_out, int size,
-		twopence_status_t *status_ret)
-{
-  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
-  int rc;
-
-  // 'major' makes no sense for SSH and 'minor' defaults to 0
-  memset(status_ret, 0, sizeof(*status_ret));
-
-  /* Take output from stdin by default */
-  twopence_source_init_fd(&handle->base.current.source, 0);
-
-  // Output will happen in the common buffer
-  twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_BUFFER, buffer_out, NULL, size);
-
-  // Connect to the remote host
-  if (__twopence_ssh_connect_ssh(handle, username) < 0)
-    return TWOPENCE_OPEN_SESSION_ERROR;
-
-  // Execute the command
-  rc = __twopence_ssh_command_ssh(handle, command, status_ret);
-
-  // Disconnect from remote host
-  __twopence_ssh_disconnect_ssh(handle);
-
-  // Store final NUL
-  if (rc == 0)
-  {
-    if (__twopence_ssh_output(handle, '\0') < 0)
-      rc = TWOPENCE_RECEIVE_RESULTS_ERROR;
-  }
-  return rc;
-}
-
-// Run a test command, and store the results in memory in two separate buffers
-//
-// Returns 0 if everything went fine
-// 'major' is the return code of the test server (none for SSH)
-// 'minor' is the return code of the command
-static int
-twopence_ssh_test_and_store_results_separately(struct twopence_target *opaque_handle,
-		const char *username, const char *command,
-		char *buffer_out, char *buffer_err, int size,
-		twopence_status_t *status_ret)
-{
-  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
-  int rc;
-
-  // 'major' makes no sense for SSH and 'minor' defaults to 0
-  memset(status_ret, 0, sizeof(*status_ret));
-
-  /* Take output from stdin by default */
-  twopence_source_init_fd(&handle->base.current.source, 0);
-
-  // Output will happen in the separate buffers
-  twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_BUFFER_SEPARATELY, buffer_out, buffer_err, size);
-
-  // Connect to the remote host
-  if (__twopence_ssh_connect_ssh(handle, username) < 0)
-    return TWOPENCE_OPEN_SESSION_ERROR;
-
-  // Execute the command
-  rc = __twopence_ssh_command_ssh(handle, command, status_ret);
-
-  // Disconnect from remote host
-  __twopence_ssh_disconnect_ssh(handle);
-
-  // Store final NULs
-  if (rc == 0)
-  {
-    if (__twopence_ssh_output(handle, '\0') < 0)
-      rc = TWOPENCE_RECEIVE_RESULTS_ERROR;
-  }
-  if (rc == 0)
-  {
-    if (__twopence_ssh_error(handle, '\0') < 0)
-      rc = TWOPENCE_RECEIVE_RESULTS_ERROR;
-  }
-  return rc;
-}
 
 // Inject a file into the remote host
 //
@@ -956,10 +800,6 @@ const struct twopence_plugin twopence_ssh_ops = {
 
 	.init = twopence_init_new,
 	.run_test = twopence_ssh_run_test,
-	.test_and_print_results	= twopence_ssh_test_and_print_results,
-	.test_and_drop_results	= twopence_ssh_test_and_drop_results,
-	.test_and_store_results_together = twopence_ssh_test_and_store_results_together,
-	.test_and_store_results_separately = twopence_ssh_test_and_store_results_separately,
 	.inject_file = twopence_ssh_inject_file,
 	.extract_file = twopence_ssh_extract_file,
 	.exit_remote = twopence_ssh_exit_remote,
