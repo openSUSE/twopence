@@ -190,6 +190,18 @@ twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twope
 int
 twopence_test_and_print_results(struct twopence_target *target, const char *username, const char *command, twopence_status_t *status)
 {
+  if (target->ops->run_test) {
+    twopence_command_t cmd;
+
+    twopence_command_init(&cmd, command);
+    cmd.user = username;
+
+    twopence_sink_init(&cmd.sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL, 0);
+    twopence_source_init_fd(&cmd.source, 0);
+
+    return twopence_run_test(target, &cmd, status);
+  }
+
   if (target->ops->test_and_print_results == NULL)
     return TWOPENCE_NOT_SUPPORTED;
 
@@ -199,6 +211,18 @@ twopence_test_and_print_results(struct twopence_target *target, const char *user
 int
 twopence_test_and_drop_results(struct twopence_target *target, const char *username, const char *command, twopence_status_t *status)
 {
+  if (target->ops->run_test) {
+    twopence_command_t cmd;
+
+    twopence_command_init(&cmd, command);
+    cmd.user = username;
+
+    twopence_sink_init_none(&cmd.sink);
+    twopence_source_init_fd(&cmd.source, 0);
+
+    return twopence_run_test(target, &cmd, status);
+  }
+
   if (target->ops->test_and_drop_results == NULL)
     return TWOPENCE_NOT_SUPPORTED;
 
@@ -209,6 +233,18 @@ int
 twopence_test_and_store_results_together(struct twopence_target *target, const char *username, const char *command,
 		char *buffer, int size, twopence_status_t *status)
 {
+  if (target->ops->run_test) {
+    twopence_command_t cmd;
+
+    twopence_command_init(&cmd, command);
+    cmd.user = username;
+
+    twopence_sink_init(&cmd.sink, TWOPENCE_OUTPUT_BUFFER, buffer, NULL, size);
+    twopence_source_init_fd(&cmd.source, 0);
+
+    return twopence_run_test(target, &cmd, status);
+  }
+
   if (target->ops->test_and_store_results_together == NULL)
     return TWOPENCE_NOT_SUPPORTED;
 
@@ -221,6 +257,18 @@ int
 twopence_test_and_store_results_separately(struct twopence_target *target, const char *username, const char *command,
 		char *stdout_buffer, char *stderr_buffer, int size, twopence_status_t *status)
 {
+  if (target->ops->run_test) {
+    twopence_command_t cmd;
+
+    twopence_command_init(&cmd, command);
+    cmd.user = username;
+
+    twopence_sink_init(&cmd.sink, TWOPENCE_OUTPUT_BUFFER_SEPARATELY, stdout_buffer, stderr_buffer, size);
+    twopence_source_init_fd(&cmd.source, 0);
+
+    return twopence_run_test(target, &cmd, status);
+  }
+
   if (target->ops->test_and_store_results_separately == NULL)
     return TWOPENCE_NOT_SUPPORTED;
 
