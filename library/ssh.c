@@ -94,13 +94,19 @@ __twopence_ssh_sleep()
 
 // Read the input from the keyboard or a pipe
 static int
-__twopence_ssh_read_input(ssh_channel channel, bool *nothing, bool *eof)
+__twopence_ssh_read_input(struct twopence_ssh_target *handle, ssh_channel channel, bool *nothing, bool *eof)
 {
   char buffer[BUFFER_SIZE];
   int size, written;
+  int fd;
+
+  if ((fd = handle->base.current.source.fd) < 0) {
+    *nothing = *eof = true;
+    return 0;
+  }
 
   // Read from stdin
-  size = read(0, buffer, BUFFER_SIZE);
+  size = read(fd, buffer, BUFFER_SIZE);
   if (size < 0)
   {
     if (errno != EAGAIN)               // Error
@@ -173,7 +179,7 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, ssh_channel chan
     // Nonblocking read from stdin
     if (!eof_0)
     {
-      if (__twopence_ssh_read_input(channel, &nothing_0, &eof_0) < 0)
+      if (__twopence_ssh_read_input(handle, channel, &nothing_0, &eof_0) < 0)
         return -1;
     }
 
@@ -341,25 +347,25 @@ __twopence_ssh_command_ssh(struct twopence_ssh_target *handle, const char *comma
 {
   ssh_session session = handle->session;
   ssh_channel channel;
+  int was_blocking;
   int rc;
 
   // Tune stdin so it is nonblocking
-  if (twopence_tune_stdin(false) < 0)
-  {
+  was_blocking = twopence_source_set_blocking(&handle->base.current.source, false);
+  if (was_blocking < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
-  }
 
   // We need a SSH channel to get the results
   channel = ssh_channel_new(session);
   if (channel == NULL)
   {
-    twopence_tune_stdin(true);
+    twopence_source_set_blocking(&handle->base.current.source, was_blocking);
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
   if (ssh_channel_open_session(channel) != SSH_OK)
   {
     ssh_channel_free(channel);
-    twopence_tune_stdin(true);
+    twopence_source_set_blocking(&handle->base.current.source, was_blocking);
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
   handle->channel = channel;
@@ -370,7 +376,7 @@ __twopence_ssh_command_ssh(struct twopence_ssh_target *handle, const char *comma
     handle->channel = NULL;
     ssh_channel_close(channel);
     ssh_channel_free(channel);
-    twopence_tune_stdin(true);
+    twopence_source_set_blocking(&handle->base.current.source, was_blocking);
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
   handle->channel = NULL;
@@ -383,7 +389,8 @@ __twopence_ssh_command_ssh(struct twopence_ssh_target *handle, const char *comma
   ssh_channel_close(channel);
   status_ret->minor = ssh_channel_get_exit_status(channel);
   ssh_channel_free(channel);
-  twopence_tune_stdin(true);
+
+  twopence_source_set_blocking(&handle->base.current.source, was_blocking);
   return rc;
 }
 
@@ -629,6 +636,39 @@ twopence_init_new(const char *arg)
   return target;
 }
 
+/*
+ * Run a test
+ */
+static int
+twopence_ssh_run_test(struct twopence_target *opaque_handle,
+		twopence_command_t *cmd,
+		twopence_status_t *status_ret)
+{
+  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
+  int rc;
+
+  if (cmd->command == NULL)
+    return TWOPENCE_PARAMETER_ERROR;
+
+  /* 'major' makes no sense for SSH and 'minor' defaults to 0 */
+  memset(status_ret, 0, sizeof(*status_ret));
+
+  handle->base.current.sink = cmd->sink;
+  handle->base.current.source = cmd->source;
+
+  // Connect to the remote host
+  if (__twopence_ssh_connect_ssh(handle, cmd->user?: "root") < 0)
+    return TWOPENCE_OPEN_SESSION_ERROR;
+
+  // Execute the command
+  rc = __twopence_ssh_command_ssh(handle, cmd->command, status_ret);
+
+  // Disconnect from remote host
+  __twopence_ssh_disconnect_ssh(handle);
+  return rc;
+}
+
+
 // Run a test command, and print output
 //
 // Returns 0 if everything went fine
@@ -644,6 +684,9 @@ twopence_ssh_test_and_print_results(struct twopence_target *opaque_handle,
 
   // 'major' makes no sense for SSH and 'minor' defaults to 0
   memset(status_ret, 0, sizeof(*status_ret));
+
+  /* Take output from stdin by default */
+  twopence_source_init_fd(&handle->base.current.source, 0);
 
   // Output will happen on the screen
   twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL, 0);
@@ -676,6 +719,9 @@ twopence_ssh_test_and_drop_results(struct twopence_target *opaque_handle,
   // 'major' makes no sense for SSH and 'minor' defaults to 0
   memset(status_ret, 0, sizeof(*status_ret));
 
+  /* Take output from stdin by default */
+  twopence_source_init_fd(&handle->base.current.source, 0);
+
   // Output will happen on the screen
   twopence_sink_init_none(&handle->base.current.sink);
 
@@ -707,6 +753,9 @@ twopence_ssh_test_and_store_results_together(struct twopence_target *opaque_hand
 
   // 'major' makes no sense for SSH and 'minor' defaults to 0
   memset(status_ret, 0, sizeof(*status_ret));
+
+  /* Take output from stdin by default */
+  twopence_source_init_fd(&handle->base.current.source, 0);
 
   // Output will happen in the common buffer
   twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_BUFFER, buffer_out, NULL, size);
@@ -746,6 +795,9 @@ twopence_ssh_test_and_store_results_separately(struct twopence_target *opaque_ha
 
   // 'major' makes no sense for SSH and 'minor' defaults to 0
   memset(status_ret, 0, sizeof(*status_ret));
+
+  /* Take output from stdin by default */
+  twopence_source_init_fd(&handle->base.current.source, 0);
 
   // Output will happen in the separate buffers
   twopence_sink_init(&handle->base.current.sink, TWOPENCE_OUTPUT_BUFFER_SEPARATELY, buffer_out, buffer_err, size);
@@ -903,6 +955,7 @@ const struct twopence_plugin twopence_ssh_ops = {
 	.name		= "ssh",
 
 	.init = twopence_init_new,
+	.run_test = twopence_ssh_run_test,
 	.test_and_print_results	= twopence_ssh_test_and_print_results,
 	.test_and_drop_results	= twopence_ssh_test_and_drop_results,
 	.test_and_store_results_together = twopence_ssh_test_and_store_results_together,

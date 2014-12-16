@@ -66,10 +66,14 @@ typedef struct twopence_status {
 	int			minor;
 } twopence_status_t;
 
+/* Forward decls for the plugin functions */
+struct twopence_command;
+
 struct twopence_plugin {
 	const char *		name;
 
 	struct twopence_target *(*init)(const char *);
+	int			(*run_test)(struct twopence_target *, struct twopence_command *, twopence_status_t *);
 	int			(*test_and_print_results)(struct twopence_target *, const char *, const char *, twopence_status_t *);
 	int			(*test_and_drop_results)(struct twopence_target *, const char *, const char *, twopence_status_t *);
 	int			(*test_and_store_results_together)(struct twopence_target *, const char *, const char *, char *, int, twopence_status_t *);
@@ -106,15 +110,43 @@ typedef enum {
 	TWOPENCE_OUTPUT_BUFFER_SEPARATELY,
 } twopence_output_t;
 
+typedef struct twopence_buffer twopence_buffer_t;
 struct twopence_buffer {
 	char *		tail;
 	char *		end;
 };
 
+typedef struct twopence_sink twopence_sink_t;
 struct twopence_sink {
 	twopence_output_t mode;
 	struct twopence_buffer outbuf;
 	struct twopence_buffer errbuf;
+};
+
+typedef struct twopence_source twopence_source_t;
+struct twopence_source {
+	int			fd;
+};
+
+typedef struct twopence_command twopence_command_t;
+struct twopence_command {
+	/* For now, we specify the command as a single string.
+	 * It would have been nicer to be able to pass the argv,
+	 * but the protocol doesn't support this yet. */
+	const char *		command;
+
+	/* The user to run this as. Default to root */
+	const char *		user;
+
+	/* FIXME: support passing environment variables to the command */
+
+	/* What to feed to the command's standard input.
+	 * Defaults to no input.
+	 */
+	twopence_source_t	source;
+
+	/* How to handle the command's standard out and error */
+	twopence_sink_t		sink;
 };
 
 /*
@@ -125,7 +157,8 @@ struct twopence_target {
 
 	/* Data related to current command */
 	struct {
-		struct twopence_sink	sink;
+	    twopence_sink_t	sink;
+	    twopence_source_t	source;
 	} current;
 
 	const struct twopence_plugin *ops;
@@ -147,6 +180,15 @@ struct twopence_target {
  *   or NULL in case of a problem.
  */
 extern int		twopence_target_new(const char *target_spec, struct twopence_target **ret);
+
+/*
+ * Run the specified command and wait for it to complete.
+ *
+ * The @command parameter points to a struct specifying the command itself,
+ * the user to run it as (defaults to root), what file to pass it on standard
+ * input, and how to handle its output
+ */
+extern int		twopence_run_test(struct twopence_target *, twopence_command_t *, twopence_status_t *);
 
 /*
  * Run a test command, and print output
@@ -292,6 +334,11 @@ extern const char *	twopence_strerror(int rc);
 extern void		twopence_perror(const char *, int rc);
 
 /*
+ * Handling for the command struct
+ */
+extern void		twopence_command_init(twopence_command_t *cmd, const char *cmdline);
+
+/*
  * Output handling functions
  */
 extern void		twopence_sink_init(struct twopence_sink *, twopence_output_t, char *, char *, size_t);
@@ -304,5 +351,8 @@ extern int		__twopence_sink_write_stderr(struct twopence_sink *sink, char c);
 extern int		__twopence_sink_write_stdout(struct twopence_sink *sink, char c);
 
 extern int		twopence_tune_stdin(bool blocking);
+extern void		twopence_source_init_none(twopence_source_t *);
+extern void		twopence_source_init_fd(twopence_source_t *, int fd);
+extern int		twopence_source_set_blocking(twopence_source_t *, bool);
 
 #endif /* TWOPENCE_H */

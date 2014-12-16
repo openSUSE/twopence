@@ -24,6 +24,7 @@ struct twopence_pipe_ops {
 extern void	twopence_pipe_target_init(struct twopence_pipe_target *, int plugin_type, const struct twopence_plugin *,
 			const struct twopence_pipe_ops *);
 
+extern int	twopence_pipe_run_test(struct twopence_target *, twopence_command_t *, twopence_status_t *);
 extern int	twopence_pipe_test_and_print_results(struct twopence_target *, const char *, const char *, twopence_status_t *);
 extern int	twopence_pipe_test_and_drop_results(struct twopence_target *, const char *, const char *, twopence_status_t *);
 extern int	twopence_pipe_test_and_store_results_together(struct twopence_target *, const char *, const char *,

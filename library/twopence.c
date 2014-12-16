@@ -160,6 +160,34 @@ twopence_target_free(struct twopence_target *target)
  * General API
  */
 int
+twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twopence_status_t *status)
+{
+  int rc;
+
+  if (target->ops->run_test == NULL)
+    return TWOPENCE_NOT_SUPPORTED;
+
+  rc = target->ops->run_test(target, cmd, status);
+
+  /* If the output is being buffered, try to store final NUL character
+   * for termination.
+   * FIXME: this is not a great idea when dealing with binary data.
+   * We should pass the buffer objects all the way up and down the
+   * stack.
+   */
+  if (rc == 0) {
+    twopence_sink_t *sink = &target->current.sink;
+
+    if (sink->outbuf.tail && twopence_sink_putc(sink, false, '\0') < 0)
+      return TWOPENCE_RECEIVE_RESULTS_ERROR;
+    if (sink->errbuf.tail && twopence_sink_putc(sink, true, '\0') < 0)
+      return TWOPENCE_RECEIVE_RESULTS_ERROR;
+  }
+
+  return rc;
+}
+
+int
 twopence_test_and_print_results(struct twopence_target *target, const char *username, const char *command, twopence_status_t *status)
 {
   if (target->ops->test_and_print_results == NULL)
@@ -290,6 +318,19 @@ twopence_perror(const char *msg, int rc)
 }
 
 /*
+ * Handling of command structs
+ */
+void
+twopence_command_init(twopence_command_t *cmd, const char *cmdline)
+{
+  memset(cmd, 0, sizeof(*cmd));
+
+  twopence_source_init_none(&cmd->source);
+  twopence_sink_init(&cmd->sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL, 0);
+  cmd->command = cmdline;
+}
+
+/*
  * Switch stdin blocking mode
  */
 int
@@ -306,6 +347,44 @@ twopence_tune_stdin(bool blocking)
     flags |= O_NONBLOCK;
 
   return fcntl(0, F_SETFL, flags);
+}
+
+/*
+ * Input handling
+ */
+void
+twopence_source_init_none(twopence_source_t *src)
+{
+  src->fd = -1;
+}
+
+void
+twopence_source_init_fd(twopence_source_t *src, int fd)
+{
+  src->fd = fd;
+}
+
+int
+twopence_source_set_blocking(twopence_source_t *src, bool blocking)
+{
+  int oflags, nflags;
+
+  if (src->fd < 0)
+    return 0;
+
+  oflags = fcntl(src->fd, F_GETFL);        // Get old flags
+  if (oflags == -1)
+    return -1;
+
+  nflags = oflags & ~O_NONBLOCK;
+  if (!blocking)
+    nflags |= O_NONBLOCK;
+
+  if (fcntl(src->fd, F_SETFL, nflags) < 0)
+    return -1;
+
+  /* Return old settings (true means it was using blocking mode before the change) */
+  return !(oflags & O_NONBLOCK);
 }
 
 /*
