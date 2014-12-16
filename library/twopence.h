@@ -112,6 +112,7 @@ typedef enum {
 
 typedef struct twopence_buffer twopence_buffer_t;
 struct twopence_buffer {
+	char *		head;
 	char *		tail;
 	char *		end;
 };
@@ -341,6 +342,10 @@ extern void		twopence_command_init(twopence_command_t *cmd, const char *cmdline)
 /*
  * Output handling functions
  */
+extern void		twopence_buffer_init(twopence_buffer_t *);
+extern void		twopence_buffer_alloc(twopence_buffer_t *, size_t);
+extern void		twopence_buffer_free(twopence_buffer_t *);
+
 extern void		twopence_sink_init(struct twopence_sink *, twopence_output_t, char *, char *, size_t);
 extern void		twopence_sink_init_none(struct twopence_sink *);
 extern int		twopence_sink_putc(struct twopence_sink *sink, bool is_error, char c);

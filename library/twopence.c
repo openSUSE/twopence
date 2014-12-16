@@ -441,8 +441,28 @@ twopence_source_set_blocking(twopence_source_t *src, bool blocking)
 static void
 __twopence_buffer_init(struct twopence_buffer *buf, char *head, size_t size)
 {
-  buf->tail = head;
+  buf->head = buf->tail = head;
   buf->end = head + size;
+}
+
+void
+twopence_buffer_init(twopence_buffer_t *buf)
+{
+  memset(buf, 0, sizeof(*buf));
+}
+
+void
+twopence_buffer_alloc(twopence_buffer_t *buf, size_t size)
+{
+  __twopence_buffer_init(buf, calloc(size, 1), size);
+}
+
+void
+twopence_buffer_free(twopence_buffer_t *buf)
+{
+  if (buf->head)
+    free(buf->head);
+  memset(buf, 0, sizeof(*buf));
 }
 
 void
