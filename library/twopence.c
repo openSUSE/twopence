@@ -275,6 +275,10 @@ twopence_strerror(int rc)
       return "Unknown plugin";
     case TWOPENCE_INCOMPATIBLE_PLUGIN:
       return "Incompatible plugin";
+    case TWOPENCE_NOT_SUPPORTED:
+      return "Operation not supported";
+    case TWOPENCE_PROTOCOL_ERROR:
+      return "Protocol error";
   }
   return "Unknow error";
 }
