@@ -7,6 +7,7 @@ SUBDIRS = \
 	library \
 	server \
 	ruby \
+	python \
 	shell \
 	examples
 
