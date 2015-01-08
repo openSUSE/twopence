@@ -3,7 +3,7 @@ File extraction command. It is used to retrieve a file from some testing environ
 Currently the only supported environment is a livirt virtual machine.
 
 
-Copyright (C) 2014 SUSE
+Copyright (C) 2014-2015 SUSE
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

@@ -30,11 +30,12 @@ serial.so: twopence.h protocol.h $(SERIAL_OBJS)
 libtwopence.so: twopence.h $(LIB_OBJS)
 	$(CC) $(CFLAGS) -o $@ --shared -Wl,-soname,libtwopence.so.0 $(LIB_OBJS)
 
-install: virtio.so ssh.so serial.so twopence.h
+install: virtio.so ssh.so serial.so libtwopence.so twopence.h
 	mkdir -p $(DESTDIR)$(LIBDIR)
-	cp virtio.so $(DESTDIR)$(LIBDIR)/libtwopence_virtio.so.0.2.2
-	cp ssh.so    $(DESTDIR)$(LIBDIR)/libtwopence_ssh.so.0.2.2
-	cp serial.so $(DESTDIR)$(LIBDIR)/libtwopence_serial.so.0.2.2
+	cp virtio.so $(DESTDIR)$(LIBDIR)/libtwopence_virtio.so.0.3.0
+	cp ssh.so    $(DESTDIR)$(LIBDIR)/libtwopence_ssh.so.0.3.0
+	cp serial.so $(DESTDIR)$(LIBDIR)/libtwopence_serial.so.0.3.0
+	cp libtwopence.so $(DESTDIR)$(LIBDIR)/libtwopence.so.0.3.0
 	mkdir -p $(DESTDIR)$(INCDIR)
 	cp twopence.h $(DESTDIR)$(INCDIR)
 
