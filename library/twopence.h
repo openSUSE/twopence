@@ -18,7 +18,15 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
+#ifndef TWOPENCE_H
+#define TWOPENCE_H
+
 #include <stdbool.h>
+
+/* API versioning. These values correspond directly to the
+ * shared library version numbers */
+#define TWOPENCE_API_MAJOR_VERSION	0
+#define TWOPENCE_API_MINOR_VERSION	2
 
 // Error codes
 #define TWOPENCE_PARAMETER_ERROR -1
@@ -31,6 +39,13 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define TWOPENCE_REMOTE_FILE_ERROR -8
 #define TWOPENCE_RECEIVE_FILE_ERROR -9
 #define TWOPENCE_INTERRUPT_COMMAND_ERROR -10
+#define TWOPENCE_INVALID_TARGET_SPEC -11
+#define TWOPENCE_UNKNOWN_PLUGIN -12
+#define TWOPENCE_INCOMPATIBLE_PLUGIN -13
+#define TWOPENCE_NOT_SUPPORTED -14
+#define TWOPENCE_PROTOCOL_ERROR -15
+
+struct twopence_target;
 
 // Initialize the virtio library
 //
@@ -45,7 +60,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 //   twopence_init_virtio_t twopence_init;
 //   handle = (*twopence_init)
 //              (filename);
-typedef void *(*twopence_init_virtio_t)(const char *);
+typedef struct twopence_target *(*twopence_init_virtio_t)(const char *);
 
 // Initialize the ssh library
 //
@@ -61,7 +76,7 @@ typedef void *(*twopence_init_virtio_t)(const char *);
 //   twopence_init_ssh_t twopence_init;
 //   handle = (*twopence_init)
 //              (hostname, port);
-typedef void *(*twopence_init_ssh_t)(const char *, unsigned int);
+typedef struct twopence_target *(*twopence_init_ssh_t)(const char *, unsigned int);
 
 // Initialize the serial library
 //
@@ -76,7 +91,7 @@ typedef void *(*twopence_init_ssh_t)(const char *, unsigned int);
 //   twopence_init_serial_t twopence_init;
 //   handle = (*twopence_init)
 //              (filename);
-typedef void *(*twopence_init_serial_t)(const char *);
+typedef struct twopence_target *(*twopence_init_serial_t)(const char *);
 
 // Run a test command, and print or drop output
 //
@@ -98,7 +113,7 @@ typedef void *(*twopence_init_serial_t)(const char *);
 //   twopence_test_t1 twopence_test_and_drop_results;
 //   rc = (*twopence_test_and_drop_results)
 //          (handle, username, command, &major, &minor);
-typedef int (*twopence_test_t1)(void *, const char *, const char *, int *, int *);
+typedef int (*twopence_test_t1)(struct twopence_target *, const char *, const char *, int *, int *);
 
 // Run a test command, and store the results in memory in a common buffer
 //
@@ -118,7 +133,7 @@ typedef int (*twopence_test_t1)(void *, const char *, const char *, int *, int *
 //   twopence_test_t2 twopence_test_and_store_results_together;
 //   rc = (*twopence_test_and_store_results_together)
 //          (handle, username, command, buffer, size, &major, &minor);
-typedef int (*twopence_test_t2)(void *, const char *, const char *, char *, int, int *, int *);
+typedef int (*twopence_test_t2)(struct twopence_target *, const char *, const char *, char *, int, int *, int *);
 
 // Run a test command, and store the results in memory in two separate buffers
 //
@@ -139,7 +154,7 @@ typedef int (*twopence_test_t2)(void *, const char *, const char *, char *, int,
 //  twopence_test_t3 twopence_test_and_store_results_separately;
 //  rc = (*twopence_test_and_store_results_separately)
 //         (handle, username, command, buffer_out, buffer_err, size, &major, &minor);
-typedef int (*twopence_test_t3)(void *, const char *, const char *, char *, char *, int, int *, int *);
+typedef int (*twopence_test_t3)(struct twopence_target *, const char *, const char *, char *, char *, int, int *, int *);
 
 // Inject a file into the system under test
 //
@@ -158,7 +173,7 @@ typedef int (*twopence_test_t3)(void *, const char *, const char *, char *, char
 //   twopence_inject_t twopence_inject_file;
 //   rc = (*twopence_inject_file)
 //          (handle, username, local_filename, remote_filename, &remote_rc, false);
-typedef int (*twopence_inject_t)(void *, const char *, const char *, const char *, int *, bool);
+typedef int (*twopence_inject_t)(struct twopence_target *, const char *, const char *, const char *, int *, bool);
 
 // Extract a file from the system under test
 //
@@ -177,7 +192,7 @@ typedef int (*twopence_inject_t)(void *, const char *, const char *, const char 
 //   twopence_extract_t twopence_extract_file;
 //   rc = (*twopence_extract_file)
 //          (handle, username, remote_filename, local_filename, &remote_rc, false);
-typedef int (*twopence_extract_t)(void *, const char *, const char *, const char *, int *, bool);
+typedef int (*twopence_extract_t)(struct twopence_target *, const char *, const char *, const char *, int *, bool);
 
 // Tell the remote test server to exit
 // WARNING: you won't be able to run further tests after that,
@@ -193,7 +208,7 @@ typedef int (*twopence_extract_t)(void *, const char *, const char *, const char
 //   twopence_exit_t twopence_exit_remote;
 //   rc = (*twopence_exit_remote)
 //          (handle);
-typedef int (*twopence_exit_t)(void *);
+typedef int (*twopence_exit_t)(struct twopence_target *);
 
 // Interrupt current command
 //
@@ -207,7 +222,7 @@ typedef int (*twopence_exit_t)(void *);
 //   twopence_interrupt_t twopence_interrupt_command;
 //   (*twopence_interrupt_command)
 //          (handle);
-typedef int (*twopence_interrupt_t)(void *);
+typedef int (*twopence_interrupt_t)(struct twopence_target *);
 
 // Close the library
 //
@@ -220,5 +235,109 @@ typedef int (*twopence_interrupt_t)(void *);
 // Example:
 //   twopence_end_t twopence_end;
 //   (*twopence_end)(handle);
-typedef void (*twopence_end_t)(void *);
+typedef void (*twopence_end_t)(struct twopence_target *);
 
+struct twopence_plugin {
+	const char *		name;
+
+	struct twopence_target *(*init)(const char *);
+	twopence_test_t1	test_and_print_results;
+	twopence_test_t1	test_and_drop_results;
+	twopence_test_t2	test_and_store_results_together;
+	twopence_test_t3	test_and_store_results_separately;
+	twopence_inject_t	inject_file;
+	twopence_extract_t	extract_file;
+	twopence_exit_t		exit_remote;
+	twopence_interrupt_t	interrupt_command;
+	twopence_end_t		end;
+};
+
+enum {
+	TWOPENCE_PLUGIN_UNKNOWN = -1,
+	TWOPENCE_PLUGIN_VIRTIO = 0,
+	TWOPENCE_PLUGIN_SSH = 1,
+	TWOPENCE_PLUGIN_SERIAL = 2,
+
+	__TWOPENCE_PLUGIN_MAX
+};
+
+/*
+ * Output related data types.
+ * At some point, we probably want to support concurrent execution of several
+ * commands, at which point we'll have to make these per-command.
+ */
+typedef enum {
+	TWOPENCE_OUTPUT_NONE,
+	TWOPENCE_OUTPUT_SCREEN,
+	TWOPENCE_OUTPUT_BUFFER,
+	TWOPENCE_OUTPUT_BUFFER_SEPARATELY,
+} twopence_output_t;
+
+struct twopence_buffer {
+	char *		tail;
+	char *		end;
+};
+
+struct twopence_sink {
+	twopence_output_t mode;
+	struct twopence_buffer outbuf;
+	struct twopence_buffer errbuf;
+};
+
+/*
+ * The target type
+ */
+struct twopence_target {
+	unsigned int		plugin_type;
+
+	/* Data related to current command */
+	struct {
+		struct twopence_sink	sink;
+	} current;
+
+	const struct twopence_plugin *ops;
+};
+
+extern int		twopence_target_new(const char *target_spec, struct twopence_target **ret);
+extern int		twopence_test_and_print_results(struct twopence_target *target,
+					const char *username, const char *command,
+					int *major_ret, int *minor_ret);
+extern int		twopence_test_and_drop_results(struct twopence_target *target,
+					const char *username, const char *command,
+					int *major_ret, int *minor_ret);
+extern int		twopence_test_and_store_results_together(struct twopence_target *target,
+					const char *username, const char *command,
+					char *buffer, int size,
+					int *major_ret, int *minor_ret);
+extern int		twopence_test_and_store_results_separately(struct twopence_target *target,
+					const char *username, const char *command,
+					char *stdout_buffer, char *stderr_buffer, int size,
+					int *major_ret, int *minor_ret);
+extern int		twopence_inject_file(struct twopence_target *target,
+					const char *username, const char *local_path, const char *remote_path,
+					int *remote_rc, bool blabla);
+extern int		twopence_extract_file(struct twopence_target *target,
+					const char *username, const char *remote_path, const char *local_path,
+					int *remote_rc, bool blabla);
+extern int		twopence_exit_remote(struct twopence_target *target);
+extern int		twopence_interrupt_command(struct twopence_target *target);
+extern void		twopence_target_free(struct twopence_target *target);
+
+extern const char *	twopence_strerror(int rc);
+extern void		twopence_perror(const char *, int rc);
+
+/*
+ * Output handling functions
+ */
+extern void		twopence_sink_init(struct twopence_sink *, twopence_output_t, char *, char *, size_t);
+extern void		twopence_sink_init_none(struct twopence_sink *);
+extern int		twopence_sink_putc(struct twopence_sink *sink, bool is_error, char c);
+extern int		twopence_sink_write(struct twopence_sink *sink, bool is_error, const char *data, size_t len);
+
+/* These should really go to a private header file, as they're internal to the plugins */
+extern int		__twopence_sink_write_stderr(struct twopence_sink *sink, char c);
+extern int		__twopence_sink_write_stdout(struct twopence_sink *sink, char c);
+
+extern int		twopence_tune_stdin(bool blocking);
+
+#endif /* TWOPENCE_H */

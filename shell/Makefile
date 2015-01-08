@@ -1,21 +1,30 @@
 .PHONY: all install clean
 
+ifdef RPM_OPTIMIZE
+CCOPT	= $(RPM_OPTIMIZE)
+else
+CCOPT	= -Wall -O2 -g
+endif
+
+CFLAGS	= -I../library $(CCOPT)
+LINK	+= -L../library -ltwopence -ldl
+
 BINDIR ?= /usr/bin
 MANDIR ?= /usr/share/man
 
 all: command inject extract exit
 
-command: command.c ../util/util.c ../util/util.h ../library/twopence.h
-	gcc command.c ../util/util.c -ldl -o command
+command: command.c ../library/twopence.h
+	$(CC) $(CFLAGS) command.c $(LINK) -o command
 
-inject: inject.c ../util/util.c ../util/util.h ../library/twopence.h
-	gcc inject.c ../util/util.c -ldl -o inject
+inject: inject.c ../library/twopence.h
+	$(CC) $(CFLAGS) inject.c $(LINK) -o inject
 
-extract: extract.c ../util/util.c ../util/util.h ../library/twopence.h
-	gcc extract.c ../util/util.c -ldl -o extract
+extract: extract.c ../library/twopence.h
+	$(CC) $(CFLAGS) extract.c $(LINK) -o extract
 
-exit: exit.c ../util/util.c ../util/util.h ../library/twopence.h
-	gcc exit.c ../util/util.c -ldl -o exit
+exit: exit.c ../library/twopence.h
+	$(CC) $(CFLAGS) exit.c $(LINK) -o exit
 
 install: command inject extract exit command.1 inject.1 extract.1 exit.1
 	mkdir -p $(DESTDIR)$(BINDIR)

@@ -20,7 +20,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <ruby.h>
 
-#include "plugins.h"
+#include "twopence.h"
 
 // The shared buffer
 char output_buffer[65536];
@@ -44,66 +44,31 @@ void deallocate_target(void *);
 //             and that you will need for subsequent calls
 VALUE method_init(VALUE self, VALUE ruby_target)
 {
-  void *handle;
+  struct twopence_target *target;
   VALUE ruby_target_class;
+  const char *target_spec;
+  int rc;
 
   Check_Type(ruby_target, T_STRING);
 
-  // Load library and create a target handle
-  switch (target_plugin
-            (StringValueCStr(ruby_target)))
-  {
-    case 0:                            // virtio
-      if (init_virtio_plugin() < 0)
-        return Qnil;
-      handle = init_virtio_handle
-        (StringValueCStr(ruby_target));
-      if (handle == NULL)
-      {
-        end_virtio_plugin();
-        return Qnil;
-      }
-      break;
-    case 1:                            // ssh
-      if (init_ssh_plugin() < 0)
-        return Qnil;
-      handle = init_ssh_handle
-        (StringValueCStr(ruby_target));
-      if (handle == NULL)
-      {
-        end_ssh_plugin();
-        return Qnil;
-      }
-      break;
-    case 2:                            // serial
-      if (init_serial_plugin() < 0)
-        return Qnil;
-      handle = init_serial_handle
-        (StringValueCStr(ruby_target));
-      if (handle == NULL)
-      {
-        end_serial_plugin();
-        return Qnil;
-      }
-      break;
-    default:                           // unknown
-      return Qnil;
+  target_spec = StringValueCStr(ruby_target);
+  rc = twopence_target_new(target_spec, &target);
+  if (rc < 0) {
+    fprintf(stderr, "Error while initializing library: %s\n", twopence_strerror(rc));
+    return Qnil;
   }
 
   // Return a new Ruby target wrapping the C handle
   ruby_target_class = rb_const_get(self, rb_intern("Target"));
-  return Data_Wrap_Struct(ruby_target_class, NULL, deallocate_target, handle);
+  return Data_Wrap_Struct(ruby_target_class, NULL, deallocate_target, target);
 }
 
 // Destructor
 void deallocate_target(void *handle)
 {
-  struct twopence_plugin *plugin;
+  struct twopence_target *target = (struct twopence_target *) handle;
 
-  plugin = get_plugin(handle);
-  (*plugin->twopence_end)(handle);     // Call the end() function for this target
-
-  end_plugin(plugin);                  // One less reference for this plugin, try to release the library
+  twopence_target_free(target);
 }
 
 // ******************* Methods of class Twopence::Target *********************
@@ -117,17 +82,15 @@ void deallocate_target(void *handle)
 //     minor: the return code of the command
 VALUE method_test_and_print_results(VALUE self, VALUE ruby_user, VALUE ruby_command)
 {
-  void *handle;
-  const struct twopence_plugin *plugin;
+  struct twopence_target *target;
   int rc, major, minor;
 
   Check_Type(ruby_user, T_STRING);
   Check_Type(ruby_command, T_STRING);
-  Data_Get_Struct(self, void, handle);
+  Data_Get_Struct(self, struct twopence_target, target);
 
-  plugin = get_plugin(handle);
-  rc = (*plugin->twopence_test_and_print_results)
-    (handle, StringValueCStr(ruby_user), StringValueCStr(ruby_command),
+  rc = twopence_test_and_print_results
+    (target, StringValueCStr(ruby_user), StringValueCStr(ruby_command),
      &major, &minor);
 
   return rb_ary_new3(3,
@@ -143,17 +106,15 @@ VALUE method_test_and_print_results(VALUE self, VALUE ruby_user, VALUE ruby_comm
 //     minor: the return code of the command
 VALUE method_test_and_drop_results(VALUE self, VALUE ruby_user, VALUE ruby_command)
 {
-  void *handle;
-  const struct twopence_plugin *plugin;
+  struct twopence_target *target;
   int rc, major, minor;
 
   Check_Type(ruby_user, T_STRING);
   Check_Type(ruby_command, T_STRING);
-  Data_Get_Struct(self, void, handle);
+  Data_Get_Struct(self, struct twopence_target, target);
 
-  plugin = get_plugin(handle);
-  rc = (*plugin->twopence_test_and_drop_results)
-    (handle, StringValueCStr(ruby_user), StringValueCStr(ruby_command),
+  rc = twopence_test_and_drop_results
+    (target, StringValueCStr(ruby_user), StringValueCStr(ruby_command),
      &major, &minor);
 
   return rb_ary_new3(3,
@@ -170,17 +131,15 @@ VALUE method_test_and_drop_results(VALUE self, VALUE ruby_user, VALUE ruby_comma
 //     minor: the return code of the command
 VALUE method_test_and_store_results_together(VALUE self, VALUE ruby_user, VALUE ruby_command)
 {
-  void *handle;
-  const struct twopence_plugin *plugin;
+  struct twopence_target *target;
   int rc, major, minor;
 
   Check_Type(ruby_user, T_STRING);
   Check_Type(ruby_command, T_STRING);
-  Data_Get_Struct(self, void, handle);
+  Data_Get_Struct(self, struct twopence_target, target);
 
-  plugin = get_plugin(handle);
-  rc = (*plugin->twopence_test_and_store_results_together)
-    (handle, StringValueCStr(ruby_user), StringValueCStr(ruby_command),
+  rc = twopence_test_and_store_results_together
+    (target, StringValueCStr(ruby_user), StringValueCStr(ruby_command),
      output_buffer, 65536,
      &major, &minor);
 
@@ -200,19 +159,17 @@ VALUE method_test_and_store_results_together(VALUE self, VALUE ruby_user, VALUE 
 //     minor: the return code of the command
 VALUE method_test_and_store_results_separately(VALUE self, VALUE ruby_user, VALUE ruby_command)
 {
-  void *handle;
-  const struct twopence_plugin *plugin;
+  struct twopence_target *target;
   char *buffer_out = output_buffer,
        *buffer_err = output_buffer + 32768;
   int rc, major, minor;
 
   Check_Type(ruby_user, T_STRING);
   Check_Type(ruby_command, T_STRING);
-  Data_Get_Struct(self, void, handle);
+  Data_Get_Struct(self, struct twopence_target, target);
 
-  plugin = get_plugin(handle);
-  rc = (*plugin->twopence_test_and_store_results_separately)
-    (handle, StringValueCStr(ruby_user), StringValueCStr(ruby_command),
+  rc = twopence_test_and_store_results_separately
+    (target, StringValueCStr(ruby_user), StringValueCStr(ruby_command),
      buffer_out, buffer_err, 32768,
      &major, &minor);
 
@@ -231,8 +188,7 @@ VALUE method_test_and_store_results_separately(VALUE self, VALUE ruby_user, VALU
 VALUE method_inject_file(VALUE self, VALUE ruby_user, VALUE ruby_local_file, VALUE ruby_remote_file, VALUE ruby_dots)
 {
   bool dots;
-  void *handle;
-  const struct twopence_plugin *plugin;
+  struct twopence_target *target;
   int rc, remote_rc;
 
   Check_Type(ruby_user, T_STRING);
@@ -244,11 +200,10 @@ VALUE method_inject_file(VALUE self, VALUE ruby_user, VALUE ruby_local_file, VAL
     case T_FALSE: dots = false; break;
     default: rb_raise(rb_eTypeError, "expected a boolean value");
   }
-  Data_Get_Struct(self, void, handle);
+  Data_Get_Struct(self, struct twopence_target, target);
 
-  plugin = get_plugin(handle);
-  rc = (*plugin->twopence_inject_file)
-    (handle, StringValueCStr(ruby_user), StringValueCStr(ruby_local_file), StringValueCStr(ruby_remote_file),
+  rc = twopence_inject_file
+    (target, StringValueCStr(ruby_user), StringValueCStr(ruby_local_file), StringValueCStr(ruby_remote_file),
      &remote_rc, dots);
 
   return rb_ary_new3(2,
@@ -264,8 +219,7 @@ VALUE method_inject_file(VALUE self, VALUE ruby_user, VALUE ruby_local_file, VAL
 VALUE method_extract_file(VALUE self, VALUE ruby_user, VALUE ruby_remote_file, VALUE ruby_local_file, VALUE ruby_dots)
 {
   bool dots;
-  void *handle;
-  const struct twopence_plugin *plugin;
+  struct twopence_target *target;
   int rc, remote_rc;
 
   Check_Type(ruby_user, T_STRING);
@@ -277,11 +231,10 @@ VALUE method_extract_file(VALUE self, VALUE ruby_user, VALUE ruby_remote_file, V
     case T_FALSE: dots = false; break;
     default: rb_raise(rb_eTypeError, "expected a boolean value");
   }
-  Data_Get_Struct(self, void, handle);
+  Data_Get_Struct(self, struct twopence_target, target);
 
-  plugin = get_plugin(handle);
-  rc = (*plugin->twopence_extract_file)
-    (handle, StringValueCStr(ruby_user), StringValueCStr(ruby_remote_file), StringValueCStr(ruby_local_file),
+  rc = twopence_extract_file
+    (target, StringValueCStr(ruby_user), StringValueCStr(ruby_remote_file), StringValueCStr(ruby_local_file),
      &remote_rc, dots);
 
   return rb_ary_new3(2,
@@ -295,14 +248,12 @@ VALUE method_extract_file(VALUE self, VALUE ruby_user, VALUE ruby_remote_file, V
 //     rc: the return code of the testing platform
 VALUE method_interrupt_command(VALUE self)
 {
-  void *handle;
-  const struct twopence_plugin *plugin;
+  struct twopence_target *target;
   int rc;
 
-  Data_Get_Struct(self, void, handle);
+  Data_Get_Struct(self, struct twopence_target, target);
 
-  plugin = get_plugin(handle);
-  rc = (*plugin->twopence_interrupt_command)(handle);
+  rc = twopence_interrupt_command(target);
 
   return INT2NUM(rc);
 }
@@ -314,14 +265,12 @@ VALUE method_interrupt_command(VALUE self)
 //     rc: the return code of the testing platform
 VALUE method_exit(VALUE self)
 {
-  void *handle;
-  const struct twopence_plugin *plugin;
+  struct twopence_target *target;
   int rc;
 
-  Data_Get_Struct(self, void, handle);
+  Data_Get_Struct(self, struct twopence_target, target);
 
-  plugin = get_plugin(handle);
-  rc = (*plugin->twopence_exit_remote)(handle);
+  rc = twopence_exit_remote(target);
 
   return INT2NUM(rc);
 }

@@ -26,48 +26,48 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <fcntl.h>
 #include <poll.h>
 #include <errno.h>
+#include <unistd.h>
 
-#define BUFFER_SIZE 32768              // Size in bytes of the work buffer for receiving data from the remote
-#define TIMEOUT 5000                   // Timeout in milliseconds
-#define LONG_TIMEOUT 60000             // Timeout that is big enough for a command to run without any output
-#define UNIX_PATH_MAX 108              // Value correct for Linux only; used in /usr/include/sys/un.h
+#include "twopence.h"
+#include "protocol.h"
 
-// This structure encapsulates in an opaque way the behaviour of the library
-// It is not 100 % opaque, because it is publicly known that the first field is the plugin type
-struct _twopence_opaque
-{
-  int type;                            // 0 for virtio
-  enum { no_output, to_screen, common_buffer, separate_buffers } output_mode;
-  char *buffer_out, *end_out;
-  char *buffer_err, *end_err;
+struct twopence_virtio_target {
+  struct twopence_pipe_target pipe;
+
   struct sockaddr_un address;
 };
+
+extern const struct twopence_plugin twopence_virtio_ops;
+extern const struct twopence_pipe_ops twopence_virtio_link_ops;
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
 
 // Initialize the handle
 //
 // Returns 0 if everything went fine, or -1 in case of error
-int _twopence_init_handle(struct _twopence_opaque *handle, const char *sockname)
+static int
+__twopence_virtio_init(struct twopence_virtio_target *handle, const char *sockname)
 {
-  // Store the plugin type
-  handle->type = 0;                    // virtio
+  twopence_pipe_target_init(&handle->pipe, TWOPENCE_PLUGIN_VIRTIO, &twopence_virtio_ops, &twopence_virtio_link_ops);
 
   // Initialize the socket address
-  handle->address.sun_family =         // UNIX domain sockets
-    AF_LOCAL;
-  if (strlen(sockname) >= UNIX_PATH_MAX)
+  handle->address.sun_family = AF_LOCAL;
+  if (strlen(sockname) >= sizeof(handle->address.sun_path))
     return -1;
   strcpy(handle->address.sun_path, sockname);
 
   return 0;
 }
 
-// Open the UNIX domain socket
-//
-// Returns the file descriptor if successful, or -1 if failed
-int _twopence_open_link(const struct _twopence_opaque *handle)
+/*
+ * Open the UNIX domain socket
+ *
+ * Returns the file descriptor if successful, or -1 if failed
+ */
+static int
+__twopence_virtio_open(struct twopence_pipe_target *pipe_handle)
 {
+  struct twopence_virtio_target *handle = (struct twopence_virtio_target *) pipe_handle;
   int socket_fd, flags;
 
   // Create the file descriptor
@@ -97,147 +97,33 @@ int _twopence_open_link(const struct _twopence_opaque *handle)
   return socket_fd;
 }
 
-// Receive a maximum amount of bytes from the socket into a buffer
-//
-// Returns the number of bytes received, -1 otherwise
-int _twopence_receive_buffer
-  (int socket_fd, char *buffer, int maximum, int *rc)
+/*
+ * Receive a maximum amount of bytes from the socket into a buffer
+ *
+ * Returns the number of bytes received, -1 otherwise
+ */
+static int
+__twopence_virtio_recv(struct twopence_pipe_target *pipe_handle, int socket_fd, char *buffer, size_t size)
 {
-  struct pollfd fds[1];
-  int n, size;
-
-  *rc = 0;
-
-  fds[0].fd = socket_fd;               // Wait either for input on the socket or for a timeout
-  fds[0].events = POLLIN;
-  n = poll(fds, 1, TIMEOUT);
-  if (n < 0)
-  {
-    *rc = errno;
-    return -1;
-  }
-  if (n == 0)
-  {
-    *rc = ETIME;
-    return -1;
-  }
-
-  if (fds[0].revents & POLLIN)         // Read the data
-  {
-    size = recv
-      (socket_fd, buffer, maximum, 0);
-    if (size < 0 && errno != EAGAIN)
-    {
-      *rc = errno;
-      return -1;
-    }
-    return size;
-  }
-
-  return 0;
+  return recv(socket_fd, buffer, size, MSG_DONTWAIT);
 }
 
-// Receive a maximum amount of bytes from the socket or from stdin into a buffer
-//
-// Returns the number of bytes received, -1 otherwise
-int _twopence_receive_buffer_2
-  (int socket_fd, char *buffer, int maximum, int *rc, bool *end_of_stdin)
+/*
+ * Send a number of bytes in a buffer to the socket
+ *
+ * Returns the number of bytes sent, or -1 in case of error
+ */
+static int
+__twopence_virtio_send(struct twopence_pipe_target *pipe_handle, int socket_fd, const char *buffer, size_t size)
 {
-  struct pollfd fds[2];
-  int n, size;
-
-  *rc = 0;
-
-  fds[0].fd = 0;                       // Wait either for input on the keyboard, for input from the socket, or for a timeout
-  fds[0].events = POLLIN;
-  fds[1].fd = socket_fd;
-  fds[1].events = POLLIN;
-  if (*end_of_stdin)
-    n = poll(fds + 1, 1, LONG_TIMEOUT);
-  else
-    n = poll(fds, 2, LONG_TIMEOUT);
-  if (n < 0)
-  {
-    *rc = errno;
-    return -1;
-  }
-  if (n == 0)
-  {
-    *rc = ETIME;
-    return -1;
-  }
-
-  if (!*end_of_stdin)                  // If not end of input on stdin
-  {
-    if (fds[0].revents & POLLIN)       // Receive a chunk of data on real standard input
-    {
-      size = read
-        (0, buffer + 4, BUFFER_SIZE - 4, 0);
-      if (size < 0)
-      {
-        *rc = errno;
-        return -1;
-      }
-      if (size > 0)
-      {
-        buffer[0] = '0';
-        store_length(size + 4, buffer);
-        return size + 4;
-      }                                // Catch Ctrl-D at the beginning of line
-      *end_of_stdin = true;            // We reached end of input
-      buffer[0] = 'E';
-      store_length(4, buffer);
-      return 4;
-    }
-    else if (!isatty(0))               // Catch end of pipe as well
-    {
-      *end_of_stdin = true;            // We also reached end of input
-      buffer[0] = 'E';
-      store_length(4, buffer);
-      return 4;
-    }
-  }
-
-  if (fds[1].revents & POLLIN)         // Receive a chunk of data on the socket
-  {
-    size = recv
-      (socket_fd, buffer, maximum, 0);
-    if (size < 0 && errno != EAGAIN)
-    {
-      *rc = errno;
-      return -1;
-    }
-    if (size > 0) return size;
-  }
-
-  return 0;
+  return send(socket_fd, buffer, size, 0);
 }
 
-// Send a number of bytes in a buffer to the socket
-//
-// Returns the number of bytes sent, or -1 in case of error
-int _twopence_send_buffer
-  (int socket_fd, char *buffer, int size)
-{
-  struct pollfd fds[1];
-  int n, sent;
-
-  fds[0].fd = socket_fd;               // Wait either for output possible on the socket or for a timeout
-  fds[0].events = POLLOUT;
-  n = poll(fds, 1, TIMEOUT);
-  if (n <= 0)
-    return -1;
-
-  sent = 0;                            // Send the data
-  if (fds[0].revents & POLLOUT)
-  {
-    sent = send
-      (socket_fd, buffer, size, 0);
-    if (sent < 0)
-      return -1;
-  }
-  return sent;
-}
+const struct twopence_pipe_ops twopence_virtio_link_ops = {
+  .open = __twopence_virtio_open,
+  .recv = __twopence_virtio_recv,
+  .send = __twopence_virtio_send,
+};
 
 ///////////////////////////// Public interface //////////////////////////////////
 
@@ -247,21 +133,39 @@ int _twopence_send_buffer
 //
 // Returns a "handle" that must be passed to subsequent function calls,
 // or NULL in case of a problem
-void *twopence_init(const char *filename)
+static struct twopence_target *
+twopence_virtio_init(const char *filename)
 {
-  struct _twopence_opaque *handle;
+  struct twopence_virtio_target *handle;
 
   // Allocate the opaque handle
-  handle = malloc(sizeof(struct _twopence_opaque));
-  if (handle == NULL) return NULL;
+  handle = calloc(1, sizeof(struct twopence_virtio_target));
+  if (handle == NULL)
+    return NULL;
 
   // Initialize the handle
-  if (_twopence_init_handle(handle, filename) < 0)
-  {
+  if (__twopence_virtio_init(handle, filename) < 0) {
     free(handle);
     return NULL;
   }
 
-  return (void *) handle;
+  return (struct twopence_target *) handle;
 };
 
+/*
+ * Define the plugin ops vector
+ */
+const struct twopence_plugin twopence_virtio_ops = {
+	.name		= "virtio",
+
+	.init = twopence_virtio_init,
+	.test_and_print_results	= twopence_pipe_test_and_print_results,
+	.test_and_drop_results	= twopence_pipe_test_and_drop_results,
+	.test_and_store_results_together = twopence_pipe_test_and_store_results_together,
+	.test_and_store_results_separately = twopence_pipe_test_and_store_results_separately,
+	.inject_file = twopence_pipe_inject_file,
+	.extract_file = twopence_pipe_extract_file,
+	.exit_remote = twopence_pipe_exit_remote,
+	.interrupt_command = twopence_pipe_interrupt_command,
+	.end = twopence_pipe_end,
+};

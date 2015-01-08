@@ -22,6 +22,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 */
 
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <pwd.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -29,6 +30,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <termios.h>
 #include <errno.h>
 #include <signal.h>
+#include <unistd.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -207,11 +209,11 @@ void store_length(int length, char *buffer)
 }
 
 // Compute length of data chunk received
-int compute_length(const unsigned char *buffer)
+int compute_length(const void *data)
 {
-  unsigned int high = buffer[2],
-               low = buffer[3];
-  return (high << 8) | low;
+  const unsigned char *cp = (const unsigned char *) data;
+
+  return (cp[2] << 8) | cp[3];
 }
 
 // Receive at most a maximum amount of bytes from the serial line
@@ -804,7 +806,7 @@ void run_command(int serial_fd, char *buffer)
 // Inject a file.
 void inject_file(int serial_fd, char *buffer)
 {
-  int size, rc;
+  int size;
   char *username, *filename;
   pid_t pid;
 
