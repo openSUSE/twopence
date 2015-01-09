@@ -5,7 +5,7 @@ Twopence enables to communicate with some testing environment:
 libvirt virtual machine, remote host via SSH, or remote host via serial lines.
 
 
-Copyright (C) 2014 SUSE
+Copyright (C) 2014-2015 SUSE
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

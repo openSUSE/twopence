@@ -5,7 +5,7 @@ The idea is to avoid interfering with networks test. This enables to test
 even with all network interfaces are shut down.
 
 
-Copyright (C) 2014 SUSE
+Copyright (C) 2014-2015 SUSE
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,7 +22,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 */
 
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
+
 #include <pwd.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -884,7 +886,7 @@ int main(int argc, char *argv[])
   int command_num, rc;
 
   // Welcome message, check arguments
-  printf("Twopence test server version 0.1.8\n");
+  printf("Twopence test server version 0.3.0\n");
   if (argc > 2)
   {
     fprintf(stderr, "Usage: %s [<serial port>]\n", argv[0]);

@@ -1,5 +1,7 @@
 .PHONY: all install clean
 
+VERSION	= 0.3.0
+
 ifdef RPM_OPTIMIZE
 CCOPT	= $(RPM_OPTIMIZE)
 else
@@ -11,7 +13,7 @@ CFLAGS	= -D_GNU_SOURCE -fPIC $(CCOPT)
 LIBDIR ?= /usr/lib64
 INCDIR ?= /usr/include
 
-LIB_OBJS	= twopence.o ssh.o virtio.o serial.o protocol.o
+LIB_OBJS= twopence.o ssh.o virtio.o serial.o protocol.o
 
 all: libtwopence.so
 
@@ -20,10 +22,9 @@ libtwopence.so: twopence.h $(LIB_OBJS) Makefile
 
 install: libtwopence.so twopence.h
 	mkdir -p $(DESTDIR)$(LIBDIR)
-	cp libtwopence.so $(DESTDIR)$(LIBDIR)/libtwopence.so.0.2.2
+	install -m555 libtwopence.so $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION)
 	mkdir -p $(DESTDIR)$(INCDIR)
-	cp twopence.h $(DESTDIR)$(INCDIR)
+	install -m444 twopence.h $(DESTDIR)$(INCDIR)
 
 clean:
 	rm -f *.o *.so
-
