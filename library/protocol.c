@@ -825,6 +825,9 @@ twopence_pipe_run_test(struct twopence_target *opaque_handle,
     return TWOPENCE_PARAMETER_ERROR;
   username = cmd->user? : "root";
 
+  handle->base.current.sink = cmd->sink;
+  handle->base.current.source = cmd->source;
+
   rc = __twopence_pipe_command(handle, username, command, status_ret);
 
   twopence_source_init_none(&handle->base.current.source);
