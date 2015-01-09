@@ -13,7 +13,7 @@ CFLAGS	= -D_GNU_SOURCE -fPIC $(CCOPT)
 LIBDIR ?= /usr/lib64
 INCDIR ?= /usr/include
 
-LIB_OBJS= twopence.o ssh.o virtio.o serial.o protocol.o
+LIB_OBJS= twopence.o config.o ssh.o virtio.o serial.o protocol.o
 
 all: libtwopence.so
 

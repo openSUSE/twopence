@@ -360,4 +360,23 @@ extern void		twopence_source_init_none(twopence_source_t *);
 extern void		twopence_source_init_fd(twopence_source_t *, int fd);
 extern int		twopence_source_set_blocking(twopence_source_t *, bool);
 
+
+/*
+ * Handling twopence config information
+ */
+typedef struct twopence_config twopence_config_t;
+typedef struct twopence_target_config twopence_target_config_t;
+
+extern twopence_config_t *		twopence_config_new(void);
+extern int				twopence_config_write(twopence_config_t *cfg, const char *path);
+extern twopence_config_t *		twopence_config_read(const char *path);
+extern twopence_target_config_t *	twopence_config_get_target(twopence_config_t *cfg, const char *name);
+extern twopence_target_config_t *	twopence_config_add_target(twopence_config_t *cfg, const char *name, const char *spec);
+extern void				twopence_config_set_attr(twopence_config_t *cfg, const char *name, const char *value);
+extern const char *			twopence_config_get_attr(twopence_config_t *cfg, const char *name);
+extern const char *			twopence_target_config_get_spec(twopence_target_config_t *cfg);
+extern void				twopence_target_config_set_attr(twopence_target_config_t *tgt, const char *name, const char *value);
+extern const char *			twopence_target_config_get_attr(twopence_target_config_t *tgt, const char *name);
+
+
 #endif /* TWOPENCE_H */
