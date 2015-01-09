@@ -161,6 +161,46 @@ twopence_target_free(struct twopence_target *target)
 }
 
 /*
+ * target level output functions
+ */
+static inline twopence_sink_chain_t *
+__twopence_target_ostream(struct twopence_target *target, twopence_ostream_t dst)
+{
+  switch (dst) {
+  case TWOPENCE_STDOUT:
+    return &target->current.sink->stdout;
+  case TWOPENCE_STDERR:
+    return &target->current.sink->stderr;
+  }
+
+  return NULL;
+}
+
+int
+twopence_target_putc(struct twopence_target *target, twopence_ostream_t dst, char c)
+{
+  twopence_sink_chain_t *chain;
+
+  if ((chain = __twopence_target_ostream(target, dst)) == NULL)
+    return -1;
+
+  twopence_sink_chain_putc(chain, c);
+  return 1;
+}
+
+int
+twopence_target_write(struct twopence_target *target, twopence_ostream_t dst, const char *data, size_t len)
+{
+  twopence_sink_chain_t *chain;
+
+  if ((chain = __twopence_target_ostream(target, dst)) == NULL)
+    return -1;
+
+  twopence_sink_chain_write(chain, data, len);
+  return 1;
+}
+
+/*
  * General API
  */
 int
@@ -583,40 +623,6 @@ twopence_sink_destroy(twopence_sink_t *sink)
   twopence_sink_chain_destroy(&sink->stderr);
 }
 
-int
-twopence_sink_putc(struct twopence_sink *sink, bool is_error, char c)
-{
-  if (sink == NULL)
-    return 0;
-  if (is_error)
-    return __twopence_sink_write_stderr(sink, c);
-  return __twopence_sink_write_stdout(sink, c);
-}
-
-int
-twopence_sink_write(struct twopence_sink *sink, bool is_error, const char *data, size_t len)
-{
-  int count = 0, rc = 0;
-
-  if (sink == NULL)
-    return 0;
-
-  if (is_error) {
-    while (len--) {
-      if ((rc = __twopence_sink_write_stderr(sink, *data++)) < 0)
-	return rc;
-      count++;
-    }
-  } else {
-    while (len--) {
-      if ((rc = __twopence_sink_write_stdout(sink, *data++)) < 0)
-	return rc;
-      count++;
-    }
-  }
-  return count;
-}
-
 /*
  * Buffering functions
  */
@@ -637,8 +643,8 @@ __twopence_buffer_put(struct twopence_buffer *bp, const void *data, size_t len)
 /*
  * Write to a sink object
  */
-static int
-__twopence_sink_chain_putc(twopence_sink_chain_t *chain, char c)
+int
+twopence_sink_chain_putc(twopence_sink_chain_t *chain, char c)
 {
   unsigned int i;
 
@@ -654,6 +660,23 @@ __twopence_sink_chain_putc(twopence_sink_chain_t *chain, char c)
   return 1;
 }
 
+int
+twopence_sink_chain_write(twopence_sink_chain_t *chain, const char *data, size_t len)
+{
+  unsigned int i;
+
+  if (chain->count == 0)
+    return 0;
+
+  for (i = 0; i < chain->count; ++i) {
+    twopence_sink_new_t *sink = chain->sink[i];
+
+    sink->write(sink, data, len);
+  }
+
+  return len;
+}
+
 /*
  * Write to stdout
  */
@@ -661,7 +684,7 @@ int
 __twopence_sink_write_stdout(struct twopence_sink *sink, char c)
 {
   if (sink != NULL)
-    __twopence_sink_chain_putc(&sink->stdout, c);
+    twopence_sink_chain_putc(&sink->stdout, c);
   return 0;
 }
 
@@ -672,7 +695,7 @@ int
 __twopence_sink_write_stderr(struct twopence_sink *sink, char c)
 {
   if (sink != NULL)
-    __twopence_sink_chain_putc(&sink->stderr, c);
+    twopence_sink_chain_putc(&sink->stderr, c);
   return 0;
 }
 

@@ -364,15 +364,13 @@ extern void		twopence_buffer_init(twopence_buffer_t *);
 extern void		twopence_buffer_alloc(twopence_buffer_t *, size_t);
 extern void		twopence_buffer_free(twopence_buffer_t *);
 
+extern int		twopence_target_putc(struct twopence_target *, twopence_ostream_t, char);
+extern int		twopence_target_write(struct twopence_target *, twopence_ostream_t, const char *, size_t);
+
 extern void		twopence_sink_chain_append(twopence_sink_chain_t *, twopence_sink_new_t *);
 extern void		twopence_sink_chain_destroy(twopence_sink_chain_t *);
-
-extern int		twopence_sink_putc(struct twopence_sink *sink, bool is_error, char c);
-extern int		twopence_sink_write(struct twopence_sink *sink, bool is_error, const char *data, size_t len);
-
-/* These should really go to a private header file, as they're internal to the plugins */
-extern int		__twopence_sink_write_stderr(struct twopence_sink *sink, char c);
-extern int		__twopence_sink_write_stdout(struct twopence_sink *sink, char c);
+extern int		twopence_sink_chain_putc(twopence_sink_chain_t *, char);
+extern int		twopence_sink_chain_write(twopence_sink_chain_t *, const char *, size_t);
 
 extern int		twopence_tune_stdin(bool blocking);
 extern void		twopence_source_init_none(twopence_source_t *);

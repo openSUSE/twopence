@@ -76,16 +76,22 @@ compute_length(const void *data)
 static int
 __twopence_pipe_output(struct twopence_pipe_target *handle, char c)
 {
-  return __twopence_sink_write_stdout(handle->base.current.sink, c);
+  return twopence_target_putc(&handle->base, TWOPENCE_STDOUT, c);
 }
 
 // Output a "stderr" character through one of the available methods
 //
 // Returns 0 if everything went fine, -1 otherwise
-static int
+static inline int
 __twopence_pipe_error(struct twopence_pipe_target *handle, char c)
 {
-  return __twopence_sink_write_stderr(handle->base.current.sink, c);
+  return twopence_target_putc(&handle->base, TWOPENCE_STDERR, c);
+}
+
+static inline int
+__twopence_pipe_write(struct twopence_pipe_target *handle, twopence_ostream_t dst, const char *data, size_t len)
+{
+  return twopence_target_write(&handle->base, dst, data, len);
 }
 
 // Check for invalid usernames
@@ -304,7 +310,6 @@ _twopence_read_results(struct twopence_pipe_target *handle, int link_fd, twopenc
   int stdin_fd;
   char buffer[BUFFER_SIZE];
   int rc, received, sent;
-  const char *p;
 
   /* Read from the source fd specified by the caller. Can be stdin, can be
    * any other file, or can be negative (meaning no stdin) */
@@ -348,21 +353,15 @@ _twopence_read_results(struct twopence_pipe_target *handle, int link_fd, twopenc
       case '1':                        // stdout
         if (state != 0)
           return TWOPENCE_RECEIVE_RESULTS_ERROR;
-        for (p = buffer + 4; received > 4; received--)
-        {                              // Output it
-          if (__twopence_pipe_output(handle, *p++) < 0)
-            return TWOPENCE_RECEIVE_RESULTS_ERROR;
-        }
+	if (__twopence_pipe_write(handle, TWOPENCE_STDOUT, buffer + 4, received - 4) < 0)
+          return TWOPENCE_RECEIVE_RESULTS_ERROR;
         break;
 
       case '2':                        // stderr
         if (state != 0)
           return TWOPENCE_RECEIVE_RESULTS_ERROR;
-        for (p = buffer + 4; received > 4; received--)
-        {                              // Output it
-          if (__twopence_pipe_error(handle, *p++) < 0)
-            return TWOPENCE_RECEIVE_RESULTS_ERROR;
-        }
+	if (__twopence_pipe_write(handle, TWOPENCE_STDERR, buffer + 4, received - 4) < 0)
+          return TWOPENCE_RECEIVE_RESULTS_ERROR;
         break;
 
       case 'M':                        // Major error code

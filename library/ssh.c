@@ -57,7 +57,7 @@ extern const struct twopence_plugin twopence_ssh_ops;
 static inline int
 __twopence_ssh_output(struct twopence_ssh_target *handle, char c)
 {
-  return __twopence_sink_write_stdout(handle->base.current.sink, c);
+  return twopence_target_putc(&handle->base, TWOPENCE_STDOUT, c);
 }
 
 // Output a "stderr" character through one of the available methods
@@ -66,7 +66,7 @@ __twopence_ssh_output(struct twopence_ssh_target *handle, char c)
 static inline int
 __twopence_ssh_error(struct twopence_ssh_target *handle, char c)
 {
-  return __twopence_sink_write_stderr(handle->base.current.sink, c);
+  return twopence_target_putc(&handle->base, TWOPENCE_STDERR, c);
 }
 
 // Process chunk of data sent by the remote host
@@ -75,7 +75,11 @@ __twopence_ssh_error(struct twopence_ssh_target *handle, char c)
 static int
 __twopence_ssh_process_chunk(struct twopence_ssh_target *handle, const char *buffer, int size, bool error)
 {
-  return twopence_sink_write(handle->base.current.sink, error, buffer, size);
+  twopence_ostream_t dst = error? TWOPENCE_STDERR : TWOPENCE_STDOUT;
+  int written;
+
+  written = twopence_target_write(&handle->base, dst, buffer, size);
+  return written < 0? written : 0;
 }
 
 // Avoid active wait by sleeping
