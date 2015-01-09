@@ -1,0 +1,10 @@
+*.so
+*.so.[0-9]
+*.o
+*.gem
+shell/command
+shell/exit
+shell/extract
+shell/inject
+server/twopence_test_server
+core
