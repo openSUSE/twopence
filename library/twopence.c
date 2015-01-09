@@ -202,10 +202,7 @@ twopence_test_and_print_results(struct twopence_target *target, const char *user
     return twopence_run_test(target, &cmd, status);
   }
 
-  if (target->ops->test_and_print_results == NULL)
-    return TWOPENCE_NOT_SUPPORTED;
-
-  return target->ops->test_and_print_results(target, username, command, status);
+  return TWOPENCE_NOT_SUPPORTED;
 }
 
 int
@@ -223,10 +220,7 @@ twopence_test_and_drop_results(struct twopence_target *target, const char *usern
     return twopence_run_test(target, &cmd, status);
   }
 
-  if (target->ops->test_and_drop_results == NULL)
-    return TWOPENCE_NOT_SUPPORTED;
-
-  return target->ops->test_and_drop_results(target, username, command, status);
+  return TWOPENCE_NOT_SUPPORTED;
 }
 
 int
@@ -245,12 +239,7 @@ twopence_test_and_store_results_together(struct twopence_target *target, const c
     return twopence_run_test(target, &cmd, status);
   }
 
-  if (target->ops->test_and_store_results_together == NULL)
-    return TWOPENCE_NOT_SUPPORTED;
-
-  return target->ops->test_and_store_results_together(target, username, command,
-		  			buffer, size,
-					status);
+  return TWOPENCE_NOT_SUPPORTED;
 }
 
 int
@@ -269,12 +258,7 @@ twopence_test_and_store_results_separately(struct twopence_target *target, const
     return twopence_run_test(target, &cmd, status);
   }
 
-  if (target->ops->test_and_store_results_separately == NULL)
-    return TWOPENCE_NOT_SUPPORTED;
-
-  return target->ops->test_and_store_results_separately(target, username, command,
-		  			stdout_buffer, stderr_buffer, size,
-					status);
+  return TWOPENCE_NOT_SUPPORTED;
 }
 
 int

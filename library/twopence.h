@@ -74,10 +74,7 @@ struct twopence_plugin {
 
 	struct twopence_target *(*init)(const char *);
 	int			(*run_test)(struct twopence_target *, struct twopence_command *, twopence_status_t *);
-	int			(*test_and_print_results)(struct twopence_target *, const char *, const char *, twopence_status_t *);
-	int			(*test_and_drop_results)(struct twopence_target *, const char *, const char *, twopence_status_t *);
-	int			(*test_and_store_results_together)(struct twopence_target *, const char *, const char *, char *, int, twopence_status_t *);
-	int			(*test_and_store_results_separately)(struct twopence_target *, const char *, const char *, char *, char *, int, twopence_status_t *);
+
 	int			(*inject_file)(struct twopence_target *, const char *, const char *, const char *, int *, bool);
 	int			(*extract_file)(struct twopence_target *, const char *, const char *, const char *, int *, bool);
 	int			(*exit_remote)(struct twopence_target *);
