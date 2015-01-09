@@ -176,7 +176,7 @@ twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twope
    * stack.
    */
   if (rc == 0) {
-    twopence_sink_t *sink = &target->current.sink;
+    twopence_sink_t *sink = target->current.sink;
 
     if (sink->outbuf.tail && twopence_sink_putc(sink, false, '\0') < 0)
       return TWOPENCE_RECEIVE_RESULTS_ERROR;
@@ -505,6 +505,8 @@ twopence_sink_init(struct twopence_sink *sink, twopence_output_t mode, char *out
 int
 twopence_sink_putc(struct twopence_sink *sink, bool is_error, char c)
 {
+  if (sink == NULL)
+    return 0;
   if (is_error)
     return __twopence_sink_write_stderr(sink, c);
   return __twopence_sink_write_stdout(sink, c);
@@ -514,6 +516,9 @@ int
 twopence_sink_write(struct twopence_sink *sink, bool is_error, const char *data, size_t len)
 {
   int count = 0, rc = 0;
+
+  if (sink == NULL)
+    return 0;
 
   if (is_error) {
     while (len--) {
@@ -559,6 +564,9 @@ __twopence_sink_write_stdout(struct twopence_sink *sink, char c)
 {
   int written = 0;
 
+  if (sink == NULL)
+    return 0;
+
   switch (sink->mode) {
   case TWOPENCE_OUTPUT_NONE:
     return 0;
@@ -585,6 +593,9 @@ int
 __twopence_sink_write_stderr(struct twopence_sink *sink, char c)
 {
   int written = 0;
+
+  if (sink == NULL)
+    return 0;
 
   switch (sink->mode) {
   case TWOPENCE_OUTPUT_NONE:

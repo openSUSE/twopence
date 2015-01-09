@@ -48,7 +48,6 @@ twopence_pipe_target_init(struct twopence_pipe_target *target, int plugin_type, 
   target->link_timeout = 60000; /* 1 minute */
   target->link_ops = link_ops;
 
-  twopence_sink_init_none(&target->base.current.sink);
   twopence_source_init_none(&target->base.current.source);
 }
 
@@ -77,7 +76,7 @@ compute_length(const void *data)
 static int
 __twopence_pipe_output(struct twopence_pipe_target *handle, char c)
 {
-  return __twopence_sink_write_stdout(&handle->base.current.sink, c);
+  return __twopence_sink_write_stdout(handle->base.current.sink, c);
 }
 
 // Output a "stderr" character through one of the available methods
@@ -86,7 +85,7 @@ __twopence_pipe_output(struct twopence_pipe_target *handle, char c)
 static int
 __twopence_pipe_error(struct twopence_pipe_target *handle, char c)
 {
-  return __twopence_sink_write_stderr(&handle->base.current.sink, c);
+  return __twopence_sink_write_stderr(handle->base.current.sink, c);
 }
 
 // Check for invalid usernames
@@ -825,7 +824,7 @@ twopence_pipe_run_test(struct twopence_target *opaque_handle,
     return TWOPENCE_PARAMETER_ERROR;
   username = cmd->user? : "root";
 
-  handle->base.current.sink = cmd->sink;
+  handle->base.current.sink = &cmd->sink;
   handle->base.current.source = cmd->source;
 
   rc = __twopence_pipe_command(handle, username, command, status_ret);
@@ -846,9 +845,15 @@ twopence_pipe_inject_file(struct twopence_target *opaque_handle,
 		int *remote_rc, bool dots)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
+  twopence_sink_t sink;
   int fd, rc;
 
-  twopence_sink_init(&handle->base.current.sink, dots? TWOPENCE_OUTPUT_SCREEN : TWOPENCE_OUTPUT_NONE, NULL, NULL, 0);
+  handle->base.current.sink = NULL;
+  if (dots) {
+	  twopence_sink_init(&sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL, 0);
+	  handle->base.current.sink = &sink;
+  }
+
   twopence_source_init_none(&handle->base.current.source);
 
   // Open the file
@@ -879,9 +884,15 @@ twopence_pipe_extract_file(struct twopence_target *opaque_handle,
 		int *remote_rc, bool dots)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
+  twopence_sink_t sink;
   int fd, rc;
 
-  twopence_sink_init(&handle->base.current.sink, dots? TWOPENCE_OUTPUT_SCREEN : TWOPENCE_OUTPUT_NONE, NULL, NULL, 0);
+  handle->base.current.sink = NULL;
+  if (dots) {
+	  twopence_sink_init(&sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL, 0);
+	  handle->base.current.sink = &sink;
+  }
+
   twopence_source_init_none(&handle->base.current.source);
 
   // Open the file, creating it if it does not exist (u=rw,g=rw,o=)
@@ -921,7 +932,7 @@ twopence_pipe_exit_remote(struct twopence_target *opaque_handle)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
-  twopence_sink_init_none(&handle->base.current.sink);
+  handle->base.current.sink = NULL;
   twopence_source_init_none(&handle->base.current.source);
 
   return _twopence_exit_virtio_serial(handle);

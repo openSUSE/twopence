@@ -158,7 +158,7 @@ struct twopence_target {
 
 	/* Data related to current command */
 	struct {
-	    twopence_sink_t	sink;
+	    twopence_sink_t *	sink;
 	    twopence_source_t	source;
 	} current;
 
