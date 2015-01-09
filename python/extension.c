@@ -296,12 +296,15 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 		if (self->stderr == NULL) {
 			/* Capture both stdout and stderr into one buffer */
 			cmd->sink.mode = TWOPENCE_OUTPUT_BUFFER;
-			twopence_buffer_alloc(&cmd->sink.outbuf, 65536);
+			twopence_command_alloc_stdout_buffer(cmd, 65536);
+			cmd->sink.outbuf = &cmd->stdout_buf;
 		} else {
 			/* Capture stdout and stderr separately */
 			cmd->sink.mode = TWOPENCE_OUTPUT_BUFFER_SEPARATELY;
-			twopence_buffer_alloc(&cmd->sink.outbuf, 65536);
-			twopence_buffer_alloc(&cmd->sink.errbuf, 65536);
+			twopence_command_alloc_stdout_buffer(cmd, 65536);
+			cmd->sink.outbuf = &cmd->stdout_buf;
+			twopence_command_alloc_stderr_buffer(cmd, 65536);
+			cmd->sink.errbuf = &cmd->stderr_buf;
 		}
 	}
 
@@ -459,9 +462,9 @@ Target_run(PyObject *self, PyObject *args, PyObject *kwds)
 	}
 
 	/* Now funnel the captured data to the respective buffer objects */
-	if (twopence_AppendBuffer(cmdObject->stdout, &cmd.sink.outbuf) < 0)
+	if (twopence_AppendBuffer(cmdObject->stdout, cmd.sink.outbuf) < 0)
 		goto out;
-	if (twopence_AppendBuffer(cmdObject->stderr, &cmd.sink.errbuf) < 0)
+	if (twopence_AppendBuffer(cmdObject->stderr, cmd.sink.errbuf) < 0)
 		goto out;
 
 	result = PyInt_FromLong(status.minor);
@@ -470,10 +473,12 @@ out:
 	if (cmdObject) {
 		Py_DECREF(cmdObject);
 	}
-	twopence_buffer_free(&cmd.sink.outbuf);
-	twopence_buffer_free(&cmd.sink.errbuf);
+
+	/* Should this be in twopence_command_destroy? */
 	if (cmd.source.fd >= 0)
 		close(cmd.source.fd);
+
+	twopence_command_destroy(&cmd);
 	return result;
 }
 

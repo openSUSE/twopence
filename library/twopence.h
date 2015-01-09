@@ -117,8 +117,8 @@ struct twopence_buffer {
 typedef struct twopence_sink twopence_sink_t;
 struct twopence_sink {
 	twopence_output_t mode;
-	struct twopence_buffer outbuf;
-	struct twopence_buffer errbuf;
+	twopence_buffer_t *outbuf;
+	twopence_buffer_t *errbuf;
 };
 
 typedef struct twopence_source twopence_source_t;
@@ -145,6 +145,9 @@ struct twopence_command {
 
 	/* How to handle the command's standard out and error */
 	twopence_sink_t		sink;
+
+	twopence_buffer_t	stdout_buf;
+	twopence_buffer_t	stderr_buf;
 };
 
 /*
@@ -222,7 +225,6 @@ extern int		twopence_test_and_drop_results(struct twopence_target *target,
  *   username: the user's name inside of the SUT
  *   command: the Linux command to run inside of the SUT
  *   buffer: the buffer where the standard output and standard error of the command should go
- *   size: the common size of both buffers
  *   major: the return code of the test server
  *   minor: the return code of the command
  *
@@ -231,7 +233,7 @@ extern int		twopence_test_and_drop_results(struct twopence_target *target,
  */
 extern int		twopence_test_and_store_results_together(struct twopence_target *target,
 					const char *username, const char *command,
-					char *buffer, int size,
+					twopence_buffer_t *buffer,
 					twopence_status_t *status);
 
 /*
@@ -252,7 +254,7 @@ extern int		twopence_test_and_store_results_together(struct twopence_target *tar
  */
 extern int		twopence_test_and_store_results_separately(struct twopence_target *target,
 					const char *username, const char *command,
-					char *stdout_buffer, char *stderr_buffer, int size,
+					twopence_buffer_t *stdout_buffer, twopence_buffer_t *stderr_buffer,
 					twopence_status_t *status);
 
 /*
@@ -335,6 +337,9 @@ extern void		twopence_perror(const char *, int rc);
  * Handling for the command struct
  */
 extern void		twopence_command_init(twopence_command_t *cmd, const char *cmdline);
+extern void		twopence_command_destroy(twopence_command_t *cmd);
+extern void		twopence_command_alloc_stdout_buffer(twopence_command_t *, size_t);
+extern void		twopence_command_alloc_stderr_buffer(twopence_command_t *, size_t);
 
 /*
  * Output handling functions
@@ -343,7 +348,7 @@ extern void		twopence_buffer_init(twopence_buffer_t *);
 extern void		twopence_buffer_alloc(twopence_buffer_t *, size_t);
 extern void		twopence_buffer_free(twopence_buffer_t *);
 
-extern void		twopence_sink_init(struct twopence_sink *, twopence_output_t, char *, char *, size_t);
+extern void		twopence_sink_init(struct twopence_sink *, twopence_output_t, twopence_buffer_t *, twopence_buffer_t *);
 extern void		twopence_sink_init_none(struct twopence_sink *);
 extern int		twopence_sink_putc(struct twopence_sink *sink, bool is_error, char c);
 extern int		twopence_sink_write(struct twopence_sink *sink, bool is_error, const char *data, size_t len);

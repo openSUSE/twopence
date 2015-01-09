@@ -178,9 +178,9 @@ twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twope
   if (rc == 0) {
     twopence_sink_t *sink = target->current.sink;
 
-    if (sink->outbuf.tail && twopence_sink_putc(sink, false, '\0') < 0)
+    if (sink->outbuf && twopence_sink_putc(sink, false, '\0') < 0)
       return TWOPENCE_RECEIVE_RESULTS_ERROR;
-    if (sink->errbuf.tail && twopence_sink_putc(sink, true, '\0') < 0)
+    if (sink->errbuf && twopence_sink_putc(sink, true, '\0') < 0)
       return TWOPENCE_RECEIVE_RESULTS_ERROR;
   }
 
@@ -196,7 +196,7 @@ twopence_test_and_print_results(struct twopence_target *target, const char *user
     twopence_command_init(&cmd, command);
     cmd.user = username;
 
-    twopence_sink_init(&cmd.sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL, 0);
+    twopence_sink_init(&cmd.sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL);
     twopence_source_init_fd(&cmd.source, 0);
 
     return twopence_run_test(target, &cmd, status);
@@ -225,7 +225,7 @@ twopence_test_and_drop_results(struct twopence_target *target, const char *usern
 
 int
 twopence_test_and_store_results_together(struct twopence_target *target, const char *username, const char *command,
-		char *buffer, int size, twopence_status_t *status)
+		twopence_buffer_t *buffer, twopence_status_t *status)
 {
   if (target->ops->run_test) {
     twopence_command_t cmd;
@@ -233,7 +233,7 @@ twopence_test_and_store_results_together(struct twopence_target *target, const c
     twopence_command_init(&cmd, command);
     cmd.user = username;
 
-    twopence_sink_init(&cmd.sink, TWOPENCE_OUTPUT_BUFFER, buffer, NULL, size);
+    twopence_sink_init(&cmd.sink, TWOPENCE_OUTPUT_BUFFER, buffer, buffer);
     twopence_source_init_fd(&cmd.source, 0);
 
     return twopence_run_test(target, &cmd, status);
@@ -244,7 +244,7 @@ twopence_test_and_store_results_together(struct twopence_target *target, const c
 
 int
 twopence_test_and_store_results_separately(struct twopence_target *target, const char *username, const char *command,
-		char *stdout_buffer, char *stderr_buffer, int size, twopence_status_t *status)
+		twopence_buffer_t *stdout_buffer, twopence_buffer_t *stderr_buffer, twopence_status_t *status)
 {
   if (target->ops->run_test) {
     twopence_command_t cmd;
@@ -252,7 +252,7 @@ twopence_test_and_store_results_separately(struct twopence_target *target, const
     twopence_command_init(&cmd, command);
     cmd.user = username;
 
-    twopence_sink_init(&cmd.sink, TWOPENCE_OUTPUT_BUFFER_SEPARATELY, stdout_buffer, stderr_buffer, size);
+    twopence_sink_init(&cmd.sink, TWOPENCE_OUTPUT_BUFFER_SEPARATELY, stdout_buffer, stderr_buffer);
     twopence_source_init_fd(&cmd.source, 0);
 
     return twopence_run_test(target, &cmd, status);
@@ -357,9 +357,35 @@ twopence_command_init(twopence_command_t *cmd, const char *cmdline)
 {
   memset(cmd, 0, sizeof(*cmd));
 
+  twopence_buffer_init(&cmd->stdout_buf);
+  twopence_buffer_init(&cmd->stderr_buf);
+
   twopence_source_init_none(&cmd->source);
-  twopence_sink_init(&cmd->sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL, 0);
+  twopence_sink_init(&cmd->sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL);
   cmd->command = cmdline;
+}
+
+void
+twopence_command_alloc_stdout_buffer(twopence_command_t *cmd, size_t size)
+{
+  twopence_buffer_free(&cmd->stdout_buf);
+  if (size)
+	  twopence_buffer_alloc(&cmd->stdout_buf, size);
+}
+
+void
+twopence_command_alloc_stderr_buffer(twopence_command_t *cmd, size_t size)
+{
+  twopence_buffer_free(&cmd->stderr_buf);
+  if (size)
+	  twopence_buffer_alloc(&cmd->stderr_buf, size);
+}
+
+void
+twopence_command_destroy(twopence_command_t *cmd)
+{
+  twopence_buffer_free(&cmd->stdout_buf);
+  twopence_buffer_free(&cmd->stderr_buf);
 }
 
 /*
@@ -450,7 +476,7 @@ twopence_buffer_free(twopence_buffer_t *buf)
 }
 
 void
-twopence_sink_init(struct twopence_sink *sink, twopence_output_t mode, char *outbuf, char *errbuf, size_t bufsize)
+twopence_sink_init(struct twopence_sink *sink, twopence_output_t mode, twopence_buffer_t *stdout_buf, twopence_buffer_t *stderr_buf)
 {
   memset(sink, 0, sizeof(*sink));
   sink->mode = mode;
@@ -461,8 +487,8 @@ twopence_sink_init(struct twopence_sink *sink, twopence_output_t mode, char *out
     break;
 
   case TWOPENCE_OUTPUT_BUFFER:
-    if (outbuf && bufsize) {
-      __twopence_buffer_init(&sink->outbuf, outbuf, bufsize);
+    if (stdout_buf) {
+      sink->outbuf = stdout_buf;
     } else {
       fprintf(stderr, "%s: no buffer supplied for buffered output mode, falling back to OUTPUT_NONE\n", __FUNCTION__);
       sink->mode = TWOPENCE_OUTPUT_NONE;
@@ -470,9 +496,9 @@ twopence_sink_init(struct twopence_sink *sink, twopence_output_t mode, char *out
     break;
 
   case TWOPENCE_OUTPUT_BUFFER_SEPARATELY:
-    if (outbuf && errbuf && bufsize) {
-      __twopence_buffer_init(&sink->outbuf, outbuf, bufsize);
-      __twopence_buffer_init(&sink->errbuf, errbuf, bufsize);
+    if (stdout_buf && stderr_buf) {
+      sink->outbuf = stdout_buf;
+      sink->errbuf = stderr_buf;
     } else {
       fprintf(stderr, "%s: no buffers supplied for separately buffered output mode, falling back to OUTPUT_NONE\n", __FUNCTION__);
       sink->mode = TWOPENCE_OUTPUT_NONE;
@@ -561,7 +587,7 @@ __twopence_sink_write_stdout(struct twopence_sink *sink, char c)
 
   case TWOPENCE_OUTPUT_BUFFER:
   case TWOPENCE_OUTPUT_BUFFER_SEPARATELY:
-    written = __twopence_buffer_putc(&sink->outbuf, c);
+    written = __twopence_buffer_putc(sink->outbuf, c);
     break;
   }
 
@@ -590,11 +616,11 @@ __twopence_sink_write_stderr(struct twopence_sink *sink, char c)
     break;
 
   case TWOPENCE_OUTPUT_BUFFER:
-    written = __twopence_buffer_putc(&sink->outbuf, c);
+    written = __twopence_buffer_putc(sink->outbuf, c);
     break;
 
   case TWOPENCE_OUTPUT_BUFFER_SEPARATELY:
-    written = __twopence_buffer_putc(&sink->errbuf, c);
+    written = __twopence_buffer_putc(sink->errbuf, c);
     break;
   }
 

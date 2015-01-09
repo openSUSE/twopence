@@ -850,7 +850,7 @@ twopence_pipe_inject_file(struct twopence_target *opaque_handle,
 
   handle->base.current.sink = NULL;
   if (dots) {
-	  twopence_sink_init(&sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL, 0);
+	  twopence_sink_init(&sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL);
 	  handle->base.current.sink = &sink;
   }
 
@@ -889,7 +889,7 @@ twopence_pipe_extract_file(struct twopence_target *opaque_handle,
 
   handle->base.current.sink = NULL;
   if (dots) {
-	  twopence_sink_init(&sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL, 0);
+	  twopence_sink_init(&sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL);
 	  handle->base.current.sink = &sink;
   }
 
