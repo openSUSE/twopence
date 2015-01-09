@@ -678,17 +678,10 @@ twopence_ssh_inject_file(struct twopence_target *opaque_handle,
 		int *remote_rc, bool dots)
 {
   struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
-  twopence_sink_t sink;
   int fd, rc;
 
   // 'remote_rc' defaults to 0
   *remote_rc = 0;
-
-  handle->base.current.sink = NULL;
-  if (dots) {
-	  twopence_sink_init(&sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL);
-	  handle->base.current.sink = &sink;
-  }
 
   // Open the file
   fd = open(local_filename, O_RDONLY);
@@ -729,17 +722,10 @@ twopence_ssh_extract_file(struct twopence_target *opaque_handle,
 		int *remote_rc, bool dots)
 {
   struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
-  twopence_sink_t sink;
   int fd, rc;
 
   // 'remote_rc' defaults to 0
   *remote_rc = 0;
-
-  handle->base.current.sink = NULL;
-  if (dots) {
-	  twopence_sink_init(&sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL);
-	  handle->base.current.sink = &sink;
-  }
 
   // Open the file, creating it if it does not exist (u=rw,g=rw,o=)
   fd = creat(local_filename, 00660);

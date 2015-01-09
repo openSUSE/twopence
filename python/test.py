@@ -4,7 +4,7 @@ import twopence
 target = twopence.Target("ssh:localhost");
 
 target.inject("/etc/hosts", "/tmp/injected", mode = 0660)
-target.extract("/etc/hosts", "extracted", user = "okir")
+target.extract("/etc/hosts", "hosts.copy", user = "okir")
 
 target.run("/bin/pwd");
 

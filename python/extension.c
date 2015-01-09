@@ -286,25 +286,26 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 
 	cmd->user = self->user;
 
-	twopence_sink_init_none(&cmd->sink);
+	twopence_command_ostreams_reset(cmd);
 	if (self->stdout == NULL && self->stderr == NULL) {
-		cmd->sink.mode = TWOPENCE_OUTPUT_SCREEN;
+		twopence_command_ostream_redirect(cmd, TWOPENCE_STDOUT, 1);
+		twopence_command_ostream_redirect(cmd, TWOPENCE_STDERR, 2);
 	} else
 	if (self->stdout == Py_None && self->stderr == Py_None) {
-		cmd->sink.mode = TWOPENCE_OUTPUT_NONE;
+		/* ostreams have already been reset above */
 	} else {
 		if (self->stderr == NULL) {
 			/* Capture both stdout and stderr into one buffer */
-			cmd->sink.mode = TWOPENCE_OUTPUT_BUFFER;
-			twopence_command_alloc_stdout_buffer(cmd, 65536);
-			cmd->sink.outbuf = &cmd->stdout_buf;
+			twopence_command_alloc_buffer(cmd, TWOPENCE_STDOUT, 65536);
+			twopence_command_ostream_capture(cmd, TWOPENCE_STDOUT, &cmd->stdout_buf);
+			twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, &cmd->stdout_buf);
 		} else {
 			/* Capture stdout and stderr separately */
-			cmd->sink.mode = TWOPENCE_OUTPUT_BUFFER_SEPARATELY;
-			twopence_command_alloc_stdout_buffer(cmd, 65536);
-			cmd->sink.outbuf = &cmd->stdout_buf;
-			twopence_command_alloc_stderr_buffer(cmd, 65536);
-			cmd->sink.errbuf = &cmd->stderr_buf;
+			twopence_command_alloc_buffer(cmd, TWOPENCE_STDOUT, 65536);
+			twopence_command_alloc_buffer(cmd, TWOPENCE_STDERR, 65536);
+
+			twopence_command_ostream_capture(cmd, TWOPENCE_STDOUT, &cmd->stdout_buf);
+			twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, &cmd->stderr_buf);
 		}
 	}
 
@@ -462,9 +463,9 @@ Target_run(PyObject *self, PyObject *args, PyObject *kwds)
 	}
 
 	/* Now funnel the captured data to the respective buffer objects */
-	if (twopence_AppendBuffer(cmdObject->stdout, cmd.sink.outbuf) < 0)
+	if (twopence_AppendBuffer(cmdObject->stdout, &cmd.stdout_buf) < 0)
 		goto out;
-	if (twopence_AppendBuffer(cmdObject->stderr, cmd.sink.errbuf) < 0)
+	if (twopence_AppendBuffer(cmdObject->stderr, &cmd.stderr_buf) < 0)
 		goto out;
 
 	result = PyInt_FromLong(status.minor);

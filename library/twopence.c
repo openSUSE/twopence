@@ -26,6 +26,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "twopence.h"
 
+
+static void	__twopence_setup_stdout(struct twopence_target *target);
+
+
 int
 twopence_plugin_type(const char *plugin_name)
 {
@@ -162,29 +166,10 @@ twopence_target_free(struct twopence_target *target)
 int
 twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twopence_status_t *status)
 {
-  int rc;
-
   if (target->ops->run_test == NULL)
     return TWOPENCE_NOT_SUPPORTED;
 
-  rc = target->ops->run_test(target, cmd, status);
-
-  /* If the output is being buffered, try to store final NUL character
-   * for termination.
-   * FIXME: this is not a great idea when dealing with binary data.
-   * We should pass the buffer objects all the way up and down the
-   * stack.
-   */
-  if (rc == 0) {
-    twopence_sink_t *sink = target->current.sink;
-
-    if (sink->outbuf && twopence_sink_putc(sink, false, '\0') < 0)
-      return TWOPENCE_RECEIVE_RESULTS_ERROR;
-    if (sink->errbuf && twopence_sink_putc(sink, true, '\0') < 0)
-      return TWOPENCE_RECEIVE_RESULTS_ERROR;
-  }
-
-  return rc;
+  return target->ops->run_test(target, cmd, status);
 }
 
 int
@@ -196,7 +181,9 @@ twopence_test_and_print_results(struct twopence_target *target, const char *user
     twopence_command_init(&cmd, command);
     cmd.user = username;
 
-    twopence_sink_init(&cmd.sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL);
+    twopence_command_ostream_redirect(&cmd, TWOPENCE_STDOUT, 1);
+    twopence_command_ostream_redirect(&cmd, TWOPENCE_STDERR, 2);
+
     twopence_source_init_fd(&cmd.source, 0);
 
     return twopence_run_test(target, &cmd, status);
@@ -214,7 +201,9 @@ twopence_test_and_drop_results(struct twopence_target *target, const char *usern
     twopence_command_init(&cmd, command);
     cmd.user = username;
 
-    twopence_sink_init_none(&cmd.sink);
+    /* Reset both ostreams to nothing */
+    twopence_command_ostreams_reset(&cmd);
+
     twopence_source_init_fd(&cmd.source, 0);
 
     return twopence_run_test(target, &cmd, status);
@@ -233,9 +222,13 @@ twopence_test_and_store_results_together(struct twopence_target *target, const c
     twopence_command_init(&cmd, command);
     cmd.user = username;
 
-    twopence_sink_init(&cmd.sink, TWOPENCE_OUTPUT_BUFFER, buffer, buffer);
-    twopence_source_init_fd(&cmd.source, 0);
+    twopence_command_ostreams_reset(&cmd);
+    if (buffer) {
+      twopence_command_ostream_capture(&cmd, TWOPENCE_STDOUT, buffer);
+      twopence_command_ostream_capture(&cmd, TWOPENCE_STDERR, buffer);
+    }
 
+    twopence_source_init_fd(&cmd.source, 0);
     return twopence_run_test(target, &cmd, status);
   }
 
@@ -252,7 +245,12 @@ twopence_test_and_store_results_separately(struct twopence_target *target, const
     twopence_command_init(&cmd, command);
     cmd.user = username;
 
-    twopence_sink_init(&cmd.sink, TWOPENCE_OUTPUT_BUFFER_SEPARATELY, stdout_buffer, stderr_buffer);
+    twopence_command_ostreams_reset(&cmd);
+    if (stdout_buffer)
+      twopence_command_ostream_capture(&cmd, TWOPENCE_STDOUT, stdout_buffer);
+    if (stderr_buffer)
+      twopence_command_ostream_capture(&cmd, TWOPENCE_STDERR, stderr_buffer);
+
     twopence_source_init_fd(&cmd.source, 0);
 
     return twopence_run_test(target, &cmd, status);
@@ -264,23 +262,37 @@ twopence_test_and_store_results_separately(struct twopence_target *target, const
 int
 twopence_inject_file(struct twopence_target *target, const char *username,
 		const char *local_path, const char *remote_path,
-		int *remote_rc, bool blabla)
+		int *remote_rc, bool print_dots)
 {
   if (target->ops->inject_file == NULL)
     return TWOPENCE_NOT_SUPPORTED;
 
-  return target->ops->inject_file(target, username, local_path, remote_path, remote_rc, blabla);
+  /* Reset output, and connect with stdout if we want to see the dots get printed */
+  target->current.sink = NULL;
+  if (print_dots)
+    __twopence_setup_stdout(target);
+
+  twopence_source_init_none(&target->current.source);
+
+  return target->ops->inject_file(target, username, local_path, remote_path, remote_rc, print_dots);
 }
 
 int
 twopence_extract_file(struct twopence_target *target, const char *username,
 		const char *remote_path, const char *local_path,
-		int *remote_rc, bool blabla)
+		int *remote_rc, bool print_dots)
 {
   if (target->ops->extract_file == NULL)
     return TWOPENCE_NOT_SUPPORTED;
 
-  return target->ops->extract_file(target, username, remote_path, local_path, remote_rc, blabla);
+  /* Reset output, and connect with stdout if we want to see the dots get printed */
+  target->current.sink = NULL;
+  if (print_dots)
+    __twopence_setup_stdout(target);
+
+  twopence_source_init_none(&target->current.source);
+
+  return target->ops->extract_file(target, username, remote_path, local_path, remote_rc, print_dots);
 }
 
 int
@@ -361,29 +373,81 @@ twopence_command_init(twopence_command_t *cmd, const char *cmdline)
   twopence_buffer_init(&cmd->stderr_buf);
 
   twopence_source_init_none(&cmd->source);
-  twopence_sink_init(&cmd->sink, TWOPENCE_OUTPUT_SCREEN, NULL, NULL);
+
+  /* By default, all output from the remote command is sent to our own
+   * stdout and stderr */
+  twopence_command_ostream_redirect(cmd, TWOPENCE_STDOUT, 1);
+  twopence_command_ostream_redirect(cmd, TWOPENCE_STDERR, 2);
+
   cmd->command = cmdline;
 }
 
 void
-twopence_command_alloc_stdout_buffer(twopence_command_t *cmd, size_t size)
+twopence_command_alloc_buffer(twopence_command_t *cmd, twopence_ostream_t dst, size_t size)
 {
-  twopence_buffer_free(&cmd->stdout_buf);
+  twopence_buffer_t *bp;
+
+  if (dst == TWOPENCE_STDOUT)
+	  bp = &cmd->stdout_buf;
+  else
+	  bp = &cmd->stderr_buf;
+
+  twopence_buffer_free(bp);
   if (size)
-	  twopence_buffer_alloc(&cmd->stdout_buf, size);
+	  twopence_buffer_alloc(bp, size);
+}
+
+static inline twopence_sink_chain_t *
+__twopence_command_ostream(twopence_command_t *cmd, twopence_ostream_t dst)
+{
+  switch (dst) {
+  case TWOPENCE_STDOUT:
+    return &cmd->sink.stdout;
+  case TWOPENCE_STDERR:
+    return &cmd->sink.stderr;
+  }
+  return NULL;
 }
 
 void
-twopence_command_alloc_stderr_buffer(twopence_command_t *cmd, size_t size)
+twopence_command_ostreams_reset(twopence_command_t *cmd)
 {
-  twopence_buffer_free(&cmd->stderr_buf);
-  if (size)
-	  twopence_buffer_alloc(&cmd->stderr_buf, size);
+  twopence_sink_chain_destroy(&cmd->sink.stdout);
+  twopence_sink_chain_destroy(&cmd->sink.stderr);
+}
+
+void
+twopence_command_ostream_reset(twopence_command_t *cmd, twopence_ostream_t dst)
+{
+  twopence_sink_chain_t *chain;
+
+  if ((chain = __twopence_command_ostream(cmd, dst)) != NULL)
+    twopence_sink_chain_destroy(chain);
+}
+
+void
+twopence_command_ostream_capture(twopence_command_t *cmd, twopence_ostream_t dst, twopence_buffer_t *bp)
+{
+  twopence_sink_chain_t *chain;
+
+  if ((chain = __twopence_command_ostream(cmd, dst)) != NULL)
+    twopence_sink_chain_append(chain, twopence_sink_buffer(bp));
+}
+
+void
+twopence_command_ostream_redirect(twopence_command_t *cmd, twopence_ostream_t dst, int fd)
+{
+  twopence_sink_chain_t *chain;
+
+  if ((chain = __twopence_command_ostream(cmd, dst)) != NULL)
+    twopence_sink_chain_append(chain, twopence_sink_fd(fd));
 }
 
 void
 twopence_command_destroy(twopence_command_t *cmd)
 {
+  twopence_sink_chain_destroy(&cmd->sink.stdout);
+  twopence_sink_chain_destroy(&cmd->sink.stderr);
   twopence_buffer_free(&cmd->stdout_buf);
   twopence_buffer_free(&cmd->stderr_buf);
 }
@@ -475,41 +539,48 @@ twopence_buffer_free(twopence_buffer_t *buf)
   memset(buf, 0, sizeof(*buf));
 }
 
-void
-twopence_sink_init(struct twopence_sink *sink, twopence_output_t mode, twopence_buffer_t *stdout_buf, twopence_buffer_t *stderr_buf)
+/*
+ * This is a helper function to set everything up so that inject/extract
+ * will print dots while transferring data
+ */
+static void
+__twopence_setup_stdout(struct twopence_target *target)
 {
-  memset(sink, 0, sizeof(*sink));
-  sink->mode = mode;
+  static twopence_sink_t dots_sink;
 
-  switch (mode) {
-  case TWOPENCE_OUTPUT_NONE:
-  case TWOPENCE_OUTPUT_SCREEN:
-    break;
+  if (dots_sink.stdout.count == 0)
+    twopence_sink_chain_append(&dots_sink.stdout, twopence_sink_fd(1));
 
-  case TWOPENCE_OUTPUT_BUFFER:
-    if (stdout_buf) {
-      sink->outbuf = stdout_buf;
-    } else {
-      fprintf(stderr, "%s: no buffer supplied for buffered output mode, falling back to OUTPUT_NONE\n", __FUNCTION__);
-      sink->mode = TWOPENCE_OUTPUT_NONE;
-    }
-    break;
+  target->current.sink = &dots_sink;
+}
 
-  case TWOPENCE_OUTPUT_BUFFER_SEPARATELY:
-    if (stdout_buf && stderr_buf) {
-      sink->outbuf = stdout_buf;
-      sink->errbuf = stderr_buf;
-    } else {
-      fprintf(stderr, "%s: no buffers supplied for separately buffered output mode, falling back to OUTPUT_NONE\n", __FUNCTION__);
-      sink->mode = TWOPENCE_OUTPUT_NONE;
-    }
-    break;
 
-  default:
-    fprintf(stderr, "%s: unsupported output mode %u, assuming OUTPUT_NONE\n", __FUNCTION__, mode);
-    sink->mode = TWOPENCE_OUTPUT_NONE;
-    break;
+void
+twopence_sink_chain_append(twopence_sink_chain_t *chain, twopence_sink_new_t *sink)
+{
+  if (chain->count >= 4) {
+    free(sink);
+    return;
   }
+
+  chain->sink[chain->count++] = sink;
+}
+
+void
+twopence_sink_chain_destroy(twopence_sink_chain_t *chain)
+{
+  unsigned int i;
+
+  for (i = 0; i < chain->count; ++i)
+    free(chain->sink[i]);
+  memset(chain, 0, sizeof(chain));
+}
+
+void
+twopence_sink_destroy(twopence_sink_t *sink)
+{
+  twopence_sink_chain_destroy(&sink->stdout);
+  twopence_sink_chain_destroy(&sink->stderr);
 }
 
 int
@@ -546,23 +617,40 @@ twopence_sink_write(struct twopence_sink *sink, bool is_error, const char *data,
   return count;
 }
 
-void
-twopence_sink_init_none(struct twopence_sink *sink)
-{
-  memset(sink, 0, sizeof(*sink));
-  sink->mode = TWOPENCE_OUTPUT_NONE;
-}
-
 /*
  * Buffering functions
  */
 static unsigned int
-__twopence_buffer_putc(struct twopence_buffer *bp, char c)
+__twopence_buffer_put(struct twopence_buffer *bp, const void *data, size_t len)
 {
-  if (bp->tail >= bp->end)
+  size_t tailroom;
+
+  tailroom = bp->end - bp->tail;
+  if (len > tailroom)
+    len = tailroom;
+
+  memcpy(bp->tail, data, len);
+  bp->tail += len;
+  return len;
+}
+
+/*
+ * Write to a sink object
+ */
+static int
+__twopence_sink_chain_putc(twopence_sink_chain_t *chain, char c)
+{
+  unsigned int i;
+
+  if (chain->count == 0)
     return 0;
 
-  *(bp->tail++) = c;
+  for (i = 0; i < chain->count; ++i) {
+    twopence_sink_new_t *sink = chain->sink[i];
+
+    sink->write(sink, &c, 1);
+  }
+
   return 1;
 }
 
@@ -572,27 +660,8 @@ __twopence_buffer_putc(struct twopence_buffer *bp, char c)
 int
 __twopence_sink_write_stdout(struct twopence_sink *sink, char c)
 {
-  int written = 0;
-
-  if (sink == NULL)
-    return 0;
-
-  switch (sink->mode) {
-  case TWOPENCE_OUTPUT_NONE:
-    return 0;
-
-  case TWOPENCE_OUTPUT_SCREEN:
-    written = write(1, &c, 1);
-    break;
-
-  case TWOPENCE_OUTPUT_BUFFER:
-  case TWOPENCE_OUTPUT_BUFFER_SEPARATELY:
-    written = __twopence_buffer_putc(sink->outbuf, c);
-    break;
-  }
-
-  if (written != 1)
-    return -1;
+  if (sink != NULL)
+    __twopence_sink_chain_putc(&sink->stdout, c);
   return 0;
 }
 
@@ -602,30 +671,69 @@ __twopence_sink_write_stdout(struct twopence_sink *sink, char c)
 int
 __twopence_sink_write_stderr(struct twopence_sink *sink, char c)
 {
-  int written = 0;
-
-  if (sink == NULL)
-    return 0;
-
-  switch (sink->mode) {
-  case TWOPENCE_OUTPUT_NONE:
-    return 0;
-
-  case TWOPENCE_OUTPUT_SCREEN:
-    written = write(2, &c, 1);
-    break;
-
-  case TWOPENCE_OUTPUT_BUFFER:
-    written = __twopence_buffer_putc(sink->outbuf, c);
-    break;
-
-  case TWOPENCE_OUTPUT_BUFFER_SEPARATELY:
-    written = __twopence_buffer_putc(sink->errbuf, c);
-    break;
-  }
-
-  if (written != 1)
-    return -1;
+  if (sink != NULL)
+    __twopence_sink_chain_putc(&sink->stderr, c);
   return 0;
 }
 
+/*
+ * Create a new sink object
+ */
+twopence_sink_new_t *
+__twopence_sink_new(void (*writer)(twopence_sink_new_t *, const void *, size_t), void *data)
+{
+  twopence_sink_new_t *sink;
+
+  sink = calloc(1, sizeof(*sink));
+  sink->write = writer;
+  sink->data = data;
+
+  return sink;
+}
+
+/*
+ * Handle a buffered sink
+ */
+static void
+twopence_sink_buffer_write(twopence_sink_new_t *sink, const void *data, size_t len)
+{
+  twopence_buffer_t *bp = (twopence_buffer_t *) sink->data;
+
+  __twopence_buffer_put(bp, data, len);
+}
+
+twopence_sink_new_t *
+twopence_sink_buffer(twopence_buffer_t *bp)
+{
+  return __twopence_sink_new(twopence_sink_buffer_write, bp);
+}
+
+/*
+ * stdio sinks
+ */
+static void
+twopence_sink_write_fd(twopence_sink_new_t *sink, const void *data, size_t len)
+{
+  int fd = (long) sink->data;
+
+  if (fd >= 0)
+    write(fd, data, len);
+}
+
+twopence_sink_new_t *
+twopence_sink_stdout(void)
+{
+  return __twopence_sink_new(twopence_sink_write_fd, (void *) 1);
+}
+
+twopence_sink_new_t *
+twopence_sink_stderr(void)
+{
+  return __twopence_sink_new(twopence_sink_write_fd, (void *) 2);
+}
+
+twopence_sink_new_t *
+twopence_sink_fd(int fd)
+{
+  return __twopence_sink_new(twopence_sink_write_fd, (void *) (long) fd);
+}
