@@ -13,7 +13,7 @@ SUBDIRS = \
 
 all clean install::
 	@for dir in $(SUBDIRS); do \
-		echo "make -C $$dir $@"; make -C $$dir $@; \
+		echo "make -C $$dir $@"; make -C $$dir $@ || exit 1; \
 	done
 
 install::
