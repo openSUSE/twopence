@@ -56,6 +56,7 @@ static void	__twopence_config_attrs_free(twopence_config_attr_t **);
 static void	__twopence_config_set_attr(twopence_config_attr_t **, const char *, const char *);
 static const char *__twopence_config_get_attr(twopence_config_attr_t **, const char *);
 static void	__twopence_config_attrs_write(FILE *fp, const twopence_config_attr_t *list);
+static const char **__twopence_config_attr_names(twopence_config_attr_t * const*);
 
 twopence_config_t *
 twopence_config_new(void)
@@ -144,6 +145,12 @@ twopence_target_config_get_attr(twopence_target_config_t *tgt, const char *name)
 	return __twopence_config_get_attr(&tgt->attrs, name);
 }
 
+const char **
+twopence_target_config_attr_names(const twopence_target_config_t *tgt)
+{
+	return __twopence_config_attr_names(&tgt->attrs);
+}
+
 void
 __twopence_target_config_free(twopence_target_config_t *tgt)
 {
@@ -198,6 +205,26 @@ __twopence_config_get_attr(twopence_config_attr_t **list, const char *name)
 	if (attr)
 		return attr->value;
 	return NULL;
+}
+
+const char **
+__twopence_config_attr_names(twopence_config_attr_t * const*list)
+{
+	twopence_config_attr_t *attr;
+	unsigned int n, count = 0;
+	const char **result;
+
+	for (attr = *list, count = 0; attr; attr = attr->next, ++count)
+		;
+
+	result = calloc(count + 1, sizeof(*result));
+	for (attr = *list, n = 0; attr; attr = attr->next) {
+		/* assert(n < count); */
+		result[n++] = attr->name;
+	}
+	result[n] = NULL;
+
+	return result;
 }
 
 void
@@ -301,24 +328,26 @@ twopence_config_read(const char *path)
 			continue;
 
 		if (!strcmp(kwd, "attr")) {
-			char *name;
+			char *name, *value;
 
-			if ((name = __get_token(&pos)) == NULL) {
+			if ((name = __get_token(&pos)) == NULL
+			 || (value = __get_token(&pos)) == NULL) {
 				fprintf(stderr, "Missing token after \"%s\" keyword\n", kwd);
 				goto failed;
 			}
 
-			__twopence_config_set_attr(attr_list, name, pos);
+			__twopence_config_set_attr(attr_list, name, value);
 		} else
 		if (!strcmp(kwd, "target")) {
-			char *name;
+			char *name, *spec;
 
-			if ((name = __get_token(&pos)) == NULL) {
+			if ((name = __get_token(&pos)) == NULL
+			 || (spec = __get_token(&pos)) == NULL) {
 				fprintf(stderr, "Missing token after \"%s\" keyword\n", kwd);
 				goto failed;
 			}
 
-			tgt = twopence_config_add_target(cfg, name, pos);
+			tgt = twopence_config_add_target(cfg, name, spec);
 			if (tgt == NULL) {
 				fprintf(stderr, "Duplicate target name \"%s\" in config file\n", name);
 				goto failed;
