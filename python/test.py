@@ -27,6 +27,13 @@ out = bytearray();
 target.run("/bin/ls", stdout = out)
 print "Output has", len(out), "bytes"
 
+print "Verify commandline attribute"
+cmd = twopence.Command("/bin/ls");
+if cmd.commandline != "/bin/ls":
+	print "Bad commandline:", cmd.commandline
+else:
+	print "Good, commandline attribute returns /bin/ls"
+
 cmd = twopence.Command("/bin/ls", user = "okir");
 cmd.suppressOutput()
 cmd.stderr = None

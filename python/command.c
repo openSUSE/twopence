@@ -271,6 +271,8 @@ Command_stderr(twopence_Command *self)
 static PyObject *
 Command_getattr(twopence_Command *self, char *name)
 {
+	if (!strcmp(name, "commandline"))
+		return PyString_FromString(self->command);
 	if (!strcmp(name, "stdout"))
 		return Command_stdout(self);
 	if (!strcmp(name, "stderr"))
