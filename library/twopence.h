@@ -162,7 +162,7 @@ struct twopence_command {
 	twopence_source_t	source;
 
 	/* How to handle the command's standard out and error */
-	twopence_iostream_t	sink[__TWOPENCE_IO_MAX];
+	twopence_iostream_t	iostream[__TWOPENCE_IO_MAX];
 
 	twopence_buffer_t	buffer[__TWOPENCE_IO_MAX];
 };
@@ -175,7 +175,7 @@ struct twopence_target {
 
 	/* Data related to current command */
 	struct {
-	    twopence_iostream_t *sink;
+	    twopence_iostream_t *io;
 	    twopence_source_t	source;
 	} current;
 

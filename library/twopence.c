@@ -167,7 +167,7 @@ static inline twopence_iostream_t *
 __twopence_target_ostream(struct twopence_target *target, twopence_iofd_t dst)
 {
   if (0 <= dst && dst < __TWOPENCE_IO_MAX)
-    return &target->current.sink[dst];
+    return &target->current.io[dst];
 
   return NULL;
 }
@@ -304,7 +304,7 @@ twopence_inject_file(struct twopence_target *target, const char *username,
     return TWOPENCE_NOT_SUPPORTED;
 
   /* Reset output, and connect with stdout if we want to see the dots get printed */
-  target->current.sink = NULL;
+  target->current.io = NULL;
   if (print_dots)
     __twopence_setup_stdout(target);
 
@@ -322,7 +322,7 @@ twopence_extract_file(struct twopence_target *target, const char *username,
     return TWOPENCE_NOT_SUPPORTED;
 
   /* Reset output, and connect with stdout if we want to see the dots get printed */
-  target->current.sink = NULL;
+  target->current.io = NULL;
   if (print_dots)
     __twopence_setup_stdout(target);
 
@@ -441,7 +441,7 @@ static inline twopence_iostream_t *
 __twopence_command_ostream(twopence_command_t *cmd, twopence_iofd_t dst)
 {
   if (0 <= dst && dst < __TWOPENCE_IO_MAX)
-    return &cmd->sink[dst];
+    return &cmd->iostream[dst];
   return NULL;
 }
 
@@ -451,7 +451,7 @@ twopence_command_ostreams_reset(twopence_command_t *cmd)
   unsigned int i;
 
   for (i = 0; i < __TWOPENCE_IO_MAX; ++i)
-    twopence_iostream_destroy(&cmd->sink[i]);
+    twopence_iostream_destroy(&cmd->iostream[i]);
 }
 
 void
@@ -488,7 +488,7 @@ twopence_command_destroy(twopence_command_t *cmd)
 
   for (i = 0; i < __TWOPENCE_IO_MAX; ++i) {
     twopence_buffer_free(&cmd->buffer[i]);
-    twopence_iostream_destroy(&cmd->sink[i]);
+    twopence_iostream_destroy(&cmd->iostream[i]);
   }
   twopence_source_destroy(&cmd->source);
 }
@@ -596,12 +596,12 @@ twopence_buffer_free(twopence_buffer_t *buf)
 static void
 __twopence_setup_stdout(struct twopence_target *target)
 {
-  static twopence_iostream_t dots_sink[__TWOPENCE_IO_MAX];
+  static twopence_iostream_t dots_iostream[__TWOPENCE_IO_MAX];
 
-  if (dots_sink[TWOPENCE_STDOUT].count == 0)
-    twopence_iostream_add_substream(&dots_sink[TWOPENCE_STDOUT], twopence_substream_new_fd(1));
+  if (dots_iostream[TWOPENCE_STDOUT].count == 0)
+    twopence_iostream_add_substream(&dots_iostream[TWOPENCE_STDOUT], twopence_substream_new_fd(1));
 
-  target->current.sink = dots_sink;
+  target->current.io = dots_iostream;
 }
 
 

@@ -655,7 +655,7 @@ twopence_ssh_run_test(struct twopence_target *opaque_handle,
   /* 'major' makes no sense for SSH and 'minor' defaults to 0 */
   memset(status_ret, 0, sizeof(*status_ret));
 
-  handle->base.current.sink = cmd->sink;
+  handle->base.current.io = cmd->iostream;
   handle->base.current.source = cmd->source;
 
   // Connect to the remote host

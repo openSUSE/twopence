@@ -823,7 +823,7 @@ twopence_pipe_run_test(struct twopence_target *opaque_handle,
     return TWOPENCE_PARAMETER_ERROR;
   username = cmd->user? : "root";
 
-  handle->base.current.sink = cmd->sink;
+  handle->base.current.io = cmd->iostream;
   handle->base.current.source = cmd->source;
 
   rc = __twopence_pipe_command(handle, username, command, status_ret);
@@ -913,7 +913,7 @@ twopence_pipe_exit_remote(struct twopence_target *opaque_handle)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
-  handle->base.current.sink = NULL;
+  handle->base.current.io = NULL;
   twopence_source_init_none(&handle->base.current.source);
 
   return _twopence_exit_virtio_serial(handle);
