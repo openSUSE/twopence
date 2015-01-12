@@ -93,6 +93,8 @@ Target_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 
 	/* init members */
 	self->handle = NULL;
+	self->attrs = NULL;
+	self->name = NULL;
 
 	return (PyObject *)self;
 }
@@ -100,12 +102,12 @@ Target_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 Target_init(twopence_Target *self, PyObject *args, PyObject *kwds)
 {
-	static char *kwlist[] = {"target", "attrs", NULL};
+	static char *kwlist[] = {"target", "attrs", "name", NULL};
 	PyObject *attrDict = NULL;
-	char *targetSpec;
+	char *targetSpec, *name = NULL;
 	int rc;
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|O", kwlist, &targetSpec, &attrDict))
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|Os", kwlist, &targetSpec, &attrDict, &name))
 		return -1; 
 
 	rc = twopence_target_new(targetSpec, &self->handle);
@@ -118,6 +120,8 @@ Target_init(twopence_Target *self, PyObject *args, PyObject *kwds)
 		self->attrs = attrDict;
 		Py_INCREF(attrDict);
 	}
+	if (name)
+		self->name = strdup(name);
 
 	return 0;
 }
@@ -150,6 +154,14 @@ Target_getattr(twopence_Target *self, char *name)
 {
 	PyObject *value;
 
+	if (!strcmp(name, "name")) {
+		if (self->name == NULL) {
+			Py_INCREF(Py_None);
+			return Py_None;
+		}
+		return PyString_FromString(self->name);
+	}
+	
 	if (self->attrs
 	 && (value = PyDict_GetItemString(self->attrs, name)) != NULL) {
 		Py_INCREF(value);

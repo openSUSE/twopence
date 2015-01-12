@@ -141,13 +141,14 @@ Config_target(twopence_Config *self, PyObject *args, PyObject *kwds)
 		PyErr_Format(PyExc_AttributeError, "Unknown target \"%s\"", name);
 	} else {
 		const char *target_spec = twopence_target_config_get_spec(target_conf);
-		PyObject *args = PyTuple_New(2);
+		PyObject *args = PyTuple_New(3);
 		PyObject *attrs;
 
 		attrs = Config_buildAttrs(target_conf);
 
 		PyTuple_SET_ITEM(args, 0, PyString_FromString(target_spec));
 		PyTuple_SET_ITEM(args, 1, attrs);
+		PyTuple_SET_ITEM(args, 2, PyString_FromString(name));
 		Py_INCREF(attrs);
 
 		result = twopence_callType(&twopence_TargetType, args, NULL);

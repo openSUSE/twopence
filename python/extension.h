@@ -29,6 +29,7 @@ typedef struct {
 	PyObject_HEAD
 
 	struct twopence_target *handle;
+	char *		name;
 	PyObject *	attrs;
 } twopence_Target;
 
