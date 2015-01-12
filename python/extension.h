@@ -24,6 +24,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <Python.h>
 #include <twopence.h>
+#include <string.h>
 
 typedef struct {
 	PyObject_HEAD
@@ -72,11 +73,21 @@ extern PyObject *	twopence_Exception(const char *msg, int rc);
 extern PyObject *	twopence_callType(PyTypeObject *typeObject, PyObject *args, PyObject *kwds);
 
 static inline void
-drop_string(char **strp)
+assign_string(char **var, char *str)
 {
-	if (*strp)
-		free(*strp);
-	*strp = NULL;
+	if (*var == str)
+		return;
+	if (str)
+		str = strdup(str);
+	if (*var)
+		free(*var);
+	*var = str;
+}
+
+static inline void
+drop_string(char **var)
+{
+	assign_string(var, NULL);
 }
 
 static inline void
