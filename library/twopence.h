@@ -144,11 +144,6 @@ struct twopence_substream {
 	};
 };
 
-typedef struct twopence_source twopence_source_t;
-struct twopence_source {
-	int			fd;
-};
-
 typedef struct twopence_command twopence_command_t;
 struct twopence_command {
 	/* For now, we specify the command as a single string.
@@ -384,14 +379,6 @@ extern int		twopence_iostream_getc(twopence_iostream_t *);
 extern int		twopence_iostream_read(twopence_iostream_t *, char *, size_t);
 extern int		twopence_iostream_set_blocking(twopence_iostream_t *, bool);
 extern int		twopence_iostream_poll(twopence_iostream_t *, struct pollfd *, int mask);
-
-#if 0
-extern int		twopence_tune_stdin(bool blocking);
-extern void		twopence_source_init_none(twopence_source_t *);
-extern void		twopence_source_init_fd(twopence_source_t *, int fd);
-extern int		twopence_source_set_blocking(twopence_source_t *, bool);
-extern void		twopence_source_destroy(twopence_source_t *);
-#endif
 
 extern twopence_substream_t *twopence_substream_new_buffer(twopence_buffer_t *);
 extern twopence_substream_t *twopence_substream_new_fd(int fd);
