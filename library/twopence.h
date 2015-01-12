@@ -117,16 +117,17 @@ struct twopence_buffer {
 	char *		end;
 };
 
-typedef struct twopence_sink_ops twopence_sink_ops_t;
 typedef struct twopence_substream twopence_substream_t;
 
 typedef struct twopence_iostream twopence_iostream_t;
+
+#define TWOPENCE_IOSTREAM_MAX_SUBSTREAMS	4
 struct twopence_iostream {
 	bool			eof;
 	unsigned int		count;
-	twopence_substream_t *	sink[4];
+	twopence_substream_t *	substream[TWOPENCE_IOSTREAM_MAX_SUBSTREAMS];
 };
-#define TWOPENCE_SINK_CHAIN_INIT	{ .count = 0 }
+#define TWOPENCE_SINK_CHAIN_INIT	{ .eof = false, .count = 0 }
 
 typedef struct twopence_io_ops twopence_io_ops_t;
 struct twopence_io_ops {
