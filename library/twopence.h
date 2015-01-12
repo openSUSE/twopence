@@ -130,6 +130,7 @@ struct twopence_iostream {
 
 typedef struct twopence_io_ops twopence_io_ops_t;
 struct twopence_io_ops {
+	void			(*close)(twopence_substream_t *);
 	int			(*write)(twopence_substream_t *, const void *, size_t);
 	int			(*read)(twopence_substream_t *, void *, size_t);
 	int			(*set_blocking)(twopence_substream_t *, bool);
@@ -139,8 +140,11 @@ struct twopence_io_ops {
 struct twopence_substream {
 	const twopence_io_ops_t *ops;
 	union {
-		void *		data;
-		int		fd;
+	    void *		data;
+	    struct {
+	        int		fd;
+		bool		close;
+	    };
 	};
 };
 
@@ -356,7 +360,7 @@ extern twopence_buffer_t *twopence_command_alloc_buffer(twopence_command_t *, tw
 extern void		twopence_command_ostreams_reset(twopence_command_t *);
 extern void		twopence_command_ostream_reset(twopence_command_t *, twopence_iofd_t);
 extern void		twopence_command_ostream_capture(twopence_command_t *, twopence_iofd_t, twopence_buffer_t *);
-extern void		twopence_command_iostream_redirect(twopence_command_t *, twopence_iofd_t, int);
+extern void		twopence_command_iostream_redirect(twopence_command_t *, twopence_iofd_t, int, bool closeit);
 
 /*
  * Output handling functions
@@ -381,7 +385,8 @@ extern int		twopence_iostream_set_blocking(twopence_iostream_t *, bool);
 extern int		twopence_iostream_poll(twopence_iostream_t *, struct pollfd *, int mask);
 
 extern twopence_substream_t *twopence_substream_new_buffer(twopence_buffer_t *);
-extern twopence_substream_t *twopence_substream_new_fd(int fd);
+extern twopence_substream_t *twopence_substream_new_fd(int fd, bool closeit);
+extern void		twopence_substream_close(twopence_substream_t *);
 
 
 /*

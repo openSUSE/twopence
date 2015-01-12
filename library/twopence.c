@@ -228,9 +228,9 @@ twopence_test_and_print_results(struct twopence_target *target, const char *user
     twopence_command_init(&cmd, command);
     cmd.user = username;
 
-    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 0);
-    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 1);
-    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDERR, 2);
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 0, false);
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 1, false);
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDERR, 2, false);
 
     return twopence_run_test(target, &cmd, status);
   }
@@ -249,7 +249,7 @@ twopence_test_and_drop_results(struct twopence_target *target, const char *usern
 
     /* Reset both ostreams to nothing */
     twopence_command_ostreams_reset(&cmd);
-    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 0);
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 0, false);
 
     return twopence_run_test(target, &cmd, status);
   }
@@ -268,7 +268,7 @@ twopence_test_and_store_results_together(struct twopence_target *target, const c
     cmd.user = username;
 
     twopence_command_ostreams_reset(&cmd);
-    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 0);
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 0, false);
     if (buffer) {
       twopence_command_ostream_capture(&cmd, TWOPENCE_STDOUT, buffer);
       twopence_command_ostream_capture(&cmd, TWOPENCE_STDERR, buffer);
@@ -291,7 +291,7 @@ twopence_test_and_store_results_separately(struct twopence_target *target, const
     cmd.user = username;
 
     twopence_command_ostreams_reset(&cmd);
-    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 0);
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 0, false);
     if (stdout_buffer)
       twopence_command_ostream_capture(&cmd, TWOPENCE_STDOUT, stdout_buffer);
     if (stderr_buffer)
@@ -413,8 +413,8 @@ twopence_command_init(twopence_command_t *cmd, const char *cmdline)
    * stdout and stderr.
    * The input of the remote command is not connected.
    */
-  twopence_command_iostream_redirect(cmd, TWOPENCE_STDOUT, 1);
-  twopence_command_iostream_redirect(cmd, TWOPENCE_STDERR, 2);
+  twopence_command_iostream_redirect(cmd, TWOPENCE_STDOUT, 1, false);
+  twopence_command_iostream_redirect(cmd, TWOPENCE_STDERR, 2, false);
 
   cmd->command = cmdline;
 }
@@ -477,12 +477,12 @@ twopence_command_ostream_capture(twopence_command_t *cmd, twopence_iofd_t dst, t
 }
 
 void
-twopence_command_iostream_redirect(twopence_command_t *cmd, twopence_iofd_t dst, int fd)
+twopence_command_iostream_redirect(twopence_command_t *cmd, twopence_iofd_t dst, int fd, bool closeit)
 {
   twopence_iostream_t *chain;
 
   if ((chain = __twopence_command_ostream(cmd, dst)) != NULL)
-    twopence_iostream_add_substream(chain, twopence_substream_new_fd(fd));
+    twopence_iostream_add_substream(chain, twopence_substream_new_fd(fd, closeit));
 }
 
 void
@@ -536,7 +536,7 @@ __twopence_setup_stdout(struct twopence_target *target)
   static twopence_iostream_t dots_iostream[__TWOPENCE_IO_MAX];
 
   if (dots_iostream[TWOPENCE_STDOUT].count == 0)
-    twopence_iostream_add_substream(&dots_iostream[TWOPENCE_STDOUT], twopence_substream_new_fd(1));
+    twopence_iostream_add_substream(&dots_iostream[TWOPENCE_STDOUT], twopence_substream_new_fd(1, false));
 
   target->current.io = dots_iostream;
 }
@@ -558,8 +558,12 @@ twopence_iostream_destroy(twopence_iostream_t *chain)
 {
   unsigned int i;
 
-  for (i = 0; i < chain->count; ++i)
-    free(chain->sink[i]);
+  for (i = 0; i < chain->count; ++i) {
+    twopence_substream_t *substream = chain->sink[i];
+
+    twopence_substream_close(substream);
+    free(substream);
+  }
   memset(chain, 0, sizeof(chain));
 }
 
@@ -674,7 +678,7 @@ twopence_iostream_getc(twopence_iostream_t *stream)
       return c;
 
     // This substream is at its EOF
-    substream->ops = NULL;
+    twopence_substream_close(substream);
   }
 
   stream->eof = true;
@@ -701,7 +705,7 @@ twopence_iostream_read(twopence_iostream_t *stream, char *data, size_t len)
       return n;
 
     // This substream is at its EOF
-    substream->ops = NULL;
+    twopence_substream_close(substream);
   }
 
   stream->eof = true;
@@ -752,7 +756,7 @@ twopence_iostream_write(twopence_iostream_t *chain, const char *data, size_t len
 /*
  * Create a new sink object
  */
-twopence_substream_t *
+static twopence_substream_t *
 __twopence_substream_new(const twopence_io_ops_t *ops)
 {
   twopence_substream_t *sink;
@@ -761,6 +765,17 @@ __twopence_substream_new(const twopence_io_ops_t *ops)
   sink->ops = ops;
 
   return sink;
+}
+
+void
+twopence_substream_close(twopence_substream_t *substream)
+{
+  if (substream->ops == NULL)
+    return;
+
+  if (substream->ops->close)
+    substream->ops->close(substream);
+  substream->ops = NULL;
 }
 
 /*
@@ -799,6 +814,15 @@ twopence_substream_new_buffer(twopence_buffer_t *bp)
 /*
  * fd based substreams
  */
+static void
+twopence_substream_file_close(twopence_substream_t *substream)
+{
+  if (substream->fd >= 0 && substream->close) {
+    close(substream->fd);
+    substream->fd = -1;
+  }
+}
+
 static int
 twopence_substream_file_write(twopence_substream_t *sink, const void *data, size_t len)
 {
@@ -856,30 +880,32 @@ twopence_substream_file_poll(twopence_substream_t *src, struct pollfd *pfd, int 
 }
 
 static twopence_io_ops_t twopence_file_io = {
+	.close	= twopence_substream_file_close,
 	.read	= twopence_substream_file_read,
 	.write	= twopence_substream_file_write,
 	.set_blocking = twopence_substream_file_set_blocking,
-	.poll = twopence_substream_file_poll,
+	.poll	= twopence_substream_file_poll,
 };
 
 twopence_substream_t *
-twopence_substream_new_fd(int fd)
+twopence_substream_new_fd(int fd, bool closeit)
 {
   twopence_substream_t *io;
 
   io = __twopence_substream_new(&twopence_file_io);
   io->fd = fd;
+  io->close = closeit;
   return io;
 }
 
 twopence_substream_t *
 twopence_iostream_stdout(void)
 {
-  return twopence_substream_new_fd(1);
+  return twopence_substream_new_fd(1, false);
 }
 
 twopence_substream_t *
 twopence_iostream_stderr(void)
 {
-  return twopence_substream_new_fd(2);
+  return twopence_substream_new_fd(2, false);
 }

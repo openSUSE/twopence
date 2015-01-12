@@ -288,8 +288,8 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 
 	twopence_command_ostreams_reset(cmd);
 	if (self->stdout == NULL && self->stderr == NULL) {
-		twopence_command_iostream_redirect(cmd, TWOPENCE_STDOUT, 1);
-		twopence_command_iostream_redirect(cmd, TWOPENCE_STDERR, 2);
+		twopence_command_iostream_redirect(cmd, TWOPENCE_STDOUT, 1, false);
+		twopence_command_iostream_redirect(cmd, TWOPENCE_STDERR, 2, false);
 	} else
 	if (self->stdout == Py_None && self->stderr == Py_None) {
 		/* ostreams have already been reset above */
@@ -314,8 +314,7 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 	if (self->stdinPath != NULL) {
 		int fd = open(self->stdinPath, O_RDONLY);
 
-		twopence_command_iostream_redirect(cmd, TWOPENCE_STDIN, fd);
-		/* FIXME: we're leaking the open fd */
+		twopence_command_iostream_redirect(cmd, TWOPENCE_STDIN, fd, true);
 	}
 
 	return 0;
