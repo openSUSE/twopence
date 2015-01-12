@@ -34,6 +34,7 @@ typedef struct {
 	char *		command;
 	char *		user;
 	char *		stdinPath;
+	int		suppressOutput;
 	PyObject *	stdout;
 	PyObject *	stderr;
 } twopence_Command;
@@ -56,12 +57,15 @@ static void		Command_dealloc(twopence_Command *self);
 static PyObject *	Command_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static int		Command_init(twopence_Command *self, PyObject *args, PyObject *kwds);
 static PyObject *	Command_getattr(twopence_Command *self, char *name);
+static int		Command_setattr(twopence_Command *self, char *name, PyObject *);
 static int		Command_Check(PyObject *);
 static int		Command_build(twopence_Command *, twopence_command_t *);
+static PyObject *	Command_suppressOutput(twopence_Command *, PyObject *, PyObject *);
 static void		Status_dealloc(twopence_Status *self);
 static PyObject *	Status_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static int		Status_init(twopence_Status *self, PyObject *args, PyObject *kwds);
 static PyObject *	Status_getattr(twopence_Status *self, char *name);
+static PyObject *	callType(PyTypeObject *);
 
 static inline void
 drop_string(char **strp)
@@ -69,6 +73,18 @@ drop_string(char **strp)
 	if (*strp)
 		free(*strp);
 	*strp = NULL;
+}
+
+static inline void
+assign_object(PyObject **var, PyObject *obj)
+{
+	if (obj) {
+		Py_INCREF(obj);
+	}
+	if (*var) {
+		Py_DECREF(*var);
+	}
+	*var = obj;
 }
 
 static inline void
@@ -149,6 +165,9 @@ static PyTypeObject twopence_TargetType = {
  *   target.run(cmd)
  */
 static PyMethodDef twopence_commandMethods[] = {
+      {	"suppressOutput", (PyCFunction) Command_suppressOutput, METH_VARARGS | METH_KEYWORDS,
+	"Do not display command's output to screen"
+      },
       {	NULL }
 };
 
@@ -166,6 +185,7 @@ static PyTypeObject twopence_CommandType = {
 	.tp_dealloc	= (destructor) Command_dealloc,
 
 	.tp_getattr	= (getattrfunc) Command_getattr,
+	.tp_setattr	= (setattrfunc) Command_setattr,
 };
 
 /*
@@ -211,6 +231,7 @@ Command_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 	self->stdinPath = NULL;
 	self->stdout = NULL;
 	self->stderr = NULL;
+	self->suppressOutput = 0;
 
 	return (PyObject *)self;
 }
@@ -245,15 +266,21 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 	self->stdout = NULL;
 	self->stderr = NULL;
 	self->stdinPath = NULL;
+	self->suppressOutput = 0;
 
-	if (stdoutObject) {
+	if (stdoutObject == NULL) {
+		stdoutObject = callType(&PyByteArray_Type);
+	} else {
 		Py_INCREF(stdoutObject);
-		self->stdout = stdoutObject;
 	}
-	if (stderrObject) {
-		Py_INCREF(stderrObject);
-		self->stderr = stderrObject;
-	}
+	self->stdout = stdoutObject;
+
+	if (stderrObject == NULL)
+		stderrObject = stdoutObject;
+
+	Py_INCREF(stderrObject);
+	self->stderr = stderrObject;
+
 	if (stdinObject && stdinObject != Py_None) {
 		char *s;
 
@@ -294,37 +321,34 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 	cmd->user = self->user;
 
 	twopence_command_ostreams_reset(cmd);
-	if (self->stdout == Py_None) {
+	if (self->suppressOutput || self->stdout == Py_None) {
 		/* ostream has already been reset above */
-	} else if (self->stdout == NULL) {
-		/* Default to normal stdout */
-		twopence_command_iostream_redirect(cmd, TWOPENCE_STDOUT, 1, false);
 	} else {
+		/* Copy remote stdout to our stdout */
+		twopence_command_iostream_redirect(cmd, TWOPENCE_STDOUT, 1, false);
+	}
+
+	if (self->stdout == NULL || PyByteArray_Check(self->stdout)) {
 		/* Capture command output in a buffer */
 		buffer = twopence_command_alloc_buffer(cmd, TWOPENCE_STDOUT, 65536);
 		twopence_command_ostream_capture(cmd, TWOPENCE_STDOUT, buffer);
 	}
 
-	if (self->stderr == Py_None) {
+	if (self->suppressOutput || self->stderr == Py_None) {
 		/* ostream has already been reset above */
-	} else if (buffer) {
-		if (self->stderr == NULL || self->stderr == self->stdout) {
-			/* stderr and stdout are captured in shared buffer */
-			twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, buffer);
-		} else {
-			/* stderr wants its own buffer */
-			buffer = twopence_command_alloc_buffer(cmd, TWOPENCE_STDERR, 65536);
-			twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, buffer);
-		}
 	} else {
-		if (self->stderr == NULL) {
-			/* Default to normal stderr */
-			twopence_command_iostream_redirect(cmd, TWOPENCE_STDERR, 2, false);
-		} else {
-			/* stderr wants its own buffer */
-			buffer = twopence_command_alloc_buffer(cmd, TWOPENCE_STDERR, 65536);
-			twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, buffer);
-		}
+		/* Copy remote stderr to our stderr */
+		twopence_command_iostream_redirect(cmd, TWOPENCE_STDERR, 2, false);
+	}
+
+	/* If cmd.stdout and cmd.stderr are both NULL, or both refer to the same
+	 * bytearray object, send the remote stdout and stderr to a shared buffer */
+	if (buffer != NULL && self->stderr == self->stdout) {
+		twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, buffer);
+	} else 
+	if (self->stderr == NULL || PyByteArray_Check(self->stderr)) {
+		buffer = twopence_command_alloc_buffer(cmd, TWOPENCE_STDERR, 65536);
+		twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, buffer);
 	}
 
 	if (self->stdinPath != NULL) {
@@ -334,6 +358,20 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 	}
 
 	return 0;
+}
+
+static PyObject *
+Command_suppressOutput(twopence_Command *self, PyObject *args, PyObject *kwds)
+{
+	static char *kwlist[] = {
+		NULL
+	};
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "", kwlist))
+		return NULL;
+
+	self->suppressOutput = 1;
+	Py_INCREF(Py_None);
+	return Py_None;
 }
 
 static PyObject *
@@ -368,8 +406,32 @@ Command_getattr(twopence_Command *self, char *name)
 	if (!strcmp(name, "stderr"))
 		return Command_stderr(self);
 
-	PyErr_Format(PyExc_AttributeError, "%s", name);
-	return NULL;
+	return Py_FindMethod(twopence_commandMethods, (PyObject *) self, name);
+}
+
+static int
+Command_setattr(twopence_Command *self, char *name, PyObject *v)
+{
+	if (!strcmp(name, "stdout")) {
+		if (v != Py_None && !PyByteArray_Check(v))
+			goto bad_attr;
+		assign_object(&self->stdout, v);
+		return 0;
+	}
+	if (!strcmp(name, "stderr")) {
+		if (v != Py_None && !PyByteArray_Check(v))
+			goto bad_attr;
+		assign_object(&self->stderr, v);
+		return 0;
+	}
+
+	(void) PyErr_Format(PyExc_AttributeError, "Unknown attribute: %s", name);
+	return -1;
+
+bad_attr:
+	(void) PyErr_Format(PyExc_AttributeError, "Incompatible value for attribute: %s", name);
+	return -1;
+
 }
 
 /*
@@ -650,7 +712,7 @@ Target_run(PyObject *self, PyObject *args, PyObject *kwds)
 	if (twopence_AppendBuffer(cmdObject->stderr, &cmd.buffer[TWOPENCE_STDERR]) < 0)
 		goto out;
 
-	statusObject = (twopence_Status *) PyObject_Call((PyObject *) &twopence_StatusType, Py_None, NULL);
+	statusObject = (twopence_Status *) callType(&twopence_StatusType);
 	statusObject->remoteStatus = status.minor;
 	if (cmdObject->stdout) {
 		statusObject->stdout = cmdObject->stdout;
@@ -750,6 +812,18 @@ registerType(PyObject *m, const char *name, PyTypeObject *type)
 
 	Py_INCREF(type);
 	PyModule_AddObject(m, name, (PyObject *) type);
+}
+
+static PyObject *
+callType(PyTypeObject *typeObject)
+{
+	PyObject *args = PyTuple_New(0);
+	PyObject *obj;
+
+	obj = PyObject_Call((PyObject *) typeObject, args, NULL);
+	Py_DECREF(args);
+
+	return obj;
 }
 
 PyMODINIT_FUNC
