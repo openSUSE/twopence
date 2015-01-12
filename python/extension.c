@@ -36,9 +36,6 @@ typedef struct {
 	char *		stdinPath;
 	PyObject *	stdout;
 	PyObject *	stderr;
-
-	twopence_buffer_t stdoutBuffer;
-	twopence_buffer_t stderrBuffer;
 } twopence_Command;
 
 static void		Target_dealloc(twopence_Target *self);
@@ -51,6 +48,7 @@ static void		Command_dealloc(twopence_Command *self);
 static PyObject *	Command_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static int		Command_init(twopence_Command *self, PyObject *args, PyObject *kwds);
 static PyObject *	Command_stdout(twopence_Command *);
+static PyObject *	Command_stderr(twopence_Command *);
 static int		Command_Check(PyObject *);
 static int		Command_build(twopence_Command *, twopence_command_t *);
 
@@ -143,6 +141,9 @@ static PyMethodDef twopence_commandMethods[] = {
       {	"stdout", (PyCFunction) Command_stdout, METH_NOARGS,
 	"Return the stdout buffer for this command"
       },
+      {	"stderr", (PyCFunction) Command_stderr, METH_NOARGS,
+	"Return the stderr buffer for this command"
+      },
       {	NULL }
 };
 
@@ -204,9 +205,6 @@ Command_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 	self->stdout = NULL;
 	self->stderr = NULL;
 
-	twopence_buffer_init(&self->stdoutBuffer);
-	twopence_buffer_init(&self->stderrBuffer);
-
 	return (PyObject *)self;
 }
 
@@ -237,6 +235,9 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 
 	self->command = strdup(command);
 	self->user = user? strdup(user) : NULL;
+	self->stdout = NULL;
+	self->stderr = NULL;
+	self->stdinPath = NULL;
 
 	if (stdoutObject) {
 		Py_INCREF(stdoutObject);
@@ -268,9 +269,6 @@ Command_dealloc(twopence_Command *self)
 	drop_string(&self->stdinPath);
 	drop_object(&self->stdout);
 	drop_object(&self->stderr);
-
-	twopence_buffer_free(&self->stdoutBuffer);
-	twopence_buffer_free(&self->stderrBuffer);
 }
 
 static int
@@ -282,33 +280,38 @@ Command_Check(PyObject *self)
 static int
 Command_build(twopence_Command *self, twopence_command_t *cmd)
 {
+	twopence_buffer_t *buffer = NULL;
+
 	twopence_command_init(cmd, self->command);
 
 	cmd->user = self->user;
 
 	twopence_command_ostreams_reset(cmd);
-	if (self->stdout == NULL && self->stderr == NULL) {
+	if (self->stdout == Py_None) {
+		/* ostream has already been reset above */
+	} else if (self->stdout == NULL) {
+		/* Default to normal stdout */
 		twopence_command_iostream_redirect(cmd, TWOPENCE_STDOUT, 1, false);
-		twopence_command_iostream_redirect(cmd, TWOPENCE_STDERR, 2, false);
-	} else
-	if (self->stdout == Py_None && self->stderr == Py_None) {
-		/* ostreams have already been reset above */
 	} else {
-		twopence_buffer_t *bp;
+		/* Capture command output in a buffer */
+		buffer = twopence_command_alloc_buffer(cmd, TWOPENCE_STDOUT, 65536);
+		twopence_command_ostream_capture(cmd, TWOPENCE_STDOUT, buffer);
+	}
 
-		if (self->stderr == NULL) {
-			/* Capture both stdout and stderr into one buffer */
-			bp = twopence_command_alloc_buffer(cmd, TWOPENCE_STDOUT, 65536);
-			twopence_command_ostream_capture(cmd, TWOPENCE_STDOUT, bp);
-			twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, bp);
+	if (self->stderr == Py_None) {
+		/* ostream has already been reset above */
+	} else if (self->stderr == NULL) {
+		if (buffer == NULL) {
+			/* Default to normal stderr */
+			twopence_command_iostream_redirect(cmd, TWOPENCE_STDERR, 2, false);
 		} else {
-			/* Capture stdout and stderr separately */
-			bp = twopence_command_alloc_buffer(cmd, TWOPENCE_STDOUT, 65536);
-			twopence_command_ostream_capture(cmd, TWOPENCE_STDOUT, bp);
-
-			bp = twopence_command_alloc_buffer(cmd, TWOPENCE_STDERR, 65536);
-			twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, bp);
+			/* stderr and stdout are captured in shared buffer */
+			twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, buffer);
 		}
+	} else {
+		/* Capture command output in its own buffer */
+		buffer = twopence_command_alloc_buffer(cmd, TWOPENCE_STDERR, 65536);
+		twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, buffer);
 	}
 
 	if (self->stdinPath != NULL) {
@@ -326,6 +329,18 @@ Command_stdout(twopence_Command *self)
 	PyObject *result;
 
 	result = self->stdout;
+	if (result == NULL)
+		result = Py_None;
+	Py_INCREF(result);
+	return result;
+}
+
+static PyObject *
+Command_stderr(twopence_Command *self)
+{
+	PyObject *result;
+
+	result = self->stderr;
 	if (result == NULL)
 		result = Py_None;
 	Py_INCREF(result);

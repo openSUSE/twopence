@@ -216,6 +216,8 @@ twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twope
   if (target->ops->run_test == NULL)
     return TWOPENCE_NOT_SUPPORTED;
 
+  target->current.io = NULL;
+
   return target->ops->run_test(target, cmd, status);
 }
 
