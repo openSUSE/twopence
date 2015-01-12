@@ -273,6 +273,8 @@ Command_getattr(twopence_Command *self, char *name)
 {
 	if (!strcmp(name, "commandline"))
 		return PyString_FromString(self->command);
+	if (!strcmp(name, "user"))
+		return PyString_FromString(self->user);
 	if (!strcmp(name, "stdout"))
 		return Command_stdout(self);
 	if (!strcmp(name, "stderr"))
@@ -294,6 +296,14 @@ Command_setattr(twopence_Command *self, char *name, PyObject *v)
 		if (v != Py_None && !PyByteArray_Check(v))
 			goto bad_attr;
 		assign_object(&self->stderr, v);
+		return 0;
+	}
+	if (!strcmp(name, "user")) {
+		char *s;
+
+		if (!PyString_Check(v) || (s = PyString_AsString(v)) == NULL)
+			goto bad_attr;
+		assign_string(&self->user, s);
 		return 0;
 	}
 

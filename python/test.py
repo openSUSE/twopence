@@ -34,6 +34,13 @@ if cmd.commandline != "/bin/ls":
 else:
 	print "Good, commandline attribute returns /bin/ls"
 
+print "Verify user attribute"
+cmd = twopence.Command("/bin/ls", user = "joedoe");
+if cmd.user != "joedoe":
+	print "Bad user attribute:", cmd.user, "(expected joedoe)"
+else:
+	print "Good, user attribute returns joedoe"
+
 cmd = twopence.Command("/bin/ls", user = "okir");
 cmd.suppressOutput()
 cmd.stderr = None
