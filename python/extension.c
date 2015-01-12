@@ -38,6 +38,14 @@ typedef struct {
 	PyObject *	stderr;
 } twopence_Command;
 
+typedef struct {
+	PyObject_HEAD
+
+	int		remoteStatus;
+	PyObject *	stdout;
+	PyObject *	stderr;
+} twopence_Status;
+
 static void		Target_dealloc(twopence_Target *self);
 static PyObject *	Target_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static int		Target_init(twopence_Target *self, PyObject *args, PyObject *kwds);
@@ -47,10 +55,13 @@ static PyObject *	Target_extract(PyObject *self, PyObject *args, PyObject *kwds)
 static void		Command_dealloc(twopence_Command *self);
 static PyObject *	Command_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static int		Command_init(twopence_Command *self, PyObject *args, PyObject *kwds);
-static PyObject *	Command_stdout(twopence_Command *);
-static PyObject *	Command_stderr(twopence_Command *);
+static PyObject *	Command_getattr(twopence_Command *self, char *name);
 static int		Command_Check(PyObject *);
 static int		Command_build(twopence_Command *, twopence_command_t *);
+static void		Status_dealloc(twopence_Status *self);
+static PyObject *	Status_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
+static int		Status_init(twopence_Status *self, PyObject *args, PyObject *kwds);
+static PyObject *	Status_getattr(twopence_Status *self, char *name);
 
 static inline void
 drop_string(char **strp)
@@ -138,12 +149,6 @@ static PyTypeObject twopence_TargetType = {
  *   target.run(cmd)
  */
 static PyMethodDef twopence_commandMethods[] = {
-      {	"stdout", (PyCFunction) Command_stdout, METH_NOARGS,
-	"Return the stdout buffer for this command"
-      },
-      {	"stderr", (PyCFunction) Command_stderr, METH_NOARGS,
-	"Return the stderr buffer for this command"
-      },
       {	NULL }
 };
 
@@ -159,6 +164,8 @@ static PyTypeObject twopence_CommandType = {
 	.tp_init	= (initproc) Command_init,
 	.tp_new		= Command_new,
 	.tp_dealloc	= (destructor) Command_dealloc,
+
+	.tp_getattr	= (getattrfunc) Command_getattr,
 };
 
 /*
@@ -300,18 +307,24 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 
 	if (self->stderr == Py_None) {
 		/* ostream has already been reset above */
-	} else if (self->stderr == NULL) {
-		if (buffer == NULL) {
-			/* Default to normal stderr */
-			twopence_command_iostream_redirect(cmd, TWOPENCE_STDERR, 2, false);
-		} else {
+	} else if (buffer) {
+		if (self->stderr == NULL || self->stderr == self->stdout) {
 			/* stderr and stdout are captured in shared buffer */
+			twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, buffer);
+		} else {
+			/* stderr wants its own buffer */
+			buffer = twopence_command_alloc_buffer(cmd, TWOPENCE_STDERR, 65536);
 			twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, buffer);
 		}
 	} else {
-		/* Capture command output in its own buffer */
-		buffer = twopence_command_alloc_buffer(cmd, TWOPENCE_STDERR, 65536);
-		twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, buffer);
+		if (self->stderr == NULL) {
+			/* Default to normal stderr */
+			twopence_command_iostream_redirect(cmd, TWOPENCE_STDERR, 2, false);
+		} else {
+			/* stderr wants its own buffer */
+			buffer = twopence_command_alloc_buffer(cmd, TWOPENCE_STDERR, 65536);
+			twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, buffer);
+		}
 	}
 
 	if (self->stdinPath != NULL) {
@@ -345,6 +358,157 @@ Command_stderr(twopence_Command *self)
 		result = Py_None;
 	Py_INCREF(result);
 	return result;
+}
+
+static PyObject *
+Command_getattr(twopence_Command *self, char *name)
+{
+	if (!strcmp(name, "stdout"))
+		return Command_stdout(self);
+	if (!strcmp(name, "stderr"))
+		return Command_stderr(self);
+
+	PyErr_Format(PyExc_AttributeError, "%s", name);
+	return NULL;
+}
+
+/*
+ * Command status
+ */
+/*
+ * Define the python bindings of class "Status"
+ * Normally, you do not create Status objects yourself;
+ * Usually, these are created as the return value of Command.run()
+ */
+static PyMethodDef twopence_statusMethods[] = {
+      {	NULL }
+};
+
+static PyTypeObject twopence_StatusType = {
+	PyObject_HEAD_INIT(NULL)
+
+	.tp_name	= "twopence.Status",
+	.tp_basicsize	= sizeof(twopence_Status),
+	.tp_flags	= Py_TPFLAGS_DEFAULT,
+	.tp_doc		= "Twopence status",
+
+	.tp_methods	= twopence_statusMethods,
+	.tp_init	= (initproc) Status_init,
+	.tp_new		= Status_new,
+	.tp_dealloc	= (destructor) Status_dealloc,
+
+	.tp_getattr	= (getattrfunc) Status_getattr,
+};
+
+/*
+ * Constructor: allocate empty Status object, and set its members.
+ */
+static PyObject *
+Status_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+	twopence_Status *self;
+
+	self = (twopence_Status *) type->tp_alloc(type, 0);
+	if (self == NULL)
+		return NULL;
+
+	/* init members */
+	self->remoteStatus = 0;
+	self->stdout = NULL;
+	self->stderr = NULL;
+
+	return (PyObject *)self;
+}
+
+/*
+ * Initialize the status object
+ */
+static int
+Status_init(twopence_Status *self, PyObject *args, PyObject *kwds)
+{
+	static char *kwlist[] = {
+		"status",
+		"stdout",
+		"stderr",
+		NULL
+	};
+	PyObject *stdoutObject = NULL, *stderrObject = NULL;
+	int exitval = 0;
+
+	if (args == Py_None)
+		return 0;
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "|iOO", kwlist, &exitval, &stdoutObject, &stderrObject))
+		return -1;
+
+	self->remoteStatus = exitval;
+	self->stdout = NULL;
+	self->stderr = NULL;
+
+	if (stdoutObject) {
+		Py_INCREF(stdoutObject);
+		self->stdout = stdoutObject;
+	}
+	if (stderrObject) {
+		Py_INCREF(stderrObject);
+		self->stderr = stderrObject;
+	}
+
+	return 0;
+}
+
+/*
+ * Destructor: clean any state inside the Status object
+ */
+static void
+Status_dealloc(twopence_Status *self)
+{
+	drop_object(&self->stdout);
+	drop_object(&self->stderr);
+}
+
+int
+Status_Check(PyObject *self)
+{
+	return PyType_IsSubtype(Py_TYPE(self), &twopence_StatusType);
+}
+
+static PyObject *
+Status_stdout(twopence_Status *self)
+{
+	PyObject *result;
+
+	result = self->stdout;
+	if (result == NULL)
+		result = Py_None;
+	Py_INCREF(result);
+	return result;
+}
+
+static PyObject *
+Status_stderr(twopence_Status *self)
+{
+	PyObject *result;
+
+	result = self->stderr;
+	if (result == NULL)
+		result = Py_None;
+	Py_INCREF(result);
+	return result;
+}
+
+static PyObject *
+Status_getattr(twopence_Status *self, char *name)
+{
+	if (!strcmp(name, "stdout"))
+		return Status_stdout(self);
+	if (!strcmp(name, "stderr"))
+		return Status_stderr(self);
+	if (!strcmp(name, "code"))
+		return PyInt_FromLong(self->remoteStatus);
+
+	PyErr_Format(PyExc_AttributeError, "%s", name);
+	return NULL;
 }
 
 /*
@@ -441,6 +605,7 @@ Target_run(PyObject *self, PyObject *args, PyObject *kwds)
 {
 	struct twopence_target *handle;
 	twopence_Command *cmdObject = NULL;
+	twopence_Status *statusObject;
 	twopence_command_t cmd;
 	twopence_status_t status;
 	PyObject *result = NULL;
@@ -485,7 +650,18 @@ Target_run(PyObject *self, PyObject *args, PyObject *kwds)
 	if (twopence_AppendBuffer(cmdObject->stderr, &cmd.buffer[TWOPENCE_STDERR]) < 0)
 		goto out;
 
-	result = PyInt_FromLong(status.minor);
+	statusObject = (twopence_Status *) PyObject_Call((PyObject *) &twopence_StatusType, Py_None, NULL);
+	statusObject->remoteStatus = status.minor;
+	if (cmdObject->stdout) {
+		statusObject->stdout = cmdObject->stdout;
+		Py_INCREF(statusObject->stdout);
+	}
+	if (cmdObject->stderr) {
+		statusObject->stderr = cmdObject->stderr;
+		Py_INCREF(statusObject->stderr);
+	}
+
+	result = (PyObject *) statusObject;
 
 out:
 	if (cmdObject) {
@@ -568,7 +744,7 @@ Target_extract(PyObject *self, PyObject *args, PyObject *kwds)
 static void
 registerType(PyObject *m, const char *name, PyTypeObject *type)
 {
-	type->tp_new = PyType_GenericNew;
+	//type->tp_new = PyType_GenericNew;
 	if (PyType_Ready(type) < 0)
 		return;
 
@@ -585,4 +761,5 @@ inittwopence(void)
 
 	registerType(m, "Target", &twopence_TargetType);
 	registerType(m, "Command", &twopence_CommandType);
+	registerType(m, "Status", &twopence_StatusType);
 }
