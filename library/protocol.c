@@ -47,8 +47,6 @@ twopence_pipe_target_init(struct twopence_pipe_target *target, int plugin_type, 
   target->base.ops = plugin_ops;
   target->link_timeout = 60000; /* 1 minute */
   target->link_ops = link_ops;
-
-  twopence_source_init_none(&target->base.current.source);
 }
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
@@ -238,7 +236,7 @@ __twopence_pipe_read_frame(struct twopence_pipe_target *handle, int link_fd, cha
  * Helper function to read from either link or stdin
  */
 static int
-__twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, int link_fd, int stdin_fd, char *buffer, size_t size)
+__twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, int link_fd, twopence_iostream_t *stdin_stream, char *buffer, size_t size)
 {
   unsigned long timeout = 60000; /* 1 minute */
 
@@ -250,10 +248,10 @@ __twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, int link_fd, i
     pfd[nfds].events = POLLIN;
     nfds++;
 
-    if (stdin_fd >= 0) {
-      pfd[nfds].fd = stdin_fd;
-      pfd[nfds].events = POLLIN;
-      nfds++;
+    if (stdin_stream) {
+      n = twopence_iostream_poll(stdin_stream, &pfd[nfds], POLLIN);
+      if (n > 0)
+        nfds++;
     }
 
     n = poll(pfd, nfds, timeout);
@@ -273,10 +271,10 @@ __twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, int link_fd, i
       return __twopence_pipe_read_frame(handle, link_fd, buffer, size);
     }
 
-    if (nfds > 1 && (pfd[0].revents & POLLIN)) {
+    if (nfds > 1 && (pfd[1].revents & POLLIN)) {
       int count;
 
-      count = read(stdin_fd, buffer + 4, size - 4);
+      count = twopence_iostream_read(stdin_stream, buffer + 4, size - 4);
       if (count < 0) {
 	if (errno == EINTR)
 	  continue;
@@ -307,19 +305,19 @@ static int
 _twopence_read_results(struct twopence_pipe_target *handle, int link_fd, twopence_status_t *status_ret)
 {
   int state;                           // 0 = processing results, 1 = major received, 2 = minor received
-  int stdin_fd;
+  twopence_iostream_t *stream;
   char buffer[BUFFER_SIZE];
   int rc, received, sent;
 
   /* Read from the source fd specified by the caller. Can be stdin, can be
    * any other file, or can be negative (meaning no stdin) */
-  stdin_fd = handle->base.current.source.fd;
+  stream = twopence_target_stream(&handle->base, TWOPENCE_STDIN);
 
   /* If there is no stdin attached to this command, send an EOF packet
    * to the other end right away (normally, this is sent after we reach
    * EOF on the input.
    */
-  if (stdin_fd < 0) {
+  if (stream == NULL || twopence_iostream_eof(stream)) {
     /* Send an EOF packet to the server */
     buffer[0] = 'E';
     store_length(4, buffer);
@@ -332,14 +330,14 @@ _twopence_read_results(struct twopence_pipe_target *handle, int link_fd, twopenc
 
   while (state != 2)
   {
-    rc = __twopence_pipe_recvbuf_both(handle, link_fd, stdin_fd, buffer, sizeof(buffer));
+    rc = __twopence_pipe_recvbuf_both(handle, link_fd, stream, buffer, sizeof(buffer));
     if (rc != 0)
       return TWOPENCE_RECEIVE_RESULTS_ERROR;
 
     received = compute_length(buffer);
     switch (buffer[0]) {
       case 'E':                        // End of file on stdin
-	stdin_fd = -1;
+	twopence_iostream_destroy(stream);
 	/* fallthru */
       case '0':                        // Data on stdin
         if (state != 0)
@@ -569,7 +567,7 @@ __twopence_pipe_command(struct twopence_pipe_target *handle, const char *usernam
   store_length(n + 1, command);
 
   // Tune input so it is nonblocking
-  was_blocking = twopence_source_set_blocking(&handle->base.current.source, false);
+  was_blocking = twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, false);
   if (was_blocking < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
@@ -577,7 +575,7 @@ __twopence_pipe_command(struct twopence_pipe_target *handle, const char *usernam
   link_fd = __twopence_pipe_open_link(handle);
   if (link_fd < 0)
   {
-    twopence_source_set_blocking(&handle->base.current.source, was_blocking);
+    twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
 
@@ -585,7 +583,7 @@ __twopence_pipe_command(struct twopence_pipe_target *handle, const char *usernam
   sent = __twopence_pipe_sendbuf(handle, link_fd, command, n + 1);
   if (sent != n + 1)
   {
-    twopence_source_set_blocking(&handle->base.current.source, was_blocking);
+    twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     close(link_fd);
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
@@ -594,13 +592,13 @@ __twopence_pipe_command(struct twopence_pipe_target *handle, const char *usernam
   rc = _twopence_read_results(handle, link_fd, status_ret);
   if (rc < 0)
   {
-    twopence_source_set_blocking(&handle->base.current.source, was_blocking);
+    twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     close(link_fd);
     return TWOPENCE_RECEIVE_RESULTS_ERROR;
   }
 
   /* FIXME: we should really reset the sink on all exit paths from this function */
-  twopence_source_set_blocking(&handle->base.current.source, was_blocking);
+  twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
   close(link_fd);
   return 0;
 }
@@ -824,11 +822,9 @@ twopence_pipe_run_test(struct twopence_target *opaque_handle,
   username = cmd->user? : "root";
 
   handle->base.current.io = cmd->iostream;
-  handle->base.current.source = cmd->source;
 
   rc = __twopence_pipe_command(handle, username, command, status_ret);
 
-  twopence_source_init_none(&handle->base.current.source);
   return rc;
 }
 
@@ -914,7 +910,6 @@ twopence_pipe_exit_remote(struct twopence_target *opaque_handle)
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
   handle->base.current.io = NULL;
-  twopence_source_init_none(&handle->base.current.source);
 
   return _twopence_exit_virtio_serial(handle);
 }

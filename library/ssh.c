@@ -100,17 +100,18 @@ __twopence_ssh_sleep()
 static int
 __twopence_ssh_read_input(struct twopence_ssh_target *handle, ssh_channel channel, bool *nothing, bool *eof)
 {
+  twopence_iostream_t *stream;
   char buffer[BUFFER_SIZE];
   int size, written;
-  int fd;
 
-  if ((fd = handle->base.current.source.fd) < 0) {
+  stream = twopence_target_stream(&handle->base, TWOPENCE_STDIN);
+  if (stream == NULL || twopence_iostream_eof(stream)) {
     *nothing = *eof = true;
     return 0;
   }
 
   // Read from stdin
-  size = read(fd, buffer, BUFFER_SIZE);
+  size = twopence_iostream_read(stream, buffer, BUFFER_SIZE);
   if (size < 0)
   {
     if (errno != EAGAIN)               // Error
@@ -355,7 +356,7 @@ __twopence_ssh_command_ssh(struct twopence_ssh_target *handle, const char *comma
   int rc;
 
   // Tune stdin so it is nonblocking
-  was_blocking = twopence_source_set_blocking(&handle->base.current.source, false);
+  was_blocking = twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, false);
   if (was_blocking < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
@@ -363,13 +364,13 @@ __twopence_ssh_command_ssh(struct twopence_ssh_target *handle, const char *comma
   channel = ssh_channel_new(session);
   if (channel == NULL)
   {
-    twopence_source_set_blocking(&handle->base.current.source, was_blocking);
+    twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
   if (ssh_channel_open_session(channel) != SSH_OK)
   {
     ssh_channel_free(channel);
-    twopence_source_set_blocking(&handle->base.current.source, was_blocking);
+    twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
   handle->channel = channel;
@@ -380,7 +381,7 @@ __twopence_ssh_command_ssh(struct twopence_ssh_target *handle, const char *comma
     handle->channel = NULL;
     ssh_channel_close(channel);
     ssh_channel_free(channel);
-    twopence_source_set_blocking(&handle->base.current.source, was_blocking);
+    twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
   handle->channel = NULL;
@@ -394,7 +395,7 @@ __twopence_ssh_command_ssh(struct twopence_ssh_target *handle, const char *comma
   status_ret->minor = ssh_channel_get_exit_status(channel);
   ssh_channel_free(channel);
 
-  twopence_source_set_blocking(&handle->base.current.source, was_blocking);
+  twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
   return rc;
 }
 
@@ -656,7 +657,6 @@ twopence_ssh_run_test(struct twopence_target *opaque_handle,
   memset(status_ret, 0, sizeof(*status_ret));
 
   handle->base.current.io = cmd->iostream;
-  handle->base.current.source = cmd->source;
 
   // Connect to the remote host
   if (__twopence_ssh_connect_ssh(handle, cmd->user?: "root") < 0)

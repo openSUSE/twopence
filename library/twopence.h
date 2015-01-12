@@ -23,6 +23,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <stdbool.h>
 
+struct pollfd;
+
 /* API versioning. These values correspond directly to the
  * shared library version numbers */
 #define TWOPENCE_API_MAJOR_VERSION	0
@@ -120,6 +122,7 @@ typedef struct twopence_substream twopence_substream_t;
 
 typedef struct twopence_iostream twopence_iostream_t;
 struct twopence_iostream {
+	bool			eof;
 	unsigned int		count;
 	twopence_substream_t *	sink[4];
 };
@@ -129,6 +132,8 @@ typedef struct twopence_io_ops twopence_io_ops_t;
 struct twopence_io_ops {
 	int			(*write)(twopence_substream_t *, const void *, size_t);
 	int			(*read)(twopence_substream_t *, void *, size_t);
+	int			(*set_blocking)(twopence_substream_t *, bool);
+	int			(*poll)(twopence_substream_t *, struct pollfd *, int);
 };
 
 struct twopence_substream {
@@ -156,12 +161,10 @@ struct twopence_command {
 
 	/* FIXME: support passing environment variables to the command */
 
-	/* What to feed to the command's standard input.
-	 * Defaults to no input.
+	/* How to handle the command's standard I/O.
+	 * stdin defaults to no input, stdout and stderr default to
+	 * the standard output fds
 	 */
-	twopence_source_t	source;
-
-	/* How to handle the command's standard out and error */
 	twopence_iostream_t	iostream[__TWOPENCE_IO_MAX];
 
 	twopence_buffer_t	buffer[__TWOPENCE_IO_MAX];
@@ -176,7 +179,6 @@ struct twopence_target {
 	/* Data related to current command */
 	struct {
 	    twopence_iostream_t *io;
-	    twopence_source_t	source;
 	} current;
 
 	const struct twopence_plugin *ops;
@@ -359,7 +361,7 @@ extern twopence_buffer_t *twopence_command_alloc_buffer(twopence_command_t *, tw
 extern void		twopence_command_ostreams_reset(twopence_command_t *);
 extern void		twopence_command_ostream_reset(twopence_command_t *, twopence_iofd_t);
 extern void		twopence_command_ostream_capture(twopence_command_t *, twopence_iofd_t, twopence_buffer_t *);
-extern void		twopence_command_ostream_redirect(twopence_command_t *, twopence_iofd_t, int);
+extern void		twopence_command_iostream_redirect(twopence_command_t *, twopence_iofd_t, int);
 
 /*
  * Output handling functions
@@ -368,19 +370,28 @@ extern void		twopence_buffer_init(twopence_buffer_t *);
 extern void		twopence_buffer_alloc(twopence_buffer_t *, size_t);
 extern void		twopence_buffer_free(twopence_buffer_t *);
 
+extern twopence_iostream_t *twopence_target_stream(struct twopence_target *, twopence_iofd_t);
+extern int		twopence_target_set_blocking(struct twopence_target *, twopence_iofd_t, bool);
 extern int		twopence_target_putc(struct twopence_target *, twopence_iofd_t, char);
 extern int		twopence_target_write(struct twopence_target *, twopence_iofd_t, const char *, size_t);
 
 extern void		twopence_iostream_add_substream(twopence_iostream_t *, twopence_substream_t *);
 extern void		twopence_iostream_destroy(twopence_iostream_t *);
+extern bool		twopence_iostream_eof(const twopence_iostream_t *);
 extern int		twopence_iostream_putc(twopence_iostream_t *, char);
 extern int		twopence_iostream_write(twopence_iostream_t *, const char *, size_t);
+extern int		twopence_iostream_getc(twopence_iostream_t *);
+extern int		twopence_iostream_read(twopence_iostream_t *, char *, size_t);
+extern int		twopence_iostream_set_blocking(twopence_iostream_t *, bool);
+extern int		twopence_iostream_poll(twopence_iostream_t *, struct pollfd *, int mask);
 
+#if 0
 extern int		twopence_tune_stdin(bool blocking);
 extern void		twopence_source_init_none(twopence_source_t *);
 extern void		twopence_source_init_fd(twopence_source_t *, int fd);
 extern int		twopence_source_set_blocking(twopence_source_t *, bool);
 extern void		twopence_source_destroy(twopence_source_t *);
+#endif
 
 extern twopence_substream_t *twopence_substream_new_buffer(twopence_buffer_t *);
 extern twopence_substream_t *twopence_substream_new_fd(int fd);
