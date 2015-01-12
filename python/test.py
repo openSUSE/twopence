@@ -1,7 +1,11 @@
 
 import twopence
 
-target = twopence.Target("ssh:localhost");
+config = twopence.Config()
+
+target = config.target("client");
+print "target ipv4addr", target.ipaddr;
+print "target ipv4addr", target.property("ip6addr")
 
 target.inject("/etc/hosts", "/tmp/injected", mode = 0660)
 target.extract("/etc/hosts", "hosts.copy", user = "okir")

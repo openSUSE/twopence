@@ -28,7 +28,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 static void		Target_dealloc(twopence_Target *self);
 static PyObject *	Target_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static int		Target_init(twopence_Target *self, PyObject *args, PyObject *kwds);
+static PyObject *	Target_getattr(twopence_Target *self, char *name);
 static PyObject *	Target_run(PyObject *self, PyObject *args, PyObject *kwds);
+static PyObject *	Target_property(twopence_Target *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_inject(PyObject *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_extract(PyObject *self, PyObject *args, PyObject *kwds);
 
@@ -45,6 +47,9 @@ static PyObject *	Target_extract(PyObject *self, PyObject *args, PyObject *kwds)
  * exceptions.
  */
 static PyMethodDef twopence_targetMethods[] = {
+      {	"property", (PyCFunction) Target_property, METH_VARARGS | METH_KEYWORDS,
+	"Obtain property defined by the target config"
+      },
       {	"run", (PyCFunction) Target_run, METH_VARARGS | METH_KEYWORDS,
 	"Run a command on the SUT"
       },
@@ -70,6 +75,8 @@ PyTypeObject twopence_TargetType = {
 	.tp_init	= (initproc) Target_init,
 	.tp_new		= Target_new,
 	.tp_dealloc	= (destructor) Target_dealloc,
+
+	.tp_getattr	= (getattrfunc) Target_getattr,
 };
 
 /*
@@ -93,18 +100,23 @@ Target_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int
 Target_init(twopence_Target *self, PyObject *args, PyObject *kwds)
 {
+	static char *kwlist[] = {"target", "attrs", NULL};
+	PyObject *attrDict = NULL;
 	char *targetSpec;
 	int rc;
 
-	static char *kwlist[] = {"target", NULL};
-
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s", kwlist, &targetSpec))
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|O", kwlist, &targetSpec, &attrDict))
 		return -1; 
 
 	rc = twopence_target_new(targetSpec, &self->handle);
 	if (rc < 0) {
 		twopence_Exception("Target initialization", rc);
 		return -1;
+	}
+
+	if (attrDict) {
+		self->attrs = attrDict;
+		Py_INCREF(attrDict);
 	}
 
 	return 0;
@@ -119,6 +131,8 @@ Target_dealloc(twopence_Target *self)
 	if (self->handle)
 		twopence_target_free(self->handle);
 	self->handle = NULL;
+
+	drop_object(&self->attrs);
 }
 
 /*
@@ -130,6 +144,48 @@ Target_handle(PyObject *self)
 {
 	return ((twopence_Target *) self)->handle;
 }
+
+static PyObject *
+Target_getattr(twopence_Target *self, char *name)
+{
+	PyObject *value;
+
+	if (self->attrs
+	 && (value = PyDict_GetItemString(self->attrs, name)) != NULL) {
+		Py_INCREF(value);
+		return value;
+	}
+
+	return Py_FindMethod(twopence_targetMethods, (PyObject *) self, name);
+}
+
+/*
+ * Another way of obtaining a per-target property.
+ * The only difference is how missing properties are handled.
+ * If there is no "ipaddr" property defined for the target, then
+ * target.property("ipaddr") will return None, while
+ * using target.ipaddr with throw an exception.
+ */
+static PyObject *
+Target_property(twopence_Target *self, PyObject *args, PyObject *kwds)
+{
+	static char *kwlist[] = {"name", NULL};
+	PyObject *value;
+	char *name;
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s", kwlist, &name))
+		return NULL;
+
+	if (self->attrs
+	 && (value = PyDict_GetItemString(self->attrs, name)) != NULL) {
+		Py_INCREF(value);
+		return value;
+	}
+
+	Py_INCREF(Py_None);
+	return Py_None;
+}
+
 
 /*
  * The run() method can return data in buffers
