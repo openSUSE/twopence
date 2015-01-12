@@ -20,6 +20,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <Python.h>
 #include <fcntl.h>
+#include <sys/wait.h>
 #include "twopence.h"
 
 typedef struct {
@@ -65,6 +66,7 @@ static void		Status_dealloc(twopence_Status *self);
 static PyObject *	Status_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static int		Status_init(twopence_Status *self, PyObject *args, PyObject *kwds);
 static PyObject *	Status_getattr(twopence_Status *self, char *name);
+static int		Status_nonzero(twopence_Status *);
 static PyObject *	callType(PyTypeObject *);
 
 static inline void
@@ -446,6 +448,10 @@ static PyMethodDef twopence_statusMethods[] = {
       {	NULL }
 };
 
+static PyNumberMethods twopence_statusAsNumber = {
+	.nb_nonzero	= (inquiry) Status_nonzero,
+};
+
 static PyTypeObject twopence_StatusType = {
 	PyObject_HEAD_INIT(NULL)
 
@@ -460,6 +466,7 @@ static PyTypeObject twopence_StatusType = {
 	.tp_dealloc	= (destructor) Status_dealloc,
 
 	.tp_getattr	= (getattrfunc) Status_getattr,
+	.tp_as_number	= &twopence_statusAsNumber,
 };
 
 /*
@@ -560,6 +567,30 @@ Status_stderr(twopence_Status *self)
 }
 
 static PyObject *
+Status_message(twopence_Status *self)
+{
+	char message[128];
+
+	message[0] = '\0';
+
+	/* Unfortunately, the exit status returned by libssh is somewhat limited :-( */
+	switch (self->remoteStatus) {
+	case 0:
+		strcpy(message, "success");
+		break;
+
+	case -1:
+		strcpy(message, "crashed");
+		break;
+
+	default:
+		snprintf(message, sizeof(message), "status %d", self->remoteStatus);
+	}
+
+	return PyString_FromString(message);
+}
+
+static PyObject *
 Status_getattr(twopence_Status *self, char *name)
 {
 	if (!strcmp(name, "stdout"))
@@ -568,9 +599,25 @@ Status_getattr(twopence_Status *self, char *name)
 		return Status_stderr(self);
 	if (!strcmp(name, "code"))
 		return PyInt_FromLong(self->remoteStatus);
+	if (!strcmp(name, "message"))
+		return Status_message(self);
 
 	PyErr_Format(PyExc_AttributeError, "%s", name);
 	return NULL;
+}
+
+/*
+ * Support using a status object in a boolean context, as in
+ *
+ * status = target.run(cmd)
+ * if status:
+ *    all is well
+ *
+ */
+static int
+Status_nonzero(twopence_Status *self)
+{
+	return self->remoteStatus == 0;
 }
 
 /*

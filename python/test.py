@@ -10,6 +10,13 @@ target.run("/bin/pwd");
 
 status = target.run("/bin/blablabla")
 print "Return code is", status.code
+if not(status):
+  print "Command failed as expected, message:", status.message
+
+status = target.run("kill -9 $$")
+print "Return code is", status.code
+if not(status):
+  print "Command failed as expected, message:", status.message
 
 out = bytearray();
 target.run("/bin/ls", stdout = out)
