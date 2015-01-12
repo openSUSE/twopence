@@ -89,7 +89,7 @@ __twopence_pipe_error(struct twopence_pipe_target *handle, char c)
 }
 
 static inline int
-__twopence_pipe_write(struct twopence_pipe_target *handle, twopence_ostream_t dst, const char *data, size_t len)
+__twopence_pipe_write(struct twopence_pipe_target *handle, twopence_iofd_t dst, const char *data, size_t len)
 {
   return twopence_target_write(&handle->base, dst, data, len);
 }

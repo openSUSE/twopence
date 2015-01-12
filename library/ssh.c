@@ -75,7 +75,7 @@ __twopence_ssh_error(struct twopence_ssh_target *handle, char c)
 static int
 __twopence_ssh_process_chunk(struct twopence_ssh_target *handle, const char *buffer, int size, bool error)
 {
-  twopence_ostream_t dst = error? TWOPENCE_STDERR : TWOPENCE_STDOUT;
+  twopence_iofd_t dst = error? TWOPENCE_STDERR : TWOPENCE_STDOUT;
   int written;
 
   written = twopence_target_write(&handle->base, dst, buffer, size);
