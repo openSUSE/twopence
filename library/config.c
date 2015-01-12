@@ -285,6 +285,9 @@ __get_token(char **pos)
 	while (isspace(*s))
 		++s;
 
+	if (*s == '#')
+		*s = '\0';
+
 	if (*s == '\0') {
 		*pos = NULL;
 		return NULL;
