@@ -294,18 +294,20 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 	if (self->stdout == Py_None && self->stderr == Py_None) {
 		/* ostreams have already been reset above */
 	} else {
+		twopence_buffer_t *bp;
+
 		if (self->stderr == NULL) {
 			/* Capture both stdout and stderr into one buffer */
-			twopence_command_alloc_buffer(cmd, TWOPENCE_STDOUT, 65536);
-			twopence_command_ostream_capture(cmd, TWOPENCE_STDOUT, &cmd->stdout_buf);
-			twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, &cmd->stdout_buf);
+			bp = twopence_command_alloc_buffer(cmd, TWOPENCE_STDOUT, 65536);
+			twopence_command_ostream_capture(cmd, TWOPENCE_STDOUT, bp);
+			twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, bp);
 		} else {
 			/* Capture stdout and stderr separately */
-			twopence_command_alloc_buffer(cmd, TWOPENCE_STDOUT, 65536);
-			twopence_command_alloc_buffer(cmd, TWOPENCE_STDERR, 65536);
+			bp = twopence_command_alloc_buffer(cmd, TWOPENCE_STDOUT, 65536);
+			twopence_command_ostream_capture(cmd, TWOPENCE_STDOUT, bp);
 
-			twopence_command_ostream_capture(cmd, TWOPENCE_STDOUT, &cmd->stdout_buf);
-			twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, &cmd->stderr_buf);
+			bp = twopence_command_alloc_buffer(cmd, TWOPENCE_STDERR, 65536);
+			twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, bp);
 		}
 	}
 
@@ -463,9 +465,9 @@ Target_run(PyObject *self, PyObject *args, PyObject *kwds)
 	}
 
 	/* Now funnel the captured data to the respective buffer objects */
-	if (twopence_AppendBuffer(cmdObject->stdout, &cmd.stdout_buf) < 0)
+	if (twopence_AppendBuffer(cmdObject->stdout, &cmd.buffer[TWOPENCE_STDOUT]) < 0)
 		goto out;
-	if (twopence_AppendBuffer(cmdObject->stderr, &cmd.stderr_buf) < 0)
+	if (twopence_AppendBuffer(cmdObject->stderr, &cmd.buffer[TWOPENCE_STDERR]) < 0)
 		goto out;
 
 	result = PyInt_FromLong(status.minor);
@@ -474,10 +476,6 @@ out:
 	if (cmdObject) {
 		Py_DECREF(cmdObject);
 	}
-
-	/* Should this be in twopence_command_destroy? */
-	if (cmd.source.fd >= 0)
-		close(cmd.source.fd);
 
 	twopence_command_destroy(&cmd);
 	return result;

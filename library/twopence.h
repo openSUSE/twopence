@@ -101,8 +101,11 @@ extern const struct twopence_plugin twopence_serial_ops;
  * commands, at which point we'll have to make these per-command.
  */
 typedef enum {
-	TWOPENCE_STDOUT,
-	TWOPENCE_STDERR,
+	TWOPENCE_STDIN = 0,
+	TWOPENCE_STDOUT = 1,
+	TWOPENCE_STDERR = 2,
+
+	__TWOPENCE_IO_MAX
 } twopence_ostream_t;
 
 typedef struct twopence_buffer twopence_buffer_t;
@@ -121,12 +124,6 @@ struct twopence_sink_chain {
 	twopence_sink_new_t *	sink[4];
 };
 #define TWOPENCE_SINK_CHAIN_INIT	{ .count = 0 }
-
-typedef struct twopence_sink twopence_sink_t;
-struct twopence_sink {
-	twopence_sink_chain_t stdout;
-	twopence_sink_chain_t stderr;
-};
 
 struct twopence_sink_new {
 	twopence_sink_new_t *	next;
@@ -157,10 +154,9 @@ struct twopence_command {
 	twopence_source_t	source;
 
 	/* How to handle the command's standard out and error */
-	twopence_sink_t		sink;
+	twopence_sink_chain_t	sink[__TWOPENCE_IO_MAX];
 
-	twopence_buffer_t	stdout_buf;
-	twopence_buffer_t	stderr_buf;
+	twopence_buffer_t	buffer[__TWOPENCE_IO_MAX];
 };
 
 /*
@@ -171,7 +167,7 @@ struct twopence_target {
 
 	/* Data related to current command */
 	struct {
-	    twopence_sink_t *	sink;
+	    twopence_sink_chain_t *sink;
 	    twopence_source_t	source;
 	} current;
 
@@ -351,7 +347,7 @@ extern void		twopence_perror(const char *, int rc);
  */
 extern void		twopence_command_init(twopence_command_t *cmd, const char *cmdline);
 extern void		twopence_command_destroy(twopence_command_t *cmd);
-extern void		twopence_command_alloc_buffer(twopence_command_t *, twopence_ostream_t, size_t);
+extern twopence_buffer_t *twopence_command_alloc_buffer(twopence_command_t *, twopence_ostream_t, size_t);
 extern void		twopence_command_ostreams_reset(twopence_command_t *);
 extern void		twopence_command_ostream_reset(twopence_command_t *, twopence_ostream_t);
 extern void		twopence_command_ostream_capture(twopence_command_t *, twopence_ostream_t, twopence_buffer_t *);
@@ -376,6 +372,7 @@ extern int		twopence_tune_stdin(bool blocking);
 extern void		twopence_source_init_none(twopence_source_t *);
 extern void		twopence_source_init_fd(twopence_source_t *, int fd);
 extern int		twopence_source_set_blocking(twopence_source_t *, bool);
+extern void		twopence_source_destroy(twopence_source_t *);
 
 extern twopence_sink_new_t *twopence_sink_stdout(void);
 extern twopence_sink_new_t *twopence_sink_stderr(void);
