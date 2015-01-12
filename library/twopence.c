@@ -469,7 +469,7 @@ twopence_command_ostream_capture(twopence_command_t *cmd, twopence_iofd_t dst, t
   twopence_iostream_t *chain;
 
   if ((chain = __twopence_command_ostream(cmd, dst)) != NULL)
-    twopence_iostream_add_substream(chain, twopence_sink_buffer(bp));
+    twopence_iostream_add_substream(chain, twopence_substream_new_buffer(bp));
 }
 
 void
@@ -478,7 +478,7 @@ twopence_command_ostream_redirect(twopence_command_t *cmd, twopence_iofd_t dst, 
   twopence_iostream_t *chain;
 
   if ((chain = __twopence_command_ostream(cmd, dst)) != NULL)
-    twopence_iostream_add_substream(chain, twopence_sink_fd(fd));
+    twopence_iostream_add_substream(chain, twopence_substream_new_fd(fd));
 }
 
 void
@@ -599,7 +599,7 @@ __twopence_setup_stdout(struct twopence_target *target)
   static twopence_iostream_t dots_sink[__TWOPENCE_IO_MAX];
 
   if (dots_sink[TWOPENCE_STDOUT].count == 0)
-    twopence_iostream_add_substream(&dots_sink[TWOPENCE_STDOUT], twopence_sink_fd(1));
+    twopence_iostream_add_substream(&dots_sink[TWOPENCE_STDOUT], twopence_substream_new_fd(1));
 
   target->current.sink = dots_sink;
 }
@@ -657,7 +657,9 @@ twopence_iostream_putc(twopence_iostream_t *chain, char c)
   for (i = 0; i < chain->count; ++i) {
     twopence_substream_t *sink = chain->sink[i];
 
-    sink->write(sink, &c, 1);
+    if (sink->ops == NULL || sink->ops->write == NULL)
+      return -1;
+    sink->ops->write(sink, &c, 1);
   }
 
   return 1;
@@ -674,7 +676,9 @@ twopence_iostream_write(twopence_iostream_t *chain, const char *data, size_t len
   for (i = 0; i < chain->count; ++i) {
     twopence_substream_t *sink = chain->sink[i];
 
-    sink->write(sink, data, len);
+    if (sink->ops == NULL || sink->ops->write == NULL)
+      return -1;
+    sink->ops->write(sink, data, len);
   }
 
   return len;
@@ -684,60 +688,97 @@ twopence_iostream_write(twopence_iostream_t *chain, const char *data, size_t len
  * Create a new sink object
  */
 twopence_substream_t *
-__twopence_substream_new(void (*writer)(twopence_substream_t *, const void *, size_t), void *data)
+__twopence_substream_new(const twopence_io_ops_t *ops)
 {
   twopence_substream_t *sink;
 
   sink = calloc(1, sizeof(*sink));
-  sink->write = writer;
-  sink->data = data;
+  sink->ops = ops;
 
   return sink;
 }
 
 /*
- * Handle a buffered sink
+ * Handle a buffered substream
  */
-static void
-twopence_sink_buffer_write(twopence_substream_t *sink, const void *data, size_t len)
+static int
+twopence_substream_buffer_write(twopence_substream_t *sink, const void *data, size_t len)
 {
   twopence_buffer_t *bp = (twopence_buffer_t *) sink->data;
 
   __twopence_buffer_put(bp, data, len);
+  return len;
 }
 
-twopence_substream_t *
-twopence_sink_buffer(twopence_buffer_t *bp)
+static int
+twopence_substream_buffer_read(twopence_substream_t *src, void *data, size_t len)
 {
-  return __twopence_substream_new(twopence_sink_buffer_write, bp);
+  return -1; // Not supported for now
+}
+
+static twopence_io_ops_t twopence_buffer_io = {
+	.read	= twopence_substream_buffer_read,
+	.write	= twopence_substream_buffer_write,
+};
+
+twopence_substream_t *
+twopence_substream_new_buffer(twopence_buffer_t *bp)
+{
+  twopence_substream_t *io;
+
+  io = __twopence_substream_new(&twopence_buffer_io);
+  io->data = bp;
+  return io;
 }
 
 /*
- * stdio sinks
+ * fd based substreams
  */
-static void
-twopence_sink_write_fd(twopence_substream_t *sink, const void *data, size_t len)
+static int
+twopence_substream_file_write(twopence_substream_t *sink, const void *data, size_t len)
 {
-  int fd = (long) sink->data;
+  int fd = sink->fd;
 
-  if (fd >= 0)
-    write(fd, data, len);
+  if (fd < 0)
+    return -1;
+
+   return write(fd, data, len);
+}
+
+static int
+twopence_substream_file_read(twopence_substream_t *src, void *data, size_t len)
+{
+  int fd = src->fd;
+
+  if (fd < 0)
+    return -1;
+
+   return read(fd, data, len);
+}
+
+static twopence_io_ops_t twopence_file_io = {
+	.read	= twopence_substream_file_read,
+	.write	= twopence_substream_file_write,
+};
+
+twopence_substream_t *
+twopence_substream_new_fd(int fd)
+{
+  twopence_substream_t *io;
+
+  io = __twopence_substream_new(&twopence_file_io);
+  io->fd = fd;
+  return io;
 }
 
 twopence_substream_t *
-twopence_sink_stdout(void)
+twopence_iostream_stdout(void)
 {
-  return __twopence_substream_new(twopence_sink_write_fd, (void *) 1);
+  return twopence_substream_new_fd(1);
 }
 
 twopence_substream_t *
-twopence_sink_stderr(void)
+twopence_iostream_stderr(void)
 {
-  return __twopence_substream_new(twopence_sink_write_fd, (void *) 2);
-}
-
-twopence_substream_t *
-twopence_sink_fd(int fd)
-{
-  return __twopence_substream_new(twopence_sink_write_fd, (void *) (long) fd);
+  return twopence_substream_new_fd(2);
 }

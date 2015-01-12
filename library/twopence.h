@@ -125,9 +125,18 @@ struct twopence_iostream {
 };
 #define TWOPENCE_SINK_CHAIN_INIT	{ .count = 0 }
 
+typedef struct twopence_io_ops twopence_io_ops_t;
+struct twopence_io_ops {
+	int			(*write)(twopence_substream_t *, const void *, size_t);
+	int			(*read)(twopence_substream_t *, void *, size_t);
+};
+
 struct twopence_substream {
-	void			(*write)(twopence_substream_t *, const void *, size_t);
-	void *			data;
+	const twopence_io_ops_t *ops;
+	union {
+		void *		data;
+		int		fd;
+	};
 };
 
 typedef struct twopence_source twopence_source_t;
@@ -373,10 +382,8 @@ extern void		twopence_source_init_fd(twopence_source_t *, int fd);
 extern int		twopence_source_set_blocking(twopence_source_t *, bool);
 extern void		twopence_source_destroy(twopence_source_t *);
 
-extern twopence_substream_t *twopence_sink_stdout(void);
-extern twopence_substream_t *twopence_sink_stderr(void);
-extern twopence_substream_t *twopence_sink_buffer(twopence_buffer_t *);
-extern twopence_substream_t *twopence_sink_fd(int fd);
+extern twopence_substream_t *twopence_substream_new_buffer(twopence_buffer_t *);
+extern twopence_substream_t *twopence_substream_new_fd(int fd);
 
 
 /*
