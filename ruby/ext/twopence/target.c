@@ -22,8 +22,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "twopence.h"
 
-// The shared buffer
-char output_buffer[65536];
+
+static VALUE buffer_value(twopence_buffer_t *bp);
 
 void deallocate_target(void *);
 
@@ -83,18 +83,18 @@ void deallocate_target(void *handle)
 VALUE method_test_and_print_results(VALUE self, VALUE ruby_user, VALUE ruby_command)
 {
   struct twopence_target *target;
-  int rc, major, minor;
+  twopence_status_t status;
+  int rc;
 
   Check_Type(ruby_user, T_STRING);
   Check_Type(ruby_command, T_STRING);
   Data_Get_Struct(self, struct twopence_target, target);
 
-  rc = twopence_test_and_print_results
-    (target, StringValueCStr(ruby_user), StringValueCStr(ruby_command),
-     &major, &minor);
+  rc = twopence_test_and_print_results(target,
+		  StringValueCStr(ruby_user), StringValueCStr(ruby_command), &status);
 
   return rb_ary_new3(3,
-                     INT2NUM(rc), INT2NUM(major), INT2NUM(minor));
+                     INT2NUM(rc), INT2NUM(status.major), INT2NUM(status.minor));
 }
 
 // Run a test command, and drop output
@@ -107,18 +107,18 @@ VALUE method_test_and_print_results(VALUE self, VALUE ruby_user, VALUE ruby_comm
 VALUE method_test_and_drop_results(VALUE self, VALUE ruby_user, VALUE ruby_command)
 {
   struct twopence_target *target;
-  int rc, major, minor;
+  twopence_status_t status;
+  int rc;
 
   Check_Type(ruby_user, T_STRING);
   Check_Type(ruby_command, T_STRING);
   Data_Get_Struct(self, struct twopence_target, target);
 
-  rc = twopence_test_and_drop_results
-    (target, StringValueCStr(ruby_user), StringValueCStr(ruby_command),
-     &major, &minor);
+  rc = twopence_test_and_drop_results(target,
+		  StringValueCStr(ruby_user), StringValueCStr(ruby_command), &status);
 
   return rb_ary_new3(3,
-                     INT2NUM(rc), INT2NUM(major), INT2NUM(minor));
+                     INT2NUM(rc), INT2NUM(status.major), INT2NUM(status.minor));
 }
 
 // Run a test command, and store the result in a common string
@@ -132,20 +132,24 @@ VALUE method_test_and_drop_results(VALUE self, VALUE ruby_user, VALUE ruby_comma
 VALUE method_test_and_store_results_together(VALUE self, VALUE ruby_user, VALUE ruby_command)
 {
   struct twopence_target *target;
-  int rc, major, minor;
+  twopence_buffer_t stdout_buf;
+  twopence_status_t status;
+  VALUE result;
+  int rc;
 
   Check_Type(ruby_user, T_STRING);
   Check_Type(ruby_command, T_STRING);
   Data_Get_Struct(self, struct twopence_target, target);
 
-  rc = twopence_test_and_store_results_together
-    (target, StringValueCStr(ruby_user), StringValueCStr(ruby_command),
-     output_buffer, 65536,
-     &major, &minor);
+  twopence_buffer_alloc(&stdout_buf, 65536);
+
+  rc = twopence_test_and_store_results_together(target,
+		  StringValueCStr(ruby_user), StringValueCStr(ruby_command),
+		  &stdout_buf, &status);
 
   return rb_ary_new3(4,
-                     rb_str_new(output_buffer, strlen(output_buffer)),
-                     INT2NUM(rc), INT2NUM(major), INT2NUM(minor));
+                     buffer_value(&stdout_buf),
+                     INT2NUM(rc), INT2NUM(status.major), INT2NUM(status.minor));
 }
 
 // Run a test command, and store the result in two separate strings
@@ -160,23 +164,25 @@ VALUE method_test_and_store_results_together(VALUE self, VALUE ruby_user, VALUE 
 VALUE method_test_and_store_results_separately(VALUE self, VALUE ruby_user, VALUE ruby_command)
 {
   struct twopence_target *target;
-  char *buffer_out = output_buffer,
-       *buffer_err = output_buffer + 32768;
-  int rc, major, minor;
+  twopence_buffer_t stdout_buf, stderr_buf;
+  twopence_status_t status;
+  int rc;
 
   Check_Type(ruby_user, T_STRING);
   Check_Type(ruby_command, T_STRING);
   Data_Get_Struct(self, struct twopence_target, target);
 
-  rc = twopence_test_and_store_results_separately
-    (target, StringValueCStr(ruby_user), StringValueCStr(ruby_command),
-     buffer_out, buffer_err, 32768,
-     &major, &minor);
+  twopence_buffer_alloc(&stdout_buf, 65536);
+  twopence_buffer_alloc(&stderr_buf, 65536);
+
+  rc = twopence_test_and_store_results_separately(target,
+		  StringValueCStr(ruby_user), StringValueCStr(ruby_command),
+		  &stdout_buf, &stderr_buf, &status);
 
   return rb_ary_new3(5,
-                     rb_str_new(buffer_out, strlen(buffer_out)),
-                     rb_str_new(buffer_err, strlen(buffer_err)),
-                     INT2NUM(rc), INT2NUM(major), INT2NUM(minor));
+                     buffer_value(&stdout_buf),
+                     buffer_value(&stderr_buf),
+                     INT2NUM(rc), INT2NUM(status.major), INT2NUM(status.minor));
 }
 
 // Inject a file into the system under test
@@ -273,4 +279,13 @@ VALUE method_exit(VALUE self)
   rc = twopence_exit_remote(target);
 
   return INT2NUM(rc);
+}
+
+VALUE buffer_value(twopence_buffer_t *bp)
+{
+  VALUE result;
+
+  result = rb_str_new(bp->head, bp->tail - bp->head);
+  twopence_buffer_free(bp);
+  return result;
 }

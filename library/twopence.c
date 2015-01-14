@@ -21,11 +21,15 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <string.h>
 #include <malloc.h>
 #include <ctype.h>
-#include <dlfcn.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/poll.h>
 
 #include "twopence.h"
+
+
+static void	__twopence_setup_stdout(struct twopence_target *target);
+
 
 int
 twopence_plugin_type(const char *plugin_name)
@@ -83,67 +87,24 @@ twopence_target_split(char **target_spec_p)
   return plugin;
 }
 
-/*
- * Open the shared library for this plugin type
- */
-static void *
-twopence_load_library(const char *plugin)
-{
-  char libname[256];
-  void *dl_handle;
-
-  snprintf(libname, sizeof(libname), "libtwopence_%s.so.%u", plugin, TWOPENCE_API_MAJOR_VERSION);
-  dl_handle = dlopen(libname, RTLD_LAZY); 
-  if (dl_handle == NULL)
-    fprintf(stderr, "Cannot open shared library \"%s\"\n", libname);
-  return dl_handle;
-}
-
-/*
- * Get a symbol from the DLL
- */
-static void *
-twopence_get_symbol(void *dl_handle, const char *sym_name)
-{
-  return dlsym(dl_handle, sym_name);
-}
-
 static int
 __twopence_get_plugin_ops(const char *name, const struct twopence_plugin **ret)
 {
-  static void *plugin_dl_handles[__TWOPENCE_PLUGIN_MAX];
-  const struct twopence_plugin *plugin;
+  static const struct twopence_plugin *plugins[__TWOPENCE_PLUGIN_MAX] = {
+  [TWOPENCE_PLUGIN_VIRTIO]	= &twopence_virtio_ops,
+  [TWOPENCE_PLUGIN_SERIAL]	= &twopence_serial_ops,
+  [TWOPENCE_PLUGIN_SSH]		= &twopence_ssh_ops,
+  };
   int type;
-  void *dl_handle;
 
   type = twopence_plugin_type(name);
-  if (type == TWOPENCE_PLUGIN_UNKNOWN 
-   || type >= __TWOPENCE_PLUGIN_MAX)
+  if (type < 0 || type >= __TWOPENCE_PLUGIN_MAX)
     return TWOPENCE_UNKNOWN_PLUGIN;
 
-  dl_handle = plugin_dl_handles[type];
-  if (dl_handle == NULL) {
-    dl_handle = twopence_load_library(name);
-    if (dl_handle == NULL)
-      return TWOPENCE_UNKNOWN_PLUGIN;
+  *ret = plugins[type];
+  if (*ret == NULL)
+    return TWOPENCE_UNKNOWN_PLUGIN;
 
-    plugin_dl_handles[type] = dl_handle;
-  }
-
-  plugin = (const struct twopence_plugin *) twopence_get_symbol(dl_handle, "twopence_plugin");
-  if (plugin == NULL) {
-    char symbol[128];
-
-    snprintf(symbol, sizeof(symbol), "twopence_%s_ops", name);
-    plugin = (const struct twopence_plugin *) twopence_get_symbol(dl_handle, symbol);
-  }
- 
-  if (plugin == NULL) {
-    fprintf(stderr, "plugin \"%s\" does not provide a function vector\n", name);
-    return TWOPENCE_INCOMPATIBLE_PLUGIN;
-  }
-
-  *ret = plugin;
   return 0;
 }
 
@@ -201,70 +162,180 @@ twopence_target_free(struct twopence_target *target)
 }
 
 /*
- * General API
+ * target level output functions
  */
-int
-twopence_test_and_print_results(struct twopence_target *target, const char *username, const char *command, int *major_ret, int *minor_ret)
+twopence_iostream_t *
+twopence_target_stream(struct twopence_target *target, twopence_iofd_t dst)
 {
-  if (target->ops->test_and_print_results == NULL)
-    return TWOPENCE_NOT_SUPPORTED;
+  if (0 <= dst && dst < __TWOPENCE_IO_MAX
+   && target->current.io != NULL)
+    return &target->current.io[dst];
 
-  return target->ops->test_and_print_results(target, username, command, major_ret, minor_ret);
+  return NULL;
 }
 
 int
-twopence_test_and_drop_results(struct twopence_target *target, const char *username, const char *command, int *major_ret, int *minor_ret)
+twopence_target_set_blocking(struct twopence_target *target, twopence_iofd_t sel, bool blocking)
 {
-  if (target->ops->test_and_drop_results == NULL)
+  twopence_iostream_t *stream;
+
+  if ((stream = twopence_target_stream(target, sel)) == NULL)
+    return -1;
+
+  return twopence_iostream_set_blocking(stream, blocking);
+}
+
+int
+twopence_target_putc(struct twopence_target *target, twopence_iofd_t dst, char c)
+{
+  twopence_iostream_t *stream;
+
+  if ((stream = twopence_target_stream(target, dst)) == NULL)
+    return -1;
+
+  return twopence_iostream_putc(stream, c);
+}
+
+int
+twopence_target_write(struct twopence_target *target, twopence_iofd_t dst, const char *data, size_t len)
+{
+  twopence_iostream_t *stream;
+
+  if ((stream = twopence_target_stream(target, dst)) == NULL)
+    return -1;
+
+  return twopence_iostream_write(stream, data, len);
+}
+
+/*
+ * General API
+ */
+int
+twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twopence_status_t *status)
+{
+  if (target->ops->run_test == NULL)
     return TWOPENCE_NOT_SUPPORTED;
 
-  return target->ops->test_and_drop_results(target, username, command, major_ret, minor_ret);
+  target->current.io = NULL;
+
+  return target->ops->run_test(target, cmd, status);
+}
+
+int
+twopence_test_and_print_results(struct twopence_target *target, const char *username, const char *command, twopence_status_t *status)
+{
+  if (target->ops->run_test) {
+    twopence_command_t cmd;
+
+    twopence_command_init(&cmd, command);
+    cmd.user = username;
+
+    twopence_command_ostreams_reset(&cmd);
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDIN, 0, false);
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 1, false);
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDERR, 2, false);
+
+    return twopence_run_test(target, &cmd, status);
+  }
+
+  return TWOPENCE_NOT_SUPPORTED;
+}
+
+int
+twopence_test_and_drop_results(struct twopence_target *target, const char *username, const char *command, twopence_status_t *status)
+{
+  if (target->ops->run_test) {
+    twopence_command_t cmd;
+
+    twopence_command_init(&cmd, command);
+    cmd.user = username;
+
+    /* Reset both ostreams to nothing */
+    twopence_command_ostreams_reset(&cmd);
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDIN, 0, false);
+
+    return twopence_run_test(target, &cmd, status);
+  }
+
+  return TWOPENCE_NOT_SUPPORTED;
 }
 
 int
 twopence_test_and_store_results_together(struct twopence_target *target, const char *username, const char *command,
-		char *buffer, int size, int *major_ret, int *minor_ret)
+		twopence_buffer_t *buffer, twopence_status_t *status)
 {
-  if (target->ops->test_and_store_results_together == NULL)
-    return TWOPENCE_NOT_SUPPORTED;
+  if (target->ops->run_test) {
+    twopence_command_t cmd;
 
-  return target->ops->test_and_store_results_together(target, username, command,
-		  			buffer, size,
-					major_ret, minor_ret);
+    twopence_command_init(&cmd, command);
+    cmd.user = username;
+
+    twopence_command_ostreams_reset(&cmd);
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDIN, 0, false);
+    if (buffer) {
+      twopence_command_ostream_capture(&cmd, TWOPENCE_STDOUT, buffer);
+      twopence_command_ostream_capture(&cmd, TWOPENCE_STDERR, buffer);
+    }
+
+    return twopence_run_test(target, &cmd, status);
+  }
+
+  return TWOPENCE_NOT_SUPPORTED;
 }
 
 int
 twopence_test_and_store_results_separately(struct twopence_target *target, const char *username, const char *command,
-		char *stdout_buffer, char *stderr_buffer, int size, int *major_ret, int *minor_ret)
+		twopence_buffer_t *stdout_buffer, twopence_buffer_t *stderr_buffer, twopence_status_t *status)
 {
-  if (target->ops->test_and_store_results_separately == NULL)
-    return TWOPENCE_NOT_SUPPORTED;
+  if (target->ops->run_test) {
+    twopence_command_t cmd;
 
-  return target->ops->test_and_store_results_separately(target, username, command,
-		  			stdout_buffer, stderr_buffer, size,
-					major_ret, minor_ret);
+    twopence_command_init(&cmd, command);
+    cmd.user = username;
+
+    twopence_command_ostreams_reset(&cmd);
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDIN, 0, false);
+    if (stdout_buffer)
+      twopence_command_ostream_capture(&cmd, TWOPENCE_STDOUT, stdout_buffer);
+    if (stderr_buffer)
+      twopence_command_ostream_capture(&cmd, TWOPENCE_STDERR, stderr_buffer);
+
+    return twopence_run_test(target, &cmd, status);
+  }
+
+  return TWOPENCE_NOT_SUPPORTED;
 }
 
 int
 twopence_inject_file(struct twopence_target *target, const char *username,
 		const char *local_path, const char *remote_path,
-		int *remote_rc, bool blabla)
+		int *remote_rc, bool print_dots)
 {
   if (target->ops->inject_file == NULL)
     return TWOPENCE_NOT_SUPPORTED;
 
-  return target->ops->inject_file(target, username, local_path, remote_path, remote_rc, blabla);
+  /* Reset output, and connect with stdout if we want to see the dots get printed */
+  target->current.io = NULL;
+  if (print_dots)
+    __twopence_setup_stdout(target);
+
+  return target->ops->inject_file(target, username, local_path, remote_path, remote_rc, print_dots);
 }
 
 int
 twopence_extract_file(struct twopence_target *target, const char *username,
 		const char *remote_path, const char *local_path,
-		int *remote_rc, bool blabla)
+		int *remote_rc, bool print_dots)
 {
   if (target->ops->extract_file == NULL)
     return TWOPENCE_NOT_SUPPORTED;
 
-  return target->ops->extract_file(target, username, remote_path, local_path, remote_rc, blabla);
+  /* Reset output, and connect with stdout if we want to see the dots get printed */
+  target->current.io = NULL;
+  if (print_dots)
+    __twopence_setup_stdout(target);
+
+  return target->ops->extract_file(target, username, remote_path, local_path, remote_rc, print_dots);
 }
 
 int
@@ -319,6 +390,10 @@ twopence_strerror(int rc)
       return "Unknown plugin";
     case TWOPENCE_INCOMPATIBLE_PLUGIN:
       return "Incompatible plugin";
+    case TWOPENCE_NOT_SUPPORTED:
+      return "Operation not supported";
+    case TWOPENCE_PROTOCOL_ERROR:
+      return "Protocol error";
   }
   return "Unknow error";
 }
@@ -330,22 +405,98 @@ twopence_perror(const char *msg, int rc)
 }
 
 /*
- * Switch stdin blocking mode
+ * Handling of command structs
  */
-int
-twopence_tune_stdin(bool blocking)
+void
+twopence_command_init(twopence_command_t *cmd, const char *cmdline)
 {
-  int flags;
+  memset(cmd, 0, sizeof(*cmd));
 
-  flags = fcntl(0, F_GETFL, 0);        // Get old flags
-  if (flags == -1)
-    return -1;
+  /* By default, all output from the remote command is sent to our own
+   * stdout and stderr.
+   * The input of the remote command is not connected.
+   */
+  twopence_command_iostream_redirect(cmd, TWOPENCE_STDOUT, 1, false);
+  twopence_command_iostream_redirect(cmd, TWOPENCE_STDERR, 2, false);
 
-  flags &= ~O_NONBLOCK;
-  if (blocking)
-    flags |= O_NONBLOCK;
+  cmd->command = cmdline;
+}
 
-  return fcntl(0, F_SETFL, flags);
+static inline twopence_buffer_t *
+__twopence_command_buffer(twopence_command_t *cmd, twopence_iofd_t dst)
+{
+  if (0 <= dst && dst < __TWOPENCE_IO_MAX)
+    return &cmd->buffer[dst];
+  return NULL;
+}
+
+twopence_buffer_t *
+twopence_command_alloc_buffer(twopence_command_t *cmd, twopence_iofd_t dst, size_t size)
+{
+  twopence_buffer_t *bp;
+
+  if ((bp = __twopence_command_buffer(cmd, dst)) == NULL)
+    return NULL;
+
+  twopence_buffer_free(bp);
+  if (size)
+    twopence_buffer_alloc(bp, size);
+  return bp;
+}
+
+static inline twopence_iostream_t *
+__twopence_command_ostream(twopence_command_t *cmd, twopence_iofd_t dst)
+{
+  if (0 <= dst && dst < __TWOPENCE_IO_MAX)
+    return &cmd->iostream[dst];
+  return NULL;
+}
+
+void
+twopence_command_ostreams_reset(twopence_command_t *cmd)
+{
+  unsigned int i;
+
+  for (i = 0; i < __TWOPENCE_IO_MAX; ++i)
+    twopence_iostream_destroy(&cmd->iostream[i]);
+}
+
+void
+twopence_command_ostream_reset(twopence_command_t *cmd, twopence_iofd_t dst)
+{
+  twopence_iostream_t *stream;
+
+  if ((stream = __twopence_command_ostream(cmd, dst)) != NULL)
+    twopence_iostream_destroy(stream);
+}
+
+void
+twopence_command_ostream_capture(twopence_command_t *cmd, twopence_iofd_t dst, twopence_buffer_t *bp)
+{
+  twopence_iostream_t *stream;
+
+  if ((stream = __twopence_command_ostream(cmd, dst)) != NULL)
+    twopence_iostream_add_substream(stream, twopence_substream_new_buffer(bp));
+}
+
+void
+twopence_command_iostream_redirect(twopence_command_t *cmd, twopence_iofd_t dst, int fd, bool closeit)
+{
+  twopence_iostream_t *stream;
+
+  if ((stream = __twopence_command_ostream(cmd, dst)) != NULL)
+    twopence_iostream_add_substream(stream, twopence_substream_new_fd(fd, closeit));
+}
+
+void
+twopence_command_destroy(twopence_command_t *cmd)
+{
+  unsigned int i;
+
+  for (i = 0; i < __TWOPENCE_IO_MAX; ++i) {
+    twopence_buffer_free(&cmd->buffer[i]);
+    twopence_iostream_destroy(&cmd->iostream[i]);
+  }
 }
 
 /*
@@ -354,150 +505,414 @@ twopence_tune_stdin(bool blocking)
 static void
 __twopence_buffer_init(struct twopence_buffer *buf, char *head, size_t size)
 {
-  buf->tail = head;
+  buf->head = buf->tail = head;
   buf->end = head + size;
 }
 
 void
-twopence_sink_init(struct twopence_sink *sink, twopence_output_t mode, char *outbuf, char *errbuf, size_t bufsize)
+twopence_buffer_init(twopence_buffer_t *buf)
 {
-  memset(sink, 0, sizeof(*sink));
-  sink->mode = mode;
-
-  switch (mode) {
-  case TWOPENCE_OUTPUT_NONE:
-  case TWOPENCE_OUTPUT_SCREEN:
-    break;
-
-  case TWOPENCE_OUTPUT_BUFFER:
-    if (outbuf && bufsize) {
-      __twopence_buffer_init(&sink->outbuf, outbuf, bufsize);
-    } else {
-      fprintf(stderr, "%s: no buffer supplied for buffered output mode, falling back to OUTPUT_NONE\n", __FUNCTION__);
-      sink->mode = TWOPENCE_OUTPUT_NONE;
-    }
-    break;
-
-  case TWOPENCE_OUTPUT_BUFFER_SEPARATELY:
-    if (outbuf && errbuf && bufsize) {
-      __twopence_buffer_init(&sink->outbuf, outbuf, bufsize);
-      __twopence_buffer_init(&sink->errbuf, errbuf, bufsize);
-    } else {
-      fprintf(stderr, "%s: no buffers supplied for separately buffered output mode, falling back to OUTPUT_NONE\n", __FUNCTION__);
-      sink->mode = TWOPENCE_OUTPUT_NONE;
-    }
-    break;
-
-  default:
-    fprintf(stderr, "%s: unsupported output mode %u, assuming OUTPUT_NONE\n", __FUNCTION__, mode);
-    sink->mode = TWOPENCE_OUTPUT_NONE;
-    break;
-  }
-}
-
-int
-twopence_sink_putc(struct twopence_sink *sink, bool is_error, char c)
-{
-  if (is_error)
-    return __twopence_sink_write_stderr(sink, c);
-  return __twopence_sink_write_stdout(sink, c);
-}
-
-int
-twopence_sink_write(struct twopence_sink *sink, bool is_error, const char *data, size_t len)
-{
-  int count = 0, rc = 0;
-
-  if (is_error) {
-    while (len--) {
-      if ((rc = __twopence_sink_write_stderr(sink, *data++)) < 0)
-	return rc;
-      count++;
-    }
-  } else {
-    while (len--) {
-      if ((rc = __twopence_sink_write_stdout(sink, *data++)) < 0)
-	return rc;
-      count++;
-    }
-  }
-  return count;
+  memset(buf, 0, sizeof(*buf));
 }
 
 void
-twopence_sink_init_none(struct twopence_sink *sink)
+twopence_buffer_alloc(twopence_buffer_t *buf, size_t size)
 {
-  memset(sink, 0, sizeof(*sink));
-  sink->mode = TWOPENCE_OUTPUT_NONE;
+  __twopence_buffer_init(buf, calloc(size, 1), size);
+}
+
+void
+twopence_buffer_free(twopence_buffer_t *buf)
+{
+  if (buf->head)
+    free(buf->head);
+  memset(buf, 0, sizeof(*buf));
+}
+
+/*
+ * This is a helper function to set everything up so that inject/extract
+ * will print dots while transferring data
+ */
+static void
+__twopence_setup_stdout(struct twopence_target *target)
+{
+  static twopence_iostream_t dots_iostream[__TWOPENCE_IO_MAX];
+
+  if (dots_iostream[TWOPENCE_STDOUT].count == 0)
+    twopence_iostream_add_substream(&dots_iostream[TWOPENCE_STDOUT], twopence_substream_new_fd(1, false));
+
+  target->current.io = dots_iostream;
+}
+
+
+void
+twopence_iostream_add_substream(twopence_iostream_t *stream, twopence_substream_t *substream)
+{
+  if (stream->count >= TWOPENCE_IOSTREAM_MAX_SUBSTREAMS) {
+    twopence_substream_close(substream);
+    free(substream);
+    return;
+  }
+
+  stream->substream[stream->count++] = substream;
+}
+
+void
+twopence_iostream_destroy(twopence_iostream_t *stream)
+{
+  unsigned int i;
+
+  for (i = 0; i < stream->count; ++i) {
+    twopence_substream_t *substream = stream->substream[i];
+
+    twopence_substream_close(substream);
+    free(substream);
+  }
+  memset(stream, 0, sizeof(*stream));
 }
 
 /*
  * Buffering functions
  */
 static unsigned int
-__twopence_buffer_putc(struct twopence_buffer *bp, char c)
+__twopence_buffer_put(struct twopence_buffer *bp, const void *data, size_t len)
 {
-  if (bp->tail >= bp->end)
+  size_t tailroom;
+
+  tailroom = bp->end - bp->tail;
+  if (len > tailroom)
+    len = tailroom;
+
+  memcpy(bp->tail, data, len);
+  bp->tail += len;
+  return len;
+}
+
+/*
+ * Check if iostream is at EOF
+ */
+bool
+twopence_iostream_eof(const twopence_iostream_t *stream)
+{
+  return stream->eof;
+}
+
+/*
+ * Tune blocking behavior of iostream
+ */
+int
+twopence_iostream_set_blocking(twopence_iostream_t *stream, bool blocking)
+{
+  int was_blocking = 0;
+  unsigned int i;
+
+  if (stream->eof || stream->count == 0)
+    return false;
+
+  for (i = 0; i < stream->count; ++i) {
+    twopence_substream_t *substream = stream->substream[i];
+
+    if (substream->ops == NULL)
+       continue;
+    if (substream->ops->set_blocking == NULL)
+      return -1;
+
+    was_blocking = substream->ops->set_blocking(substream, blocking);
+  }
+
+  return was_blocking;
+}
+
+/*
+ * Fill a pollfd struct
+ * Returns one of:
+ *   0 (EOF condition, pfd struct not filled in)
+ *   1 (pfd struct valid)
+ *  <0 (error)
+ */
+int
+twopence_iostream_poll(twopence_iostream_t *stream, struct pollfd *pfd, int mask)
+{
+  unsigned int i;
+
+  if (stream->eof || stream->count == 0)
     return 0;
 
-  *(bp->tail++) = c;
+  /* We can only do POLLIN for now */
+  if (mask & POLLOUT)
+    return -1;
+
+  /* Find the first non-EOF substream and fill in the pollfd */
+  for (i = 0; i < stream->count; ++i) {
+    twopence_substream_t *substream = stream->substream[i];
+
+    if (substream->ops == NULL)
+      continue;
+
+    if (substream->ops->poll == NULL)
+      return -1;
+
+    return substream->ops->poll(substream, pfd, mask);
+  }
+
+  /* All substreams are EOF, so no polling */
+  return 0;
+}
+
+/*
+ * Read from an iostream
+ */
+int
+twopence_iostream_getc(twopence_iostream_t *stream)
+{
+  unsigned int i;
+
+  if (stream->eof || stream->count == 0)
+    return EOF;
+
+  for (i = 0; i < stream->count; ++i) {
+    twopence_substream_t *substream = stream->substream[i];
+    unsigned char c;
+    int n;
+
+    if (substream->ops == NULL || substream->ops->read == NULL)
+      continue;
+    n = substream->ops->read(substream, &c, 1);
+    if (n == 1)
+      return c;
+
+    // This substream is at its EOF
+    twopence_substream_close(substream);
+  }
+
+  stream->eof = true;
+  return 0;
+}
+
+int
+twopence_iostream_read(twopence_iostream_t *stream, char *data, size_t len)
+{
+  unsigned int i;
+
+  if (stream->eof || stream->count == 0)
+    return 0;
+
+  for (i = 0; i < stream->count; ++i) {
+    twopence_substream_t *substream = stream->substream[i];
+    int n;
+
+    if (substream->ops == NULL || substream->ops->read == NULL)
+      continue;
+
+    n = substream->ops->read(substream, data, len);
+    if (n > 0)
+      return n;
+
+    if (n < 0)
+      return n;
+
+    // This substream is at its EOF
+    twopence_substream_close(substream);
+  }
+
+  stream->eof = true;
+  return 0;
+}
+
+/*
+ * Write to a sink object
+ */
+int
+twopence_iostream_putc(twopence_iostream_t *stream, char c)
+{
+  unsigned int i;
+
+  if (stream->count == 0)
+    return 0;
+
+  for (i = 0; i < stream->count; ++i) {
+    twopence_substream_t *substream = stream->substream[i];
+
+    if (substream->ops == NULL || substream->ops->write == NULL)
+      return -1;
+    substream->ops->write(substream, &c, 1);
+  }
+
   return 1;
 }
 
-/*
- * Write to stdout
- */
 int
-__twopence_sink_write_stdout(struct twopence_sink *sink, char c)
+twopence_iostream_write(twopence_iostream_t *stream, const char *data, size_t len)
 {
-  int written = 0;
+  unsigned int i;
 
-  switch (sink->mode) {
-  case TWOPENCE_OUTPUT_NONE:
+  if (stream->count == 0)
     return 0;
 
-  case TWOPENCE_OUTPUT_SCREEN:
-    written = write(1, &c, 1);
-    break;
+  for (i = 0; i < stream->count; ++i) {
+    twopence_substream_t *substream = stream->substream[i];
 
-  case TWOPENCE_OUTPUT_BUFFER:
-  case TWOPENCE_OUTPUT_BUFFER_SEPARATELY:
-    written = __twopence_buffer_putc(&sink->outbuf, c);
-    break;
+    if (substream->ops == NULL || substream->ops->write == NULL)
+      return -1;
+    substream->ops->write(substream, data, len);
   }
 
-  if (written != 1)
-    return -1;
-  return 0;
+  return len;
 }
 
 /*
- * Write to stderr
+ * Create a new substream object
  */
-int
-__twopence_sink_write_stderr(struct twopence_sink *sink, char c)
+static twopence_substream_t *
+__twopence_substream_new(const twopence_io_ops_t *ops)
 {
-  int written = 0;
+  twopence_substream_t *substream;
 
-  switch (sink->mode) {
-  case TWOPENCE_OUTPUT_NONE:
-    return 0;
+  substream = calloc(1, sizeof(*substream));
+  substream->ops = ops;
 
-  case TWOPENCE_OUTPUT_SCREEN:
-    written = write(2, &c, 1);
-    break;
-
-  case TWOPENCE_OUTPUT_BUFFER:
-    written = __twopence_buffer_putc(&sink->outbuf, c);
-    break;
-
-  case TWOPENCE_OUTPUT_BUFFER_SEPARATELY:
-    written = __twopence_buffer_putc(&sink->errbuf, c);
-    break;
-  }
-
-  if (written != 1)
-    return -1;
-  return 0;
+  return substream;
 }
 
+void
+twopence_substream_close(twopence_substream_t *substream)
+{
+  if (substream->ops == NULL)
+    return;
+
+  if (substream->ops->close)
+    substream->ops->close(substream);
+  substream->ops = NULL;
+}
+
+/*
+ * Handle a buffered substream
+ */
+static int
+twopence_substream_buffer_write(twopence_substream_t *sink, const void *data, size_t len)
+{
+  twopence_buffer_t *bp = (twopence_buffer_t *) sink->data;
+
+  __twopence_buffer_put(bp, data, len);
+  return len;
+}
+
+static int
+twopence_substream_buffer_read(twopence_substream_t *src, void *data, size_t len)
+{
+  return -1; // Not supported for now
+}
+
+static twopence_io_ops_t twopence_buffer_io = {
+	.read	= twopence_substream_buffer_read,
+	.write	= twopence_substream_buffer_write,
+};
+
+twopence_substream_t *
+twopence_substream_new_buffer(twopence_buffer_t *bp)
+{
+  twopence_substream_t *io;
+
+  io = __twopence_substream_new(&twopence_buffer_io);
+  io->data = bp;
+  return io;
+}
+
+/*
+ * fd based substreams
+ */
+static void
+twopence_substream_file_close(twopence_substream_t *substream)
+{
+  if (substream->fd >= 0 && substream->close) {
+    close(substream->fd);
+    substream->fd = -1;
+  }
+}
+
+static int
+twopence_substream_file_write(twopence_substream_t *sink, const void *data, size_t len)
+{
+  int fd = sink->fd;
+
+  if (fd < 0)
+    return -1;
+
+   return write(fd, data, len);
+}
+
+static int
+twopence_substream_file_read(twopence_substream_t *src, void *data, size_t len)
+{
+  int fd = src->fd;
+
+  if (fd < 0)
+    return -1;
+
+   return read(fd, data, len);
+}
+
+int
+twopence_substream_file_set_blocking(twopence_substream_t *src, bool blocking)
+{
+  int oflags, nflags;
+
+  if (src->fd < 0)
+    return 0;
+
+  oflags = fcntl(src->fd, F_GETFL);        // Get old flags
+  if (oflags == -1)
+    return -1;
+
+  nflags = oflags & ~O_NONBLOCK;
+  if (!blocking)
+    nflags |= O_NONBLOCK;
+
+  if (fcntl(src->fd, F_SETFL, nflags) < 0)
+    return -1;
+
+  /* Return old settings (true means it was using blocking mode before the change) */
+  return !(oflags & O_NONBLOCK);
+}
+
+int
+twopence_substream_file_poll(twopence_substream_t *src, struct pollfd *pfd, int mask)
+{
+  if (src->fd < 0)
+    return 0;
+
+  pfd->fd = src->fd;
+  pfd->events = mask;
+  return 1;
+}
+
+static twopence_io_ops_t twopence_file_io = {
+	.close	= twopence_substream_file_close,
+	.read	= twopence_substream_file_read,
+	.write	= twopence_substream_file_write,
+	.set_blocking = twopence_substream_file_set_blocking,
+	.poll	= twopence_substream_file_poll,
+};
+
+twopence_substream_t *
+twopence_substream_new_fd(int fd, bool closeit)
+{
+  twopence_substream_t *io;
+
+  io = __twopence_substream_new(&twopence_file_io);
+  io->fd = fd;
+  io->close = closeit;
+  return io;
+}
+
+twopence_substream_t *
+twopence_iostream_stdout(void)
+{
+  return twopence_substream_new_fd(1, false);
+}
+
+twopence_substream_t *
+twopence_iostream_stderr(void)
+{
+  return twopence_substream_new_fd(2, false);
+}

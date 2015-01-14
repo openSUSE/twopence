@@ -26,9 +26,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "twopence.h"
 
-char buffer[65536];
-twopence_interrupt_t interrupt_command;
-void *twopence_handle;
+struct twopence_target *twopence_handle;
 
 char *short_options = "u:o:1:2:qbh";
 struct option long_options[] = {
@@ -53,8 +51,7 @@ void signal_handler(int signum)
   }
   printf("\nInterrupted.\n");
   interrupt_in_progress = true;
-  (*interrupt_command)                 // return code is ignored
-    (twopence_handle);
+  twopence_interrupt_command(twopence_handle);
   interrupt_in_progress = false;
 }
 
@@ -75,9 +72,10 @@ int restore_handler(int signum, const struct sigaction *old_action)
 }
 
 // Write output to file, in case we were requested not to ouput it to screen
-int write_output(const char *filename, const char *buf)
+int write_output(const char *filename, const twopence_buffer_t *bp)
 {
   FILE *fp;
+  unsigned int count;
 
   fp = fopen(filename, "wb");
   if (fp == NULL)
@@ -85,7 +83,10 @@ int write_output(const char *filename, const char *buf)
     fprintf(stderr, "Error while opening output file \"%s\"\n", filename);
     return -6;
   }
-  if (fputs(buf, fp) < 0)
+
+  count = bp->tail - bp->head;
+  fwrite(bp->head, 1, count, fp);
+  if (ferror(fp))
   {
     fprintf(stderr, "Error while writing output to file \"%s\"\n", filename);
     return -6;
@@ -117,6 +118,7 @@ Command: any UNIX command\n", program_name);
 // Main program
 int main(int argc, char *argv[])
 {
+  twopence_buffer_t stdout_buf, stderr_buf;
   int option;
   const char *opt_user, *opt_output, *opt_stdout, *opt_stderr;
   bool opt_quiet, opt_batch;
@@ -124,7 +126,8 @@ int main(int argc, char *argv[])
   const char *opt_target, *opt_command;
   struct twopence_target *target;
   struct sigaction old_action;
-  int major, minor, rc, rc2;
+  int rc, rc2;
+  twopence_status_t status;
 
   // Parse options
   opt_user = NULL;
@@ -183,39 +186,45 @@ int main(int argc, char *argv[])
   }
 
   // Install signal handler
-  if (install_handler(SIGINT, &old_action))
-  {
+  twopence_handle = target;
+  if (install_handler(SIGINT, &old_action)) {
     fprintf(stderr, "Error installing signal handler\n");
     twopence_target_free(target);
     exit(-5);
   }
+
+  twopence_buffer_init(&stdout_buf);
+  twopence_buffer_init(&stderr_buf);
 
   // Run command
   switch (opt_type)
   {
     case 1:
       rc = twopence_test_and_print_results(target, opt_user, opt_command,
-                            &major, &minor);
+                            &status);
       break;
     case 2:
       rc = twopence_test_and_drop_results(target, opt_user, opt_command,
-                            &major, &minor);
+                            &status);
       break;
     case 3:
+      twopence_buffer_alloc(&stdout_buf, 65536);
       rc = twopence_test_and_store_results_together(target, opt_user, opt_command,
-                            buffer, 65536, &major, &minor);
+                            &stdout_buf, &status);
       break;
     case 4:
+      twopence_buffer_alloc(&stdout_buf, 65536);
+      twopence_buffer_alloc(&stderr_buf, 65536);
       rc = twopence_test_and_store_results_separately(target, opt_user, opt_command,
-                            buffer, buffer + 32768, 32768, &major, &minor);
+                            &stdout_buf, &stderr_buf, &status);
   }
 
   if (rc == 0) {
     if (!opt_batch) {
-      printf("Return code from the test server: %d\n", major);
-      printf("Return code of tested command: %d\n", minor);
+      printf("Return code from the test server: %d\n", status.major);
+      printf("Return code of tested command: %d\n", status.minor);
     }
-    if (major || minor) rc = -7;
+    if (status.major || status.minor) rc = -7;
   } else {
     twopence_perror("Unable to execute command", rc);
   }
@@ -232,13 +241,13 @@ int main(int argc, char *argv[])
   switch (opt_type)
   {
     case 3:
-      rc2 = write_output(opt_output, buffer);
+      rc2 = write_output(opt_output, &stdout_buf);
       if (rc == 0) rc = rc2;
       break;
     case 4:
-      rc2 = write_output(opt_stdout, buffer);
+      rc2 = write_output(opt_stdout, &stdout_buf);
       if (rc == 0) rc = rc2;
-      rc2 = write_output(opt_stderr, buffer + 32768);
+      rc2 = write_output(opt_stderr, &stderr_buf);
       if (rc == 0) rc = rc2;
   }
 

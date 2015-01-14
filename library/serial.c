@@ -149,10 +149,7 @@ const struct twopence_plugin twopence_serial_ops = {
 	.name		= "serial",
 
 	.init = twopence_serial_init,
-	.test_and_print_results	= twopence_pipe_test_and_print_results,
-	.test_and_drop_results	= twopence_pipe_test_and_drop_results,
-	.test_and_store_results_together = twopence_pipe_test_and_store_results_together,
-	.test_and_store_results_separately = twopence_pipe_test_and_store_results_separately,
+	.run_test = twopence_pipe_run_test,
 	.inject_file = twopence_pipe_inject_file,
 	.extract_file = twopence_pipe_extract_file,
 	.exit_remote = twopence_pipe_exit_remote,

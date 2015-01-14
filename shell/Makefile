@@ -7,12 +7,15 @@ CCOPT	= -Wall -O2 -g
 endif
 
 CFLAGS	= -I../library $(CCOPT)
-LINK	+= -L../library -ltwopence -ldl
+LINK	+= -L../library -ltwopence
 
 BINDIR ?= /usr/bin
 MANDIR ?= /usr/share/man
 
-all: command inject extract exit
+all: twopence command inject extract exit
+
+twopence: twopence.o config.o ../library/twopence.h
+	$(CC) $(CFLAGS) -o $@ twopence.o config.o $(LINK)
 
 command: command.c ../library/twopence.h
 	$(CC) $(CFLAGS) command.c $(LINK) -o command
