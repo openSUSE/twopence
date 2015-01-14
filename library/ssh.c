@@ -35,7 +35,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "twopence.h"
 
 #define BUFFER_SIZE 16384              // Size in bytes of the work buffer for receiving data from the remote host
-#define LONG_TIMEOUT 60                // Timeout (in seconds) that is big enough for a command to run without any output
+#define LINE_TIMEOUT 60                // Timeout (in seconds) for not receiving anything
+#define COMMAND_TIMEOUT 12             // Timeout (in seconds) for command execution
 
 // This structure encapsulates in an opaque way the behaviour of the library
 // It is not 100 % opaque, because it is publicly known that the first field is the plugin type
@@ -173,10 +174,13 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, ssh_channel chan
   bool nothing_0, eof_0,
        nothing_1, eof_1,
        nothing_2, eof_2;
-  time_t too_late;
+  time_t line_too_late,
+         command_too_late;
 
   eof_0 = eof_1 = eof_2 = false;
-  too_late = time(NULL) + LONG_TIMEOUT;
+  line_too_late = command_too_late = time(NULL);
+  line_too_late += LINE_TIMEOUT;
+  command_too_late += COMMAND_TIMEOUT;
 
   // While there might still be something to read from the remote host
   while (!eof_1 || !eof_2)
@@ -205,7 +209,7 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, ssh_channel chan
     /* The following looks wrong to me. There has to be some select based
      * mechanism to handle this sort of sleep/poll cycle. --okir 
      *
-     * Yes. There is ssh_channel_select(), see
+     * Yes. There is ssh_select(), see
      *   http://api.libssh.org/stable/group__libssh__channel.html.
      * For the TODO. --ebischoff
      */
@@ -217,10 +221,13 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, ssh_channel chan
       __twopence_ssh_sleep();
 
       // And check for timeout
-      if (time(NULL) > too_late)
+      if (time(NULL) > line_too_late)
         return -4;
+
+    if (time(NULL) > command_too_late)
+     return -5;
     }
-    else too_late = time(NULL) + LONG_TIMEOUT;
+    else line_too_late = time(NULL) + LINE_TIMEOUT;
   }
   return 0;
 }
@@ -392,15 +399,23 @@ __twopence_ssh_command_ssh(struct twopence_ssh_target *handle, const char *comma
 
   // Read "standard output", "standard error", and remote error code
   rc = __twopence_ssh_read_results(handle, channel);
+  status_ret->minor = rc? 0: ssh_channel_get_exit_status(channel);
 
-  // Get remote error code and terminate the channel
+  // Terminate the channel
   ssh_channel_send_eof(channel);
   ssh_channel_close(channel);
-  status_ret->minor = ssh_channel_get_exit_status(channel);
   ssh_channel_free(channel);
 
   twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
-  return rc;
+  switch (rc)
+  {
+    case -1: return TWOPENCE_FORWARD_INPUT_ERROR;
+    case -2:
+    case -3:
+    case -4: return TWOPENCE_RECEIVE_RESULTS_ERROR;
+    case -5: return TWOPENCE_COMMAND_TIMEOUT_ERROR;
+  }
+  return 0;
 }
 
 // Inject a file into the remote host through SSH

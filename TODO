@@ -4,6 +4,9 @@ TODO
      with
        ssh_channel_select()
 
+   o ssh.c: kill the remote command when it was aborted
+     because of a timeout or another problem
+
    o write Ruby help pages
 
    o split into several packages
@@ -40,7 +43,7 @@ TODO
 
    o real docbook documentation, reusing the README as a starting point
 
-   o handle interruptions during file transfers,
+   o handle interrupts during file transfers,
      not only during command execution
 
 

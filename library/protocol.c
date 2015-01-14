@@ -32,6 +32,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "protocol.h"
 
 #define BUFFER_SIZE 32768              // Size in bytes of the work buffer for receiving data from the remote
+#define LINE_TIMEOUT 60000             // Maximum silence on the line in milliseconds
 #define COMMAND_BUFFER_SIZE 8192       // Size in bytes of the work buffer for sending data to the remote
 
 /*
@@ -45,7 +46,7 @@ twopence_pipe_target_init(struct twopence_pipe_target *target, int plugin_type, 
 
   target->base.plugin_type = plugin_type;
   target->base.ops = plugin_ops;
-  target->link_timeout = 60000; /* 1 minute */
+  target->link_timeout = LINE_TIMEOUT;
   target->link_ops = link_ops;
 }
 
@@ -242,7 +243,7 @@ __twopence_pipe_read_frame(struct twopence_pipe_target *handle, int link_fd, cha
 static int
 __twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, int link_fd, twopence_iostream_t *stdin_stream, char *buffer, size_t size)
 {
-  unsigned long timeout = 60000; /* 1 minute */
+  unsigned long timeout = handle->link_timeout;
 
   while (true) {
     struct pollfd pfd[2];

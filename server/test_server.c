@@ -41,7 +41,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <string.h>
 
 #define BUFFER_SIZE 32768              // bytes
-#define TIMEOUT 5000                   // milliseconds
+#define LINE_TIMEOUT 5000              // milliseconds
+#define COMMAND_TIMEOUT 12             // seconds
 #define PASSIVE_WAIT 20000000L         // nanoseconds (this value is 1/50th of a second)
 
 #define TWOPENCE_SERVER_PARAMETER_ERROR -1
@@ -229,7 +230,7 @@ int receive_buffer
 
   fds[0].fd = serial_fd;               // Wait either for input on the serial port or for a timeout
   fds[0].events = POLLIN;
-  n = poll(fds, 1, TIMEOUT);
+  n = poll(fds, 1, LINE_TIMEOUT);
   if (n < 0)
   {
     *rc = errno;
@@ -277,7 +278,7 @@ int receive_buffer_2
   fds[1].events = POLLIN;
   fds[2].fd = new_std[2];
   fds[2].events = POLLIN;
-  n = poll(fds, 3, TIMEOUT);
+  n = poll(fds, 3, LINE_TIMEOUT);
   if (n < 0)
   {
     *rc = errno;
@@ -352,7 +353,7 @@ int send_buffer
 
   fds[0].fd = serial_fd;                 // Wait either for output on the serial port or for a timeout
   fds[0].events = POLLOUT;
-  n = poll(fds, 1, TIMEOUT);
+  n = poll(fds, 1, LINE_TIMEOUT);
   if (n < 0)
   {
     *rc = errno;
@@ -532,6 +533,7 @@ void linux_command(const char *username, const char *command, int *new_std)
   }
 
   // Run the command
+  alarm(COMMAND_TIMEOUT);
   rc = system(command);
 
   // Conclude with error codes
@@ -791,7 +793,17 @@ void run_command(int serial_fd, char *buffer)
     forward_stdio                      // We reuse the command buffer as we don't need it anymore
       (serial_fd, std_parent, pid, buffer);
   }
-  if (WIFEXITED(status))               // If child process exited normally
+  if (WIFSIGNALED(status))             // If timeout or other signal
+  {
+    printf("        Timeout or other signal during execution of command.\n");
+    forward_stdio                      // Then we may need to forward last data after child exited
+      (serial_fd, std_parent, pid, buffer);
+    print_message                      // and report the problem
+      (serial_fd, "M...%d", ETIME);
+    print_message
+      (serial_fd, "m...%d", 0);
+  }
+  else if (WIFEXITED(status))          // If child process exited
   {
     forward_stdio                      // Then we may need to forward last data after child exited
       (serial_fd, std_parent, pid, buffer);

@@ -99,11 +99,11 @@ __twopence_get_plugin_ops(const char *name, const struct twopence_plugin **ret)
 
   type = twopence_plugin_type(name);
   if (type < 0 || type >= __TWOPENCE_PLUGIN_MAX)
-    return TWOPENCE_UNKNOWN_PLUGIN;
+    return TWOPENCE_UNKNOWN_PLUGIN_ERROR;
 
   *ret = plugins[type];
   if (*ret == NULL)
-    return TWOPENCE_UNKNOWN_PLUGIN;
+    return TWOPENCE_UNKNOWN_PLUGIN_ERROR;
 
   return 0;
 }
@@ -118,7 +118,7 @@ __twopence_target_new(char *target_spec, struct twopence_target **ret)
 
   name = twopence_target_split(&target_spec);
   if (name == NULL)
-    return TWOPENCE_INVALID_TARGET_SPEC;
+    return TWOPENCE_INVALID_TARGET_ERROR;
 
   rc = __twopence_get_plugin_ops(name, &plugin);
   if (rc < 0)
@@ -127,12 +127,12 @@ __twopence_target_new(char *target_spec, struct twopence_target **ret)
   /* FIXME: check a version number provided by the plugin data */
 
   if (plugin->init == NULL)
-    return TWOPENCE_INCOMPATIBLE_PLUGIN;
+    return TWOPENCE_INCOMPATIBLE_PLUGIN_ERROR;
 
   /* Create the handle */
   target = plugin->init(target_spec);
   if (target == NULL)
-    return TWOPENCE_UNKNOWN_PLUGIN;
+    return TWOPENCE_UNKNOWN_PLUGIN_ERROR;
 
   *ret = target;
   return 0;
@@ -214,7 +214,7 @@ int
 twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twopence_status_t *status)
 {
   if (target->ops->run_test == NULL)
-    return TWOPENCE_NOT_SUPPORTED;
+    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 
   target->current.io = NULL;
 
@@ -238,7 +238,7 @@ twopence_test_and_print_results(struct twopence_target *target, const char *user
     return twopence_run_test(target, &cmd, status);
   }
 
-  return TWOPENCE_NOT_SUPPORTED;
+  return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 }
 
 int
@@ -257,7 +257,7 @@ twopence_test_and_drop_results(struct twopence_target *target, const char *usern
     return twopence_run_test(target, &cmd, status);
   }
 
-  return TWOPENCE_NOT_SUPPORTED;
+  return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 }
 
 int
@@ -280,7 +280,7 @@ twopence_test_and_store_results_together(struct twopence_target *target, const c
     return twopence_run_test(target, &cmd, status);
   }
 
-  return TWOPENCE_NOT_SUPPORTED;
+  return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 }
 
 int
@@ -303,7 +303,7 @@ twopence_test_and_store_results_separately(struct twopence_target *target, const
     return twopence_run_test(target, &cmd, status);
   }
 
-  return TWOPENCE_NOT_SUPPORTED;
+  return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 }
 
 int
@@ -312,7 +312,7 @@ twopence_inject_file(struct twopence_target *target, const char *username,
 		int *remote_rc, bool print_dots)
 {
   if (target->ops->inject_file == NULL)
-    return TWOPENCE_NOT_SUPPORTED;
+    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 
   /* Reset output, and connect with stdout if we want to see the dots get printed */
   target->current.io = NULL;
@@ -328,7 +328,7 @@ twopence_extract_file(struct twopence_target *target, const char *username,
 		int *remote_rc, bool print_dots)
 {
   if (target->ops->extract_file == NULL)
-    return TWOPENCE_NOT_SUPPORTED;
+    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 
   /* Reset output, and connect with stdout if we want to see the dots get printed */
   target->current.io = NULL;
@@ -342,7 +342,7 @@ int
 twopence_exit_remote(struct twopence_target *target)
 {
   if (target->ops->exit_remote == NULL)
-    return TWOPENCE_NOT_SUPPORTED;
+    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 
   return target->ops->exit_remote(target);
 }
@@ -351,7 +351,7 @@ int
 twopence_interrupt_command(struct twopence_target *target)
 {
   if (target->ops->interrupt_command == NULL)
-    return TWOPENCE_NOT_SUPPORTED;
+    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 
   return target->ops->interrupt_command(target);
 }
@@ -374,6 +374,8 @@ twopence_strerror(int rc)
       return "Error forwarding keyboard input";
     case TWOPENCE_RECEIVE_RESULTS_ERROR:
       return "Error receiving the results of action";
+    case TWOPENCE_COMMAND_TIMEOUT_ERROR:
+      return "Remote command took too long to execute";
     case TWOPENCE_LOCAL_FILE_ERROR:
       return "Local error while transferring file";
     case TWOPENCE_SEND_FILE_ERROR:
@@ -384,16 +386,16 @@ twopence_strerror(int rc)
       return "Error receiving file from the system under test";
     case TWOPENCE_INTERRUPT_COMMAND_ERROR:
       return "Failed to interrupt command";
-    case TWOPENCE_INVALID_TARGET_SPEC:
-      return "Invalid target spec";
-    case TWOPENCE_UNKNOWN_PLUGIN:
+    case TWOPENCE_INVALID_TARGET_ERROR:
+      return "Invalid target specification";
+    case TWOPENCE_UNKNOWN_PLUGIN_ERROR:
       return "Unknown plugin";
-    case TWOPENCE_INCOMPATIBLE_PLUGIN:
+    case TWOPENCE_INCOMPATIBLE_PLUGIN_ERROR:
       return "Incompatible plugin";
-    case TWOPENCE_NOT_SUPPORTED:
-      return "Operation not supported";
+    case TWOPENCE_UNSUPPORTED_FUNCTION_ERROR:
+      return "Operation not supported by the plugin";
     case TWOPENCE_PROTOCOL_ERROR:
-      return "Protocol error";
+      return "Twopence custom protocol error";
   }
   return "Unknow error";
 }
@@ -401,7 +403,7 @@ twopence_strerror(int rc)
 void
 twopence_perror(const char *msg, int rc)
 {
-   fprintf(stderr, "%s: %s.\n", msg, twopence_strerror(rc));
+  fprintf(stderr, "%s: %s.\n", msg, twopence_strerror(rc));
 }
 
 /*
