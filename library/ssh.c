@@ -46,6 +46,7 @@ struct twopence_ssh_target
 
   ssh_session template, session;
   ssh_channel channel;                 // Set during remote command execution only
+  bool eof_sent;
 };
 
 extern const struct twopence_plugin twopence_ssh_ops;
@@ -95,6 +96,32 @@ __twopence_ssh_sleep()
   nanosleep(&t, NULL);
 }
 
+static int
+__twopence_ssh_channel_eof(struct twopence_ssh_target *handle)
+{
+  int rc;
+
+  if (handle->channel == NULL || handle->eof_sent)
+    return SSH_OK;
+  rc = ssh_channel_write(handle->channel, "\004", 1);
+  if (rc == SSH_OK)
+    rc = ssh_channel_send_eof(handle->channel);
+  if (rc == SSH_OK)
+    handle->eof_sent = true;
+  return rc;
+}
+
+static void
+__twopence_ssh_close_channel(struct twopence_ssh_target *handle)
+{
+  if (handle->channel == NULL)
+    return;
+
+  ssh_channel_close(handle->channel);
+  ssh_channel_free(handle->channel);
+  handle->channel = NULL;
+}
+
 ///////////////////////////// Middle layer //////////////////////////////////////
 
 // Read the input from the keyboard or a pipe
@@ -124,7 +151,7 @@ __twopence_ssh_read_input(struct twopence_ssh_target *handle, ssh_channel channe
   {
     *nothing = true;
     *eof = true;
-    if (ssh_channel_send_eof(channel) == SSH_ERROR)
+    if (__twopence_ssh_channel_eof(handle) == SSH_ERROR)
       return -1;
     return 0;
   }
@@ -385,26 +412,32 @@ __twopence_ssh_command_ssh(struct twopence_ssh_target *handle, const char *comma
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
   handle->channel = channel;
+  handle->eof_sent = false;
+
+  // Request that the command be run inside a tty
+  if (ssh_channel_request_pty(channel) != SSH_OK)
+  {
+    __twopence_ssh_close_channel(handle);
+    twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
+    return TWOPENCE_OPEN_SESSION_ERROR;
+  }
 
   // Execute the command
   if (ssh_channel_request_exec(channel, command) != SSH_OK)
   {
-    handle->channel = NULL;
-    ssh_channel_close(channel);
-    ssh_channel_free(channel);
+    __twopence_ssh_close_channel(handle);
     twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
-  handle->channel = NULL;
 
   // Read "standard output", "standard error", and remote error code
   rc = __twopence_ssh_read_results(handle, channel);
+
   status_ret->minor = rc? 0: ssh_channel_get_exit_status(channel);
 
   // Terminate the channel
-  ssh_channel_send_eof(channel);
-  ssh_channel_close(channel);
-  ssh_channel_free(channel);
+  __twopence_ssh_channel_eof(handle);
+  __twopence_ssh_close_channel(handle);
 
   twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
   switch (rc)
@@ -550,12 +583,23 @@ __twopence_ssh_interrupt_ssh(struct twopence_ssh_target *handle)
 {
   ssh_channel channel = handle->channel;
 
-  if (channel == NULL) return TWOPENCE_OPEN_SESSION_ERROR;
+  if (channel == NULL)
+    return TWOPENCE_OPEN_SESSION_ERROR;
 
+#if 0
   // This is currently completly useless with OpenSSH
   // (see https://bugzilla.mindrot.org/show_bug.cgi?id=1424)
   if (ssh_channel_request_send_signal(channel, "INT") != SSH_OK)
     return TWOPENCE_INTERRUPT_COMMAND_ERROR;
+#else
+  if (handle->eof_sent) {
+    printf("Cannot send Ctrl-C, channel already closed for writing\n");
+    return TWOPENCE_INTERRUPT_COMMAND_ERROR;
+  }
+
+  if (ssh_channel_write(channel, "\003", 1) != 1)
+    return TWOPENCE_INTERRUPT_COMMAND_ERROR;
+#endif
 
   return 0;
 }
