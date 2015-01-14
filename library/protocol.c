@@ -312,7 +312,7 @@ _twopence_read_results(struct twopence_pipe_target *handle, int link_fd, twopenc
   int state;                           // 0 = processing results, 1 = major received, 2 = minor received
   twopence_iostream_t *stream;
   char buffer[BUFFER_SIZE];
-  int rc, received, sent;
+  int received, sent;
 
   /* Read from the source fd specified by the caller. Can be stdin, can be
    * any other file, or can be negative (meaning no stdin) */
@@ -335,8 +335,8 @@ _twopence_read_results(struct twopence_pipe_target *handle, int link_fd, twopenc
 
   while (state != 2)
   {
-    rc = __twopence_pipe_recvbuf_both(handle, link_fd, stream, buffer, sizeof(buffer));
-    if (rc != 0)
+    if (__twopence_pipe_recvbuf_both
+            (handle, link_fd, stream, buffer, sizeof(buffer)) < 0)
       return TWOPENCE_RECEIVE_RESULTS_ERROR;
 
     received = compute_length(buffer);

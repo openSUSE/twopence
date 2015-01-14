@@ -1,4 +1,11 @@
 TODO
+   o protocol.c:
+     interrupts and end of input not forwarded anymore to the test server
+
+   o plugins:
+     get rid of twopence_init, replaced by twopence_init_new
+     (just a matter of comments?)
+
    o in ssh.c, replace
        ssh_channel_read_nonblocking() + nanosleep()
      with
