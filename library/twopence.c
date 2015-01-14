@@ -708,6 +708,9 @@ twopence_iostream_read(twopence_iostream_t *stream, char *data, size_t len)
     if (n > 0)
       return n;
 
+    if (n < 0)
+      return n;
+
     // This substream is at its EOF
     twopence_substream_close(substream);
   }
