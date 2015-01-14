@@ -583,12 +583,23 @@ __twopence_ssh_interrupt_ssh(struct twopence_ssh_target *handle)
 {
   ssh_channel channel = handle->channel;
 
-  if (channel == NULL) return TWOPENCE_OPEN_SESSION_ERROR;
+  if (channel == NULL)
+    return TWOPENCE_OPEN_SESSION_ERROR;
 
+#if 0
   // This is currently completly useless with OpenSSH
   // (see https://bugzilla.mindrot.org/show_bug.cgi?id=1424)
   if (ssh_channel_request_send_signal(channel, "INT") != SSH_OK)
     return TWOPENCE_INTERRUPT_COMMAND_ERROR;
+#else
+  if (handle->eof_sent) {
+    printf("Cannot send Ctrl-C, channel already closed for writing\n");
+    return TWOPENCE_INTERRUPT_COMMAND_ERROR;
+  }
+
+  if (ssh_channel_write(channel, "\003", 1) != 1)
+    return TWOPENCE_INTERRUPT_COMMAND_ERROR;
+#endif
 
   return 0;
 }
