@@ -111,6 +111,17 @@ __twopence_ssh_channel_eof(struct twopence_ssh_target *handle)
   return rc;
 }
 
+static void
+__twopence_ssh_close_channel(struct twopence_ssh_target *handle)
+{
+  if (handle->channel == NULL)
+    return;
+
+  ssh_channel_close(handle->channel);
+  ssh_channel_free(handle->channel);
+  handle->channel = NULL;
+}
+
 ///////////////////////////// Middle layer //////////////////////////////////////
 
 // Read the input from the keyboard or a pipe
@@ -406,9 +417,7 @@ __twopence_ssh_command_ssh(struct twopence_ssh_target *handle, const char *comma
   // Request that the command be run inside a tty
   if (ssh_channel_request_pty(channel) != SSH_OK)
   {
-    handle->channel = NULL;
-    ssh_channel_close(channel);
-    ssh_channel_free(channel);
+    __twopence_ssh_close_channel(handle);
     twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
@@ -416,22 +425,19 @@ __twopence_ssh_command_ssh(struct twopence_ssh_target *handle, const char *comma
   // Execute the command
   if (ssh_channel_request_exec(channel, command) != SSH_OK)
   {
-    handle->channel = NULL;
-    ssh_channel_close(channel);
-    ssh_channel_free(channel);
+    __twopence_ssh_close_channel(handle);
     twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
 
   // Read "standard output", "standard error", and remote error code
   rc = __twopence_ssh_read_results(handle, channel);
+
   status_ret->minor = rc? 0: ssh_channel_get_exit_status(channel);
 
   // Terminate the channel
   __twopence_ssh_channel_eof(handle);
-  ssh_channel_close(channel);
-  ssh_channel_free(channel);
-  handle->channel = NULL;
+  __twopence_ssh_close_channel(handle);
 
   twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
   switch (rc)
