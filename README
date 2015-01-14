@@ -7,7 +7,7 @@ WHAT IS TWOPENCE
 
 HOW DOES TWOPENCE WORK
    o Twopence is basically a set of libraries
-   o shell and ruby wrappers are provided for convenience
+   o shell, ruby, and python wrappers are provided for convenience
    o each library is seen as a plugin,
      currenly available plugins are virtio (KVM), ssh, and serial
 
@@ -16,6 +16,7 @@ HOW WOULD I USE IT
    o have a look at the examples:
      /usr/lib/twopence/test.sh    (from the shell)
      /usr/lib/twopence/test.rb    (from Ruby)
+     /usr/lib/twopence/test.py    (from Python)
 
 
 A NOTE ON SECURITY
@@ -32,10 +33,12 @@ HOW DO I COMPILE IT
      # zypper install libssh-devel
      # zypper install ruby-devel
      # zypper install rubygem-rake-compiler
+     # zypper install python-devel
      or (Ubuntu):
      # apt-get install libssh-dev
      # apt-get install ruby-dev
      # apt-get install rake-compiler
+     # apt-get install python-dev
    o then run the following command, as a normal user:
      $ make
    o and again as root user:
@@ -122,3 +125,4 @@ HOW DO I RUN THE EXAMPLES WITH A SERIAL CABLE
    o if you get error opening the communication,
      check the permissions of the character device file:
      $ ls -l /dev/ttyS0
+
