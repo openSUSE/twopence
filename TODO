@@ -1,4 +1,9 @@
 TODO
+   o in ssh.c, replace
+       ssh_channel_read_nonblocking() + nanosleep()
+     with
+       ssh_channel_select()
+
    o write Ruby help pages
 
    o split into several packages

@@ -204,6 +204,10 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, ssh_channel chan
 
     /* The following looks wrong to me. There has to be some select based
      * mechanism to handle this sort of sleep/poll cycle. --okir 
+     *
+     * Yes. There is ssh_channel_select(), see
+     *   http://api.libssh.org/stable/group__libssh__channel.html.
+     * For the TODO. --ebischoff
      */
 
     // If we had nothing to read
