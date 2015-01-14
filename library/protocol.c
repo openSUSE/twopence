@@ -125,7 +125,13 @@ __twopence_pipe_poll(int link_fd, int events, unsigned long timeout)
   struct pollfd pfd;
   int n;
 
-  /* It's not quite clear why we're not just using blocking input here. */
+  /* It's not quite clear why we're not just using blocking input here. --okir
+   *
+   * Well, it is blocking input. Quoting "man 2 poll":
+   *     If none of the events requested (and no error) has occurred for any of
+   *     the file descriptors, then poll() blocks until one of the events occurs.
+   * or did you mean something else? --ebischoff
+   */
   pfd.fd = link_fd;
   pfd.events = events;
 
@@ -144,7 +150,6 @@ __twopence_pipe_recvbuf(struct twopence_pipe_target *handle, int link_fd, char *
   while (received < size) {
     int n, rc;
 
-    /* It's not quite clear why we're not just using blocking input here. */
     n = __twopence_pipe_poll(link_fd, POLLIN, handle->link_timeout);
     if (n < 0) {
       perror("poll error");
@@ -180,7 +185,6 @@ __twopence_pipe_sendbuf(struct twopence_pipe_target *handle, int link_fd, const 
   while (sent < count) {
     int n, rc;
 
-    /* It's not quite clear why we're not just using blocking input here. */
     n = __twopence_pipe_poll(link_fd, POLLOUT, handle->link_timeout);
     if (n < 0) {
       perror("poll error");
