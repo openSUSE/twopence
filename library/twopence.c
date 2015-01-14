@@ -230,7 +230,8 @@ twopence_test_and_print_results(struct twopence_target *target, const char *user
     twopence_command_init(&cmd, command);
     cmd.user = username;
 
-    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 0, false);
+    twopence_command_ostreams_reset(&cmd);
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDIN, 0, false);
     twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 1, false);
     twopence_command_iostream_redirect(&cmd, TWOPENCE_STDERR, 2, false);
 
@@ -251,7 +252,7 @@ twopence_test_and_drop_results(struct twopence_target *target, const char *usern
 
     /* Reset both ostreams to nothing */
     twopence_command_ostreams_reset(&cmd);
-    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 0, false);
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDIN, 0, false);
 
     return twopence_run_test(target, &cmd, status);
   }
@@ -270,7 +271,7 @@ twopence_test_and_store_results_together(struct twopence_target *target, const c
     cmd.user = username;
 
     twopence_command_ostreams_reset(&cmd);
-    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 0, false);
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDIN, 0, false);
     if (buffer) {
       twopence_command_ostream_capture(&cmd, TWOPENCE_STDOUT, buffer);
       twopence_command_ostream_capture(&cmd, TWOPENCE_STDERR, buffer);
@@ -293,7 +294,7 @@ twopence_test_and_store_results_separately(struct twopence_target *target, const
     cmd.user = username;
 
     twopence_command_ostreams_reset(&cmd);
-    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 0, false);
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDIN, 0, false);
     if (stdout_buffer)
       twopence_command_ostream_capture(&cmd, TWOPENCE_STDOUT, stdout_buffer);
     if (stderr_buffer)
