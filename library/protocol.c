@@ -367,6 +367,11 @@ _twopence_read_results(struct twopence_pipe_target *handle, int link_fd, twopenc
           return TWOPENCE_RECEIVE_RESULTS_ERROR;
         break;
 
+      case 'T':                        // Command timeout
+        if (state != 0)
+          return TWOPENCE_RECEIVE_RESULTS_ERROR;
+        return TWOPENCE_COMMAND_TIMEOUT_ERROR;
+
       case 'M':                        // Major error code
         if (state != 0)
           return TWOPENCE_RECEIVE_RESULTS_ERROR;
@@ -599,7 +604,7 @@ __twopence_pipe_command(struct twopence_pipe_target *handle, const char *usernam
   {
     twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     close(link_fd);
-    return TWOPENCE_RECEIVE_RESULTS_ERROR;
+    return rc;
   }
 
   /* FIXME: we should really reset the sink on all exit paths from this function */

@@ -799,9 +799,7 @@ void run_command(int serial_fd, char *buffer)
     forward_stdio                      // Then we may need to forward last data after child exited
       (serial_fd, std_parent, pid, buffer);
     print_message                      // and report the problem
-      (serial_fd, "M...%d", ETIME);
-    print_message
-      (serial_fd, "m...%d", 0);
+      (serial_fd, "T...");
   }
   else if (WIFEXITED(status))          // If child process exited
   {

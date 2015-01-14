@@ -4,31 +4,43 @@ Custom protocol
 The virtio and serial plugins use a custom protocol to communicate with
 the system under tests.
 
+
 Packet structure:
+
   Byte 0        Packet type
   Byte 1        (reserved for future use - "port" number)
   Byte 2        length, high order byte
   Byte 3        length, low order byte
   Byte 4+       data
 
+
 Packet types:
+
+        local => system under tests
   'c'           run command
   'i'           insert file
   'e'           extract file
   'q'           quit
-  'M'           major error code
-  'm'           minor error code
   '0'           stdin
-  '1'           stdout
-  '2'           stderr
   'E'           end of file on stdin
   'I'           interrupt command
+
+        system under tests => local
+  'M'           major error code
+  'm'           minor error code
+  '1'           stdout
+  '2'           stderr
+  'T'           command timeout
   's'           file size
+
+            both directions
   'd'           file data
 
 The length includes the 4 bytes of the header.
 
+
 Parameters are separated with spaces:
+
   run command   username command
   insert file   username filesize filename
   extract file  username filename
