@@ -40,9 +40,13 @@ behaviour and provide it with input if it requires some.
 
 .SH OPTIONS
 .IP \fB\-u\fR\ \fIUSERNAME\fR
-.IP\fB\-\-user\fR=\fIUSERNAME\fR
+.IP \fB\-\-user\fR=\fIUSERNAME\fR
 Define the username under which to run the command
 on the system under test.
+.IP \fB\-t\fR\ \fITIMEOUT\fR
+.IP \fB\--timeout\fR\=\fITIMEOUT\fR
+Define the maximum duration for the execution of the command.
+After that delay, the command will be aborted.
 .IP \fB\-o\fR\ \fIFILENAME\fR
 .IP \fB\-\-output\fR=\fIFILENAME\fR
 Store the results in the given file.

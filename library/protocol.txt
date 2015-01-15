@@ -41,7 +41,7 @@ The length includes the 4 bytes of the header.
 
 Parameters are separated with spaces:
 
-  run command   username command
+  run command   username timeout command
   insert file   username filesize filename
   extract file  username filename
 

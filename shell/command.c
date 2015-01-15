@@ -24,13 +24,15 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <getopt.h>
 #include <signal.h>
 
+#include "shell.h"
 #include "twopence.h"
 
 struct twopence_target *twopence_handle;
 
-char *short_options = "u:o:1:2:qbh";
+char *short_options = "u:t:o:1:2:qbh";
 struct option long_options[] = {
   { "user", 1, NULL, 'u' },
+  { "timeout", 1, NULL, 't' },
   { "output", 1, NULL, 'o' },
   { "stdout", 1, NULL, '1' },
   { "stderr", 1, NULL, '2' },
@@ -40,6 +42,7 @@ struct option long_options[] = {
   { NULL, 0, NULL, 0 }
 };
 
+// Handle interrupt
 void signal_handler(int signum)
 {
   static bool interrupt_in_progress = false;
@@ -47,14 +50,18 @@ void signal_handler(int signum)
   if (interrupt_in_progress)
   {
     printf("OK, exiting immediately.");
-    exit(-7);
+    exit(RC_ABORTED_BY_USER);
   }
   printf("\nInterrupted.\n");
   interrupt_in_progress = true;
-  twopence_interrupt_command(twopence_handle);
+  twopence_interrupt_command           // return code is ignored
+    (twopence_handle);
   interrupt_in_progress = false;
 }
 
+// Install interrupt handler
+//
+// Returns 0 on success, -1 on error
 int install_handler(int signum, struct sigaction *old_action)
 {
   struct sigaction new_action;
@@ -66,12 +73,17 @@ int install_handler(int signum, struct sigaction *old_action)
   return sigaction(signum, &new_action, old_action);
 }
 
+// Restore old interrupt handler
+//
+// Returns 0 on success, -1 on error
 int restore_handler(int signum, const struct sigaction *old_action)
 {
   return sigaction(signum, old_action, NULL);
 }
 
 // Write output to file, in case we were requested not to ouput it to screen
+//
+// Returns 0 on success, -1 on error
 int write_output(const char *filename, const twopence_buffer_t *bp)
 {
   FILE *fp;
@@ -81,7 +93,7 @@ int write_output(const char *filename, const twopence_buffer_t *bp)
   if (fp == NULL)
   {
     fprintf(stderr, "Error while opening output file \"%s\"\n", filename);
-    return -6;
+    return -1;
   }
 
   count = bp->tail - bp->head;
@@ -89,12 +101,12 @@ int write_output(const char *filename, const twopence_buffer_t *bp)
   if (ferror(fp))
   {
     fprintf(stderr, "Error while writing output to file \"%s\"\n", filename);
-    return -6;
+    return -1;
   }
   if (fclose(fp) < 0)
   {
     fprintf(stderr, "Error closing output file \"%s\"\n", filename);
-    return -6;
+    return -1;
   }
   return 0;
 }
@@ -120,23 +132,27 @@ int main(int argc, char *argv[])
 {
   twopence_buffer_t stdout_buf, stderr_buf;
   int option;
-  const char *opt_user, *opt_output, *opt_stdout, *opt_stderr;
+  const char *opt_user;
+  int opt_timeout;
+  const char *opt_output, *opt_stdout, *opt_stderr;
   bool opt_quiet, opt_batch;
   int opt_type;
   const char *opt_target, *opt_command;
   struct twopence_target *target;
   struct sigaction old_action;
-  int rc, rc2;
+  int rc;
   twopence_status_t status;
 
   // Parse options
-  opt_user = NULL;
+  opt_user = NULL; opt_timeout = 0;
   opt_output = NULL; opt_stdout = NULL; opt_stderr = NULL;
   opt_quiet = false; opt_batch = false;
   while ((option = getopt_long(argc, argv, short_options, long_options, NULL))
          != -1) switch(option)         // parse individual options
   {
     case 'u': opt_user = optarg;
+              break;
+    case 't': opt_timeout = atoi(optarg);
               break;
     case 'o': opt_output = optarg;
               break;
@@ -149,12 +165,14 @@ int main(int argc, char *argv[])
     case 'b': opt_batch = true;
               break;
     case 'h': usage(argv[0]);
-              exit(0);
+              exit(RC_OK);
     default: usage(argv[0]);
-             exit(-1);
+             exit(RC_INVALID_PARAMETERS);
   }
   if (opt_user == NULL)                // default user
     opt_user = "root";
+  if (opt_timeout == 0)                // Default timeout
+    opt_timeout = 60;
   if (opt_output == NULL &&            // output specifiers
       opt_stdout == NULL && opt_stderr == NULL)
     opt_type = opt_quiet? 2: 1;
@@ -169,64 +187,77 @@ int main(int argc, char *argv[])
   else
   {
     usage(argv[0]);
-    exit(-1);
+    exit(RC_INVALID_PARAMETERS);
   }
   if (argc != optind + 2)              // mandatory arguments: target and command
   {
     usage(argv[0]);
-    exit(-1);
+    exit(RC_INVALID_PARAMETERS);
   }
   opt_target = argv[optind++];
   opt_command = argv[optind++];
 
   rc = twopence_target_new(opt_target, &target);
-  if (rc < 0) {
+  if (rc < 0)
+  {
     twopence_perror("Error while initializing library", rc);
-    exit(1);
+    exit(RC_LIBRARY_INIT_ERROR);
   }
 
   // Install signal handler
   twopence_handle = target;
-  if (install_handler(SIGINT, &old_action)) {
+  if (install_handler(SIGINT, &old_action))
+  {
     fprintf(stderr, "Error installing signal handler\n");
     twopence_target_free(target);
-    exit(-5);
+    exit(RC_SIGNAL_HANDLER_ERROR);
   }
 
   twopence_buffer_init(&stdout_buf);
   twopence_buffer_init(&stderr_buf);
 
   // Run command
+printf("%d\n", opt_timeout);
   switch (opt_type)
   {
     case 1:
-      rc = twopence_test_and_print_results(target, opt_user, opt_command,
-                            &status);
+      rc = twopence_test_and_print_results
+             (target, opt_user, /*opt_timeout,*/ opt_command,
+              &status);
       break;
     case 2:
-      rc = twopence_test_and_drop_results(target, opt_user, opt_command,
-                            &status);
+      rc = twopence_test_and_drop_results
+             (target, opt_user, /*opt_timeout,*/ opt_command,
+              &status);
       break;
     case 3:
       twopence_buffer_alloc(&stdout_buf, 65536);
-      rc = twopence_test_and_store_results_together(target, opt_user, opt_command,
-                            &stdout_buf, &status);
+      rc = twopence_test_and_store_results_together
+             (target, opt_user, /*opt_timeout,*/ opt_command,
+              &stdout_buf, &status);
       break;
     case 4:
       twopence_buffer_alloc(&stdout_buf, 65536);
       twopence_buffer_alloc(&stderr_buf, 65536);
-      rc = twopence_test_and_store_results_separately(target, opt_user, opt_command,
-                            &stdout_buf, &stderr_buf, &status);
+      rc = twopence_test_and_store_results_separately
+             (target, opt_user, /*opt_timeout,*/ opt_command,
+              &stdout_buf, &stderr_buf, &status);
   }
 
-  if (rc == 0) {
-    if (!opt_batch) {
+  if (rc == 0)
+  {
+    if (!opt_batch)
+    {
       printf("Return code from the test server: %d\n", status.major);
       printf("Return code of tested command: %d\n", status.minor);
     }
-    if (status.major || status.minor) rc = -7;
-  } else {
+    if (status.major || status.minor)
+      rc = RC_REMOTE_COMMAND_FAILED;
+  }
+  else
+  {
     twopence_perror("Unable to execute command", rc);
+    rc = RC_EXEC_COMMAND_ERROR;
   }
 
   // Restore original signal handler
@@ -234,21 +265,21 @@ int main(int argc, char *argv[])
   {
     fprintf(stderr, "Error removing signal handler\n");
     twopence_target_free(target);
-    if (rc == 0) rc = -5;
+    if (rc == 0) rc = RC_SIGNAL_HANDLER_ERROR;
   }
 
   // Write captured stdout and stderr to 0, 1, or 2 files
   switch (opt_type)
   {
     case 3:
-      rc2 = write_output(opt_output, &stdout_buf);
-      if (rc == 0) rc = rc2;
+      if (write_output(opt_output, &stdout_buf) < 0)
+        if (rc == 0) rc = RC_WRITE_RESULTS_ERROR;
       break;
     case 4:
-      rc2 = write_output(opt_stdout, &stdout_buf);
-      if (rc == 0) rc = rc2;
-      rc2 = write_output(opt_stderr, &stderr_buf);
-      if (rc == 0) rc = rc2;
+      if (write_output(opt_stdout, &stdout_buf) < 0)
+        if (rc == 0) rc = RC_WRITE_RESULTS_ERROR;
+      if (write_output(opt_stderr, &stderr_buf) < 0)
+        if (rc == 0) rc = RC_WRITE_RESULTS_ERROR;
   }
 
   // End library

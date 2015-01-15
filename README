@@ -80,7 +80,7 @@ HOW DO I RUN THE EXAMPLES WITH VIRTIO
          Target type = virtio
          Target name = org.opensuse.twopence.0
    o or you can use the provided script:
-     $ /usr/lib/twopence/add_virtio_channel.sh
+     $ /usr/lib/twopence/add_virtio_channel.sh mydomain
    o start the VM
    o copy the test server into the VM:
      $ scp /usr/lib/twopence/twopence_test_server root@sut.example.com:.

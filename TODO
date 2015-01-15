@@ -1,7 +1,11 @@
-TODO
+BUGS
    o protocol.c:
      interrupts and end of input not forwarded anymore to the test server
 
+   o Makefiles:
+     "make clean" leaves files behind
+
+REFACTORING
    o plugins:
      get rid of twopence_init, replaced by twopence_init_new
      (just a matter of comments?)
@@ -11,9 +15,7 @@ TODO
      with
        ssh_channel_select()
 
-   o ssh.c: kill the remote command when it was aborted
-     because of a timeout or another problem
-
+FUNCTIONALITY
    o write Ruby help pages
 
    o split into several packages
@@ -33,15 +35,10 @@ TODO
      -r --recursive
 
    o be able to tune the timeout for receiving the results
-     -t --results-timeout
-   o add a timeout for executing a command
-     -T --command-timeout
+     -s --silence
 
    o be able to set up the permission mask
      -m --mask
-
-   o be able to append commands received to a log file
-     -l --log
 
    o be able to run tests in parallel
      (using a "port number")
@@ -53,11 +50,14 @@ TODO
    o handle interrupts during file transfers,
      not only during command execution
 
+   o ssh.c: kill the remote command when it was aborted
+     because of a timeout or another problem
+
 
 FUTURE DIRECTIONS
    o Twopence could be extended by writing new plugins,
      for example for running tests in Linux containers or chroot jails
 
    o it could also be extended by writing new programming language wrappers
-     (Perl, or Java, why not)
+     (Perl, Java...)
 

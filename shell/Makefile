@@ -12,21 +12,18 @@ LINK	+= -L../library -ltwopence
 BINDIR ?= /usr/bin
 MANDIR ?= /usr/share/man
 
-all: twopence command inject extract exit
+all: command inject extract exit
 
-twopence: twopence.o config.o ../library/twopence.h
-	$(CC) $(CFLAGS) -o $@ twopence.o config.o $(LINK)
-
-command: command.c ../library/twopence.h
+command: command.c shell.h ../library/twopence.h
 	$(CC) $(CFLAGS) command.c $(LINK) -o command
 
-inject: inject.c ../library/twopence.h
+inject: inject.c shell.h ../library/twopence.h
 	$(CC) $(CFLAGS) inject.c $(LINK) -o inject
 
-extract: extract.c ../library/twopence.h
+extract: extract.c shell.h ../library/twopence.h
 	$(CC) $(CFLAGS) extract.c $(LINK) -o extract
 
-exit: exit.c ../library/twopence.h
+exit: exit.c shell.h ../library/twopence.h
 	$(CC) $(CFLAGS) exit.c $(LINK) -o exit
 
 install: command inject extract exit command.1 inject.1 extract.1 exit.1

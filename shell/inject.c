@@ -23,6 +23,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <stdlib.h>
 #include <getopt.h>
 
+#include "shell.h"
 #include "twopence.h"
 
 char *short_options = "u:h";
@@ -60,34 +61,38 @@ int main(int argc, char *argv[])
     case 'u': opt_user = optarg;
               break;
     case 'h': usage(argv[0]);
-              exit(0);
+              exit(RC_OK);
     default: usage(argv[0]);
-             exit(-1);
+             exit(RC_INVALID_PARAMETERS);
   }
   if (opt_user == NULL)                // default user
     opt_user = "root";
   if (argc != optind + 3)              // mandatory arguments: target, local and remote
   {
     usage(argv[0]);
-    exit(-1);
+    exit(RC_INVALID_PARAMETERS);
   }
   opt_target = argv[optind++];
   opt_local = argv[optind++];
   opt_remote = argv[optind++];
 
   rc = twopence_target_new(opt_target, &target);
-  if (rc < 0) {
+  if (rc < 0)
+  {
     twopence_perror("Error while initializing library", rc);
-    exit(1);
+    exit(RC_LIBRARY_INIT_ERROR);
   }
 
   // Inject file
-  rc = twopence_inject_file(target, opt_user, opt_local, opt_remote,
-                      &remote_error, true);
-  if (rc == 0) {
+  rc = twopence_inject_file
+         (target, opt_user, opt_local, opt_remote,
+          &remote_error, true);
+  if (rc == 0)
     printf("File successfully injected\n");
-  } else {
+  else
+  {
     twopence_perror("Unable to extract file", rc);
+    rc = RC_EXTRACT_FILE_ERROR;
   }
   if (remote_error != 0)
     fprintf(stderr, "Remote error code: %d\n", remote_error);

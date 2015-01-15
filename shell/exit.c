@@ -25,6 +25,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "shell.h"
 #include "twopence.h"
 
 // Display a message about the command usage
@@ -55,21 +56,24 @@ int main(int argc, const char *argv[])
   if (argc != 2)
   {
     usage(argv[0]);
-    exit(-1);
+    exit(RC_INVALID_PARAMETERS);
   }
 
   rc = twopence_target_new(argv[1], &target);
-  if (rc < 0) {
+  if (rc < 0)
+  {
     twopence_perror("Error while initializing library", rc);
-    exit(1);
+    exit(RC_LIBRARY_INIT_ERROR);
   }
 
   // Let the remote test server exit
   rc = twopence_exit_remote(target);
-  if (rc == 0) {
+  if (rc == 0)
     printf("Asked the test server to exit.\n");
-  } else {
+  else
+  {
     twopence_perror("Unable to stop server", rc);
+    rc = RC_EXIT_REMOTE_ERROR;
   }
 
   // End library
