@@ -1040,6 +1040,8 @@ service_connection(int serial_fd)
     {
       continue;
     }
+    if (rc == ENOTCONN)			// Hangup of incoming connection
+      break;
     if (rc != 0)
     {
       fprintf(stderr, "Read error\n");
