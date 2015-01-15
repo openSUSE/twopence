@@ -24,6 +24,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 #include <pwd.h>
 #include <fcntl.h>
@@ -46,6 +48,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define COMMAND_TIMEOUT 12             // seconds
 #define PASSIVE_WAIT 20000000L         // nanoseconds (this value is 1/50th of a second)
 #define TWOPENCE_SERIAL_PORT_DEFAULT	"/dev/virtio-ports/org.opensuse.twopence.0"
+#define TWOPENCE_UNIX_PORT_DEFAULT	"/var/run/twopence.sock"
 
 #define TWOPENCE_SERVER_PARAMETER_ERROR -1
 #define TWOPENCE_SERVER_SOCKET_ERROR -2
@@ -93,6 +96,66 @@ int open_serial_port(const char *filename)
   }
 
   return serial_fd;
+}
+
+/*
+ * Open the unix port
+ *
+ * Returns the file descriptor if successful, -1 otherwise.
+ */
+int open_unix_port(const char *filename)
+{
+  struct sockaddr_un sun;
+  int listen_fd;
+
+  if (filename == NULL)
+    filename = TWOPENCE_UNIX_PORT_DEFAULT;
+
+  printf("Listening on %s\n", filename);
+
+  memset(&sun, 0, sizeof(sun));
+  sun.sun_family = AF_LOCAL;
+  strcpy(sun.sun_path, filename);
+
+  listen_fd = socket(PF_LOCAL, SOCK_STREAM, 0);
+  if (listen_fd < 0) {
+    fprintf(stderr, "Unable to open unix socket: %m\n");
+    goto failed;
+  }
+
+  unlink(filename);
+
+  if (bind(listen_fd, (struct sockaddr *) &sun, sizeof(sun)) < 0) {
+    fprintf(stderr, "Unable to bind unix socket to %s: %m\n", filename);
+    goto failed;
+  }
+
+  chmod(filename, 0777);
+  if (listen(listen_fd, 0) < 0) {
+    fprintf(stderr, "Unable to listen on unix socket to %s: %m\n", filename);
+    goto failed;
+  }
+
+  return listen_fd;
+
+failed:
+  if (listen_fd >= 0)
+    close(listen_fd);
+  return -1;
+}
+
+int
+accept_unix_connection(int listen_fd)
+{
+  int sock_fd;
+
+  sock_fd = accept(listen_fd, NULL, NULL);
+  if (sock_fd < 0) {
+    fprintf(stderr, "Failed to accept connection on unix socket to: %m\n");
+    return -1;
+  }
+
+  return sock_fd;
 }
 
 // Create four pipes : input, output, error, codes
@@ -1018,6 +1081,28 @@ int main(int argc, char *argv[])
 
       service_connection(serial_fd);
       close(serial_fd);
+    } while (!opt_oneshot);
+  } else
+  if (!strcmp(opt_port_type, "unix")) {
+    int listen_fd;
+
+    listen_fd = open_unix_port(opt_port_path);
+    if (listen_fd < 0)
+      exit(TWOPENCE_SERVER_SOCKET_ERROR);
+
+    do {
+      int sock_fd, retries = 0;
+
+      while ((sock_fd = accept_unix_connection(listen_fd)) < 0) {
+        if (++retries > 100) {
+          fprintf(stderr, "... giving up.\n");
+	  exit(TWOPENCE_SERVER_SOCKET_ERROR);
+	}
+        continue;
+      }
+
+      service_connection(sock_fd);
+      close(sock_fd);
     } while (!opt_oneshot);
   } else {
     fprintf(stderr, "serial port type %s not yet implemented\n", opt_port_type);
