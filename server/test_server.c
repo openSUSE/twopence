@@ -49,6 +49,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define TWOPENCE_SERVER_PARAMETER_ERROR -1
 #define TWOPENCE_SERVER_SOCKET_ERROR -2
 
+
+static void		service_connection(int);
+
 ////////////////////////////////////// Lower layer ///////////////////////////
 
 // Open the serial port
@@ -388,10 +391,15 @@ int send_buffer
   return sent;
 }
 
-// Read a chunk from the serial line
-//
-// Returns 0 when everything went fine,
-// a Linux error code otherwise.
+/*
+ * Read a chunk from the serial line
+ *
+ * Returns 0 when everything went fine,
+ * a Linux error code otherwise.
+ *
+ * The return convention of this function is a bit non-standard;
+ * we should do better. --okir
+ */
 int read_chunk(int serial_fd, char *buffer)
 {
   int remaining;
@@ -407,6 +415,12 @@ int read_chunk(int serial_fd, char *buffer)
     if (size < 0)
       return rc;
 
+    if (size == 0) {
+      if (remaining == 4)
+        return ENOTCONN;
+      return EPROTO;
+    }
+
     remaining -= size;
     p += size;
   }
@@ -414,6 +428,8 @@ int read_chunk(int serial_fd, char *buffer)
   length = compute_length(buffer);     // Decode the announced amount of data
   if (length > BUFFER_SIZE)
     return ENOMEM;
+  if (length < 4)
+    return EPROTO;
 
   remaining = length - 4;              // Read the announced amount of data
   while (remaining > 0)
@@ -422,6 +438,8 @@ int read_chunk(int serial_fd, char *buffer)
       (serial_fd, p, remaining, &rc);
     if (size < 0)
       return rc;
+    if (size == 0)
+      return EPROTO;
 
     remaining -= size;
     p += size;
@@ -906,11 +924,9 @@ int main(int argc, char *argv[])
     { "port-unix", required_argument, NULL, 'U' },
     { NULL }
   };
-  static char buffer[BUFFER_SIZE];
   const char *opt_port_type = NULL;
   const char *opt_port_path = NULL;
   int serial_fd;
-  int command_num, rc;
   int c;
 
   // Welcome message, check arguments
@@ -994,6 +1010,17 @@ int main(int argc, char *argv[])
   if (serial_fd < 0)
     exit(TWOPENCE_SERVER_SOCKET_ERROR);
 
+  service_connection(serial_fd);
+  close(serial_fd);
+  return 0;
+}
+
+void
+service_connection(int serial_fd)
+{
+  static char buffer[BUFFER_SIZE];
+  int command_num, rc;
+
   // Wait for commands
   command_num = 1;
   for (;;)
@@ -1037,6 +1064,4 @@ int main(int argc, char *argv[])
 
   // Close the serial port and exit
   printf("Received \"exit\" command. Goodbye.\n");
-  close(serial_fd);
-  return 0 ;
 }
