@@ -49,6 +49,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define TWOPENCE_SERVER_PARAMETER_ERROR -1
 #define TWOPENCE_SERVER_SOCKET_ERROR -2
 
+static unsigned int	global_command_num = 1;
 
 static void		service_connection(int);
 
@@ -919,14 +920,15 @@ void extract_file(int serial_fd, char *buffer)
 int main(int argc, char *argv[])
 {
   static struct option long_opts[] = {
+    { "one-shot", no_argument, NULL, '1' },
     { "port-serial", required_argument, NULL, 'S' },
     { "port-pty", no_argument, NULL, 'P' },
     { "port-unix", required_argument, NULL, 'U' },
     { NULL }
   };
+  int opt_oneshot = 0;
   const char *opt_port_type = NULL;
   const char *opt_port_path = NULL;
-  int serial_fd;
   int c;
 
   // Welcome message, check arguments
@@ -934,6 +936,10 @@ int main(int argc, char *argv[])
 
   while ((c = getopt_long(argc, argv, "P:S::U:", long_opts, NULL)) != -1) {
     switch (c) {
+    case '1':
+      opt_oneshot = 1;
+      break;
+
     case 'S':
       if (opt_port_type) {
         fprintf(stderr, "Conflicting port types specified on command line\n");
@@ -1001,17 +1007,21 @@ int main(int argc, char *argv[])
 
   /* Open the port */
   if (!strcmp(opt_port_type, "serial")) {
-    serial_fd = open_serial_port(opt_port_path);
+    int serial_fd;
+
+    do {
+      serial_fd = open_serial_port(opt_port_path);
+      if (serial_fd < 0)
+        exit(TWOPENCE_SERVER_SOCKET_ERROR);
+
+      service_connection(serial_fd);
+      close(serial_fd);
+    } while (!opt_oneshot);
   } else {
     fprintf(stderr, "serial port type %s not yet implemented\n", opt_port_type);
-    serial_fd = -1;
+    exit(TWOPENCE_SERVER_SOCKET_ERROR);
   }
 
-  if (serial_fd < 0)
-    exit(TWOPENCE_SERVER_SOCKET_ERROR);
-
-  service_connection(serial_fd);
-  close(serial_fd);
   return 0;
 }
 
@@ -1019,10 +1029,9 @@ void
 service_connection(int serial_fd)
 {
   static char buffer[BUFFER_SIZE];
-  int command_num, rc;
+  int rc;
 
   // Wait for commands
-  command_num = 1;
   for (;;)
   {
     rc = read_chunk                    // Receive command from serial line
@@ -1038,21 +1047,23 @@ service_connection(int serial_fd)
     }
     if (buffer[0] == 'q')              // Stop if exit requested
     {
-      break;
+      // Close the serial port and exit
+      printf("Received \"exit\" command. Goodbye.\n");
+      exit(0);
     }
     else if (buffer[0] == 'c')         // Do proper action
     {
-      printf("%6d command %s;\n", command_num++, buffer + 4);
+      printf("%6d command %s;\n", global_command_num++, buffer + 4);
       run_command(serial_fd, buffer);
     }
     else if (buffer[0] == 'i')
     {
-      printf("%6d inject %s;\n", command_num++, buffer + 4);
+      printf("%6d inject %s;\n", global_command_num++, buffer + 4);
       inject_file(serial_fd, buffer);
     }
     else if (buffer[0] == 'e')
     {
-      printf("%6d extract %s;\n", command_num++, buffer + 4);
+      printf("%6d extract %s;\n", global_command_num++, buffer + 4);
       extract_file(serial_fd, buffer);
     }
     else
@@ -1061,7 +1072,4 @@ service_connection(int serial_fd)
       continue;
     }
   }
-
-  // Close the serial port and exit
-  printf("Received \"exit\" command. Goodbye.\n");
 }
