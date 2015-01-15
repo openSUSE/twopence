@@ -33,6 +33,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <errno.h>
 #include <signal.h>
 #include <unistd.h>
+#include <getopt.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -889,22 +890,37 @@ void extract_file(int serial_fd, char *buffer)
 // Main entry point.
 int main(int argc, char *argv[])
 {
+  static struct option long_opts[] = {
+    { NULL }
+  };
   static char buffer[BUFFER_SIZE];
-
   const char *filename;
   int serial_fd;
   int command_num, rc;
+  int c;
 
   // Welcome message, check arguments
   printf("Twopence test server version 0.3.0\n");
-  if (argc > 2)
-  {
-    fprintf(stderr, "Usage: %s [<serial port>]\n", argv[0]);
-    exit(TWOPENCE_SERVER_PARAMETER_ERROR);
+
+  while ((c = getopt_long(argc, argv, "", long_opts, NULL)) != -1) {
+    switch (c) {
+      default:
+      usage:
+	fprintf(stderr,
+		"Usage:\n"
+		"%s [<serial port path>]\n",
+		argv[0]);
+        exit(TWOPENCE_SERVER_PARAMETER_ERROR);
+    }
   }
-  filename = argc == 2?
-             argv[1]:
-             "/dev/virtio-ports/org.opensuse.twopence.0";
+
+  filename = "/dev/virtio-ports/org.opensuse.twopence.0";
+  if (optind < argc)
+    filename = argv[optind++];
+
+  if (optind < argc)
+    goto usage;
+
   printf("Listening on %s\n", filename);
 
   // Open the serial port
