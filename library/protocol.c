@@ -276,7 +276,7 @@ __twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, int link_fd, t
       return __twopence_pipe_read_frame(handle, link_fd, buffer, size);
     }
 
-    if (nfds > 1 && (pfd[1].revents & POLLIN)) {
+    if (nfds > 1 && (pfd[1].revents & (POLLIN|POLLHUP))) {
       int count;
 
       count = twopence_iostream_read(stdin_stream, buffer + 4, size - 4);
