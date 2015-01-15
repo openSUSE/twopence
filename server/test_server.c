@@ -45,6 +45,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define LINE_TIMEOUT 5000              // milliseconds
 #define COMMAND_TIMEOUT 12             // seconds
 #define PASSIVE_WAIT 20000000L         // nanoseconds (this value is 1/50th of a second)
+#define TWOPENCE_SERIAL_PORT_DEFAULT	"/dev/virtio-ports/org.opensuse.twopence.0"
 
 #define TWOPENCE_SERVER_PARAMETER_ERROR -1
 #define TWOPENCE_SERVER_SOCKET_ERROR -2
@@ -59,10 +60,17 @@ int open_serial_port(const char *filename)
   int serial_fd;
   struct termios tio;
 
+  if (filename == NULL)
+    filename = TWOPENCE_SERIAL_PORT_DEFAULT;
+
+  printf("Listening on %s\n", filename);
+
   // Open the port
   serial_fd = open(filename, O_RDWR | O_NONBLOCK | O_CLOEXEC | O_NOCTTY);
-  if (serial_fd <= 0)
+  if (serial_fd <= 0) {
+    fprintf(stderr, "Unable to open serial port %s: %m\n", filename);
     return -1;
+  }
 
   // Set up serial line
   if (isatty(serial_fd))
@@ -72,10 +80,12 @@ int open_serial_port(const char *filename)
     tio.c_iflag = 0;
     tio.c_oflag = 0;
     tio.c_lflag = 0;
-    if (cfsetspeed(&tio, B115200) < 0)
+    if (cfsetspeed(&tio, B115200) < 0
+     || tcsetattr(serial_fd, TCSANOW, &tio) < 0) {
+      fprintf(stderr, "Unable to configure serial port %s: %m\n", filename);
+      close(serial_fd);
       return -1;
-    if (tcsetattr(serial_fd, TCSANOW, &tio) < 0)
-      return -1;
+    }
   }
 
   return serial_fd;
@@ -893,10 +903,14 @@ void extract_file(int serial_fd, char *buffer)
 int main(int argc, char *argv[])
 {
   static struct option long_opts[] = {
+    { "port-serial", required_argument, NULL, 'S' },
+    { "port-pty", no_argument, NULL, 'P' },
+    { "port-unix", required_argument, NULL, 'U' },
     { NULL }
   };
   static char buffer[BUFFER_SIZE];
-  const char *filename;
+  const char *opt_port_type = NULL;
+  const char *opt_port_path = NULL;
   int serial_fd;
   int command_num, rc;
   int c;
@@ -904,35 +918,83 @@ int main(int argc, char *argv[])
   // Welcome message, check arguments
   printf("Twopence test server version 0.3.0\n");
 
-  while ((c = getopt_long(argc, argv, "", long_opts, NULL)) != -1) {
+  while ((c = getopt_long(argc, argv, "P:S::U:", long_opts, NULL)) != -1) {
     switch (c) {
-      default:
-      usage:
+    case 'S':
+      if (opt_port_type) {
+        fprintf(stderr, "Conflicting port types specified on command line\n");
+	goto usage;
+      }
+
+      opt_port_type = "serial";
+      opt_port_path = optarg;
+      break;
+
+    case 'P':
+      if (opt_port_type) {
+        fprintf(stderr, "Conflicting port types specified on command line\n");
+	goto usage;
+      }
+
+      opt_port_type = "pty";
+      opt_port_path = optarg;
+      break;
+
+    case 'U':
+      if (opt_port_type) {
+        fprintf(stderr, "Conflicting port types specified on command line\n");
+	goto usage;
+      }
+
+      opt_port_type = "unix";
+      opt_port_path = optarg;
+      break;
+
+    default:
+    usage:
 	fprintf(stderr,
 		"Usage:\n"
-		"%s [<serial port path>]\n",
-		argv[0]);
+		"%s <portspec>\n"
+		"Where portspec can be one of the following:\n\n"
+		"no arguments:\n"
+		"    open the default serial port\n"
+		"pathname:\n"
+		"    open the specified serial port\n"
+		"--port-unix path:\n"
+		"    create the specified Unix domain socket and listen on it\n"
+		"--port-serial path:\n"
+		"    open the specified serial port\n"
+		"--port-pty:\n"
+		"    open a pty master, print the pty slave path on stdout, and background the server process\n"
+		"    This is not implemented yet.\n"
+		"\n"
+		"The default serial port is %s\n"
+		, argv[0], TWOPENCE_SERIAL_PORT_DEFAULT);
         exit(TWOPENCE_SERVER_PARAMETER_ERROR);
     }
   }
 
-  filename = "/dev/virtio-ports/org.opensuse.twopence.0";
-  if (optind < argc)
-    filename = argv[optind++];
-
-  if (optind < argc)
-    goto usage;
-
-  printf("Listening on %s\n", filename);
-
-  // Open the serial port
-  serial_fd = open_serial_port(filename);
-  if (serial_fd < 0)
-  {
-    fprintf(stderr, "Error opening the serial port\n\
-  \"%s\"\n", filename);
-    exit(TWOPENCE_SERVER_SOCKET_ERROR);
+  if (opt_port_type == NULL) {
+    opt_port_type = "serial";
+    if (optind < argc)
+      opt_port_path = argv[optind++];
   }
+
+  if (optind < argc) {
+    fprintf(stderr, "Too many arguments\n");
+    goto usage;
+  }
+
+  /* Open the port */
+  if (!strcmp(opt_port_type, "serial")) {
+    serial_fd = open_serial_port(opt_port_path);
+  } else {
+    fprintf(stderr, "serial port type %s not yet implemented\n", opt_port_type);
+    serial_fd = -1;
+  }
+
+  if (serial_fd < 0)
+    exit(TWOPENCE_SERVER_SOCKET_ERROR);
 
   // Wait for commands
   command_num = 1;
