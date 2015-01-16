@@ -53,18 +53,11 @@ typedef struct {
 	PyObject *	stderr;
 } twopence_Status;
 
-typedef struct {
-	PyObject_HEAD
-
-	twopence_config_t *config;
-} twopence_Config;
-
 
 
 extern PyTypeObject	twopence_TargetType;
 extern PyTypeObject	twopence_CommandType;
 extern PyTypeObject	twopence_StatusType;
-extern PyTypeObject	twopence_ConfigType;
 
 extern int		Command_init(twopence_Command *self, PyObject *args, PyObject *kwds);
 extern int		Command_Check(PyObject *);
