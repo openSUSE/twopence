@@ -43,6 +43,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <stdarg.h>
 #include <string.h>
 
+#include "server.h"
+
 #define BUFFER_SIZE 32768              // bytes
 #define LINE_TIMEOUT 5000              // milliseconds
 #define COMMAND_TIMEOUT 12             // seconds
@@ -1115,6 +1117,9 @@ int main(int argc, char *argv[])
 void
 service_connection(int serial_fd)
 {
+#if 1
+  server_run(socket_new(serial_fd));
+#else
   static char buffer[BUFFER_SIZE];
   int rc;
 
@@ -1161,4 +1166,5 @@ service_connection(int serial_fd)
       continue;
     }
   }
+#endif
 }
