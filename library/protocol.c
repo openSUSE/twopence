@@ -818,9 +818,8 @@ int _twopence_interrupt_virtio_serial
  *
  */
 int
-twopence_pipe_run_test(struct twopence_target *opaque_handle,
-		twopence_command_t *cmd,
-		twopence_status_t *status_ret)
+twopence_pipe_run_test
+  (struct twopence_target *opaque_handle, twopence_command_t *cmd, twopence_status_t *status_ret)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   const char *username;

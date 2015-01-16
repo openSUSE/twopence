@@ -29,7 +29,7 @@ IO.popen("ls -l") do |ls_io|
 end
 $stdin.reopen(save)
 
-printf("\ncommand 'cat' (type Ctrl-D to exit)\n")
+printf("\ncommand 'cat' (type Ctrl-D to exit, Ctrl-C to end)\n")
 rc, major, minor = $target.test_and_print_results('cat')
 printf("host=%d server=%d command=%d\n\n", rc, major, minor)
 

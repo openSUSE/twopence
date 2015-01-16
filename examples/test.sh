@@ -21,7 +21,7 @@ echo "local 'ls -l' piped to command 'cat'"
 ls -l | twopence_command $TARGET 'cat'
 echo ""
 
-echo "command 'cat' (type Ctrl-D to exit)"
+echo "command 'cat' (type Ctrl-D to exit, Ctrl-C to end)"
 twopence_command $TARGET 'cat'
 echo ""
 

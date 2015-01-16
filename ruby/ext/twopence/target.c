@@ -62,7 +62,8 @@ VALUE method_init(VALUE self, VALUE ruby_target)
 
   target_spec = StringValueCStr(ruby_target);
   rc = twopence_target_new(target_spec, &target);
-  if (rc < 0) {
+  if (rc < 0)
+  {
     fprintf(stderr, "Error while initializing library: %s\n", twopence_strerror(rc));
     return Qnil;
   }
@@ -91,7 +92,7 @@ void deallocate_target(void *handle)
 //   user: the user under which to run the command
 //         (optional, defaults to "root")
 //   timeout: the time in seconds after which the command is aborted 
-//            (optional, defaults to 60)
+//            (optional, defaults to 60L)
 // Output:
 //   rc: the return code of the testing platform
 //   major: the return code of the system under test
@@ -120,13 +121,13 @@ VALUE method_test_and_print_results(VALUE self, VALUE ruby_args)
   if (len >= 3)
   {
     ruby_timeout = rb_ary_entry(ruby_args, 2);
-    Check_Type(ruby_timeout, T_BIGNUM);
+    Check_Type(ruby_timeout, T_FIXNUM);
   }
-  else ruby_timeout = INT2NUM(60);
+  else ruby_timeout = LONG2NUM(60L);
   Data_Get_Struct(self, struct twopence_target, target);
 
   rc = twopence_test_and_print_results(target,
-         StringValueCStr(ruby_user), /*NUM2INT(ruby_timeout),*/ StringValueCStr(ruby_command), &status);
+         StringValueCStr(ruby_user), NUM2LONG(ruby_timeout), StringValueCStr(ruby_command), &status);
 
   return rb_ary_new3(3,
                      INT2NUM(rc), INT2NUM(status.major), INT2NUM(status.minor));
@@ -141,7 +142,7 @@ VALUE method_test_and_print_results(VALUE self, VALUE ruby_args)
 //   user: the user under which to run the command
 //         (optional, defaults to "root")
 //   timeout: the time in seconds after which the command is aborted 
-//            (optional, defaults to 60)
+//            (optional, defaults to 60L)
 // Output:
 //   rc: the return code of the testing platform
 //   major: the return code of the system under test
@@ -172,11 +173,11 @@ VALUE method_test_and_drop_results(VALUE self, VALUE ruby_args)
     ruby_timeout = rb_ary_entry(ruby_args, 2);
     Check_Type(ruby_timeout, T_BIGNUM);
   }
-  else ruby_timeout = INT2NUM(60);
+  else ruby_timeout = LONG2NUM(60L);
   Data_Get_Struct(self, struct twopence_target, target);
 
   rc = twopence_test_and_drop_results(target,
-         StringValueCStr(ruby_user), /*NUM2INT(ruby_timeout),*/ StringValueCStr(ruby_command), &status);
+         StringValueCStr(ruby_user), NUM2LONG(ruby_timeout), StringValueCStr(ruby_command), &status);
 
   return rb_ary_new3(3,
                      INT2NUM(rc), INT2NUM(status.major), INT2NUM(status.minor));
@@ -191,7 +192,7 @@ VALUE method_test_and_drop_results(VALUE self, VALUE ruby_args)
 //   user: the user under which to run the command
 //         (optional, defaults to "root")
 //   timeout: the time in seconds after which the command is aborted 
-//            (optional, defaults to 60)
+//            (optional, defaults to 60L)
 // Output:
 //   out: the standard output of the command
 //   rc: the return code of the testing platform
@@ -224,13 +225,13 @@ VALUE method_test_and_store_results_together(VALUE self, VALUE ruby_args)
     ruby_timeout = rb_ary_entry(ruby_args, 2);
     Check_Type(ruby_timeout, T_BIGNUM);
   }
-  else ruby_timeout = INT2NUM(60);
+  else ruby_timeout = LONG2NUM(60L);
   Data_Get_Struct(self, struct twopence_target, target);
 
   twopence_buffer_alloc(&stdout_buf, 65536);
 
   rc = twopence_test_and_store_results_together(target,
-         StringValueCStr(ruby_user), /*NUM2INT(ruby_timeout),*/ StringValueCStr(ruby_command),
+         StringValueCStr(ruby_user), NUM2LONG(ruby_timeout), StringValueCStr(ruby_command),
          &stdout_buf, &status);
 
   return rb_ary_new3(4,
@@ -247,7 +248,7 @@ VALUE method_test_and_store_results_together(VALUE self, VALUE ruby_args)
 //   user: the user under which to run the command
 //         (optional, defaults to "root")
 //   timeout: the time in seconds after which the command is aborted 
-//            (optional, defaults to 60)
+//            (optional, defaults to 60L)
 // Output:
 //   out: the standard output of the command
 //   err: the standard error of the command
@@ -281,14 +282,14 @@ VALUE method_test_and_store_results_separately(VALUE self, VALUE ruby_args)
     ruby_timeout = rb_ary_entry(ruby_args, 2);
     Check_Type(ruby_timeout, T_BIGNUM);
   }
-  else ruby_timeout = INT2NUM(60);
+  else ruby_timeout = LONG2NUM(60L);
   Data_Get_Struct(self, struct twopence_target, target);
 
   twopence_buffer_alloc(&stdout_buf, 65536);
   twopence_buffer_alloc(&stderr_buf, 65536);
 
   rc = twopence_test_and_store_results_separately(target,
-         StringValueCStr(ruby_user), /*NUM2INT(ruby_timeout),*/ StringValueCStr(ruby_command),
+         StringValueCStr(ruby_user), NUM2LONG(ruby_timeout), StringValueCStr(ruby_command),
          &stdout_buf, &stderr_buf, &status);
 
   return rb_ary_new3(5,

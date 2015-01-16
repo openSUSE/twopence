@@ -39,6 +39,7 @@ typedef struct {
 
 	char *		command;
 	char *		user;
+	long		timeout;
 	char *		stdinPath;
 	int		suppressOutput;
 	PyObject *	stdout;

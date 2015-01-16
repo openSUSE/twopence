@@ -706,9 +706,8 @@ twopence_init_new(const char *arg)
  * Run a test
  */
 static int
-twopence_ssh_run_test(struct twopence_target *opaque_handle,
-		twopence_command_t *cmd,
-		twopence_status_t *status_ret)
+twopence_ssh_run_test
+  (struct twopence_target *opaque_handle, twopence_command_t *cmd, twopence_status_t *status_ret)
 {
   struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
   int rc;

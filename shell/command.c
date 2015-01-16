@@ -116,6 +116,7 @@ void usage(const char *program_name)
 {
     fprintf(stderr, "Usage: %s [<options>] <target> <command>\n\
 Options: -u|--user <user>: user running the command (default: root)\n\
+         -t|--timeout: time in seconds before aborting the command (default: 60)\n\
          -o|--output <file>: store both the output and the errors in the same file\n\
          -1|--stdout <file1> -2|--stderr <file2>: store them separately\n\
          -q|--quiet: do not display command output nor errors\n\
@@ -130,21 +131,22 @@ Command: any UNIX command\n", program_name);
 // Main program
 int main(int argc, char *argv[])
 {
-  twopence_buffer_t stdout_buf, stderr_buf;
   int option;
   const char *opt_user;
-  int opt_timeout;
+  long opt_timeout;
   const char *opt_output, *opt_stdout, *opt_stderr;
   bool opt_quiet, opt_batch;
   int opt_type;
   const char *opt_target, *opt_command;
+
   struct twopence_target *target;
   struct sigaction old_action;
-  int rc;
+  twopence_buffer_t stdout_buf, stderr_buf;
   twopence_status_t status;
+  int rc;
 
   // Parse options
-  opt_user = NULL; opt_timeout = 0;
+  opt_user = NULL; opt_timeout = 0L;
   opt_output = NULL; opt_stdout = NULL; opt_stderr = NULL;
   opt_quiet = false; opt_batch = false;
   while ((option = getopt_long(argc, argv, short_options, long_options, NULL))
@@ -152,7 +154,7 @@ int main(int argc, char *argv[])
   {
     case 'u': opt_user = optarg;
               break;
-    case 't': opt_timeout = atoi(optarg);
+    case 't': opt_timeout = atol(optarg);
               break;
     case 'o': opt_output = optarg;
               break;
@@ -171,8 +173,8 @@ int main(int argc, char *argv[])
   }
   if (opt_user == NULL)                // default user
     opt_user = "root";
-  if (opt_timeout == 0)                // Default timeout
-    opt_timeout = 60;
+  if (opt_timeout == 0L)               // default timeout
+    opt_timeout = 60L;
   if (opt_output == NULL &&            // output specifiers
       opt_stdout == NULL && opt_stderr == NULL)
     opt_type = opt_quiet? 2: 1;
@@ -197,6 +199,7 @@ int main(int argc, char *argv[])
   opt_target = argv[optind++];
   opt_command = argv[optind++];
 
+  // Create target object
   rc = twopence_target_new(opt_target, &target);
   if (rc < 0)
   {
@@ -217,30 +220,29 @@ int main(int argc, char *argv[])
   twopence_buffer_init(&stderr_buf);
 
   // Run command
-printf("%d\n", opt_timeout);
   switch (opt_type)
   {
     case 1:
       rc = twopence_test_and_print_results
-             (target, opt_user, /*opt_timeout,*/ opt_command,
+             (target, opt_user, opt_timeout, opt_command,
               &status);
       break;
     case 2:
       rc = twopence_test_and_drop_results
-             (target, opt_user, /*opt_timeout,*/ opt_command,
+             (target, opt_user, opt_timeout, opt_command,
               &status);
       break;
     case 3:
       twopence_buffer_alloc(&stdout_buf, 65536);
       rc = twopence_test_and_store_results_together
-             (target, opt_user, /*opt_timeout,*/ opt_command,
+             (target, opt_user, opt_timeout, opt_command,
               &stdout_buf, &status);
       break;
     case 4:
       twopence_buffer_alloc(&stdout_buf, 65536);
       twopence_buffer_alloc(&stderr_buf, 65536);
       rc = twopence_test_and_store_results_separately
-             (target, opt_user, /*opt_timeout,*/ opt_command,
+             (target, opt_user, opt_timeout, opt_command,
               &stdout_buf, &stderr_buf, &status);
   }
 

@@ -154,13 +154,30 @@ typedef struct twopence_command twopence_command_t;
 struct twopence_command {
 	/* For now, we specify the command as a single string.
 	 * It would have been nicer to be able to pass the argv,
-	 * but the protocol doesn't support this yet. */
+	 * but the protocol doesn't support this yet. --okir
+	 *
+	 * I don't think it would be nicer, for example Cheetah
+	 * (https://github.com/openSUSE/cheetah/blob/master/README.md)
+	 * has you pass individual arguments, and from a
+	 * practical point of view, I find it tedious.
+	 * Example: Cheetah.run("ls", "-la", :stdout => stdout)
+	 * In pennyworth, they did efforts to make it
+	 * a single string again :-) . --ebischoff
+	 */
 	const char *		command;
 
 	/* The user to run this as. Default to root */
 	const char *		user;
 
-	/* FIXME: support passing environment variables to the command */
+	/* The duration in seconds after which we abort the command. Default to 60L */
+	long			timeout;
+
+	/* FIXME: support passing environment variables to the command --okir
+	 *
+         * For the time being we can start "bash" as a command
+	 *  and pass the environment variables that way,
+	 *  but I agree it is suboptimal, putting on TODO. --ebischoff
+	 */
 
 	/* How to handle the command's standard I/O.
 	 * stdin defaults to no input, stdout and stderr default to
@@ -206,8 +223,8 @@ extern int		twopence_target_new(const char *target_spec, struct twopence_target 
  * Run the specified command and wait for it to complete.
  *
  * The @command parameter points to a struct specifying the command itself,
- * the user to run it as (defaults to root), what file to pass it on standard
- * input, and how to handle its output
+ * the user to run it as (defaults to root), which timeout (defaults to 60),
+ * what file to pass it on standard input, and how to handle its output
  */
 extern int		twopence_run_test(struct twopence_target *, twopence_command_t *, twopence_status_t *);
 
@@ -225,7 +242,7 @@ extern int		twopence_run_test(struct twopence_target *, twopence_command_t *, tw
  *   0 if everything went fine, otherwise a twopence error code.
  */
 extern int		twopence_test_and_print_results(struct twopence_target *target,
-					const char *username, const char *command,
+					const char *username, long timeout, const char *command,
 					twopence_status_t *status);
 
 /*
@@ -234,7 +251,7 @@ extern int		twopence_test_and_print_results(struct twopence_target *target,
  * Arguments and results like twopence_test_and_print_results() above
  */
 extern int		twopence_test_and_drop_results(struct twopence_target *target,
-					const char *username, const char *command,
+					const char *username, long timeout, const char *command,
 					twopence_status_t *status);
 
 /*
@@ -252,7 +269,7 @@ extern int		twopence_test_and_drop_results(struct twopence_target *target,
  *   0 if everything went fine, otherwise a twopence error code.
  */
 extern int		twopence_test_and_store_results_together(struct twopence_target *target,
-					const char *username, const char *command,
+					const char *username, long timeout, const char *command,
 					twopence_buffer_t *buffer,
 					twopence_status_t *status);
 
@@ -273,7 +290,7 @@ extern int		twopence_test_and_store_results_together(struct twopence_target *tar
  *   0 if everything went fine, otherwise a twopence error code.
  */
 extern int		twopence_test_and_store_results_separately(struct twopence_target *target,
-					const char *username, const char *command,
+					const char *username, long timeout, const char *command,
 					twopence_buffer_t *stdout_buffer, twopence_buffer_t *stderr_buffer,
 					twopence_status_t *status);
 

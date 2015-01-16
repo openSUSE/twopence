@@ -1,13 +1,20 @@
 BUGS
    o protocol.c:
-     interrupts and end of input not forwarded anymore to the test server
+     interrupts and end of input are not forwarded anymore
+     to the test server
 
    o Python:
      target.Command("cat");
        does not react as a local "cat", while it should
+     (interactive test)
+
+   o library, shell and ruby wrappers:
+     buffer allocation errors are not handled anymore
+     (calloc() returning NULL)
 
    o Makefiles:
      "make clean" leaves files behind
+
 
 REFACTORING
    o plugins:
@@ -18,6 +25,13 @@ REFACTORING
        ssh_channel_read_nonblocking() + nanosleep()
      with
        ssh_channel_select()
+
+   o we now have a "command" object, why not have an "injection"
+     and an "extraction" object that would work the same way?
+
+   o not sure there is much point in having two concurrent APIs to do the same:
+     refactor shell and ruby wrappers to use directly twopence_run_test()?
+
 
 FUNCTIONALITY
    o write help pages
@@ -41,11 +55,14 @@ FUNCTIONALITY
    o be able to inject or extract a full directory tree
      -r --recursive
 
-   o be able to tune the timeout for receiving the results
+   o be able to tune the line timeout for receiving the results
      -s --silence
 
-   o be able to set up the permission mask
+   o when injecting files, be able to set up the permission mask
      -m --mask
+
+   o be able to pass environment variables to remote command
+     -e --envvar
 
    o be able to run tests in parallel
      (using a "port number")

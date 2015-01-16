@@ -215,6 +215,7 @@ twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twope
 {
   if (target->ops->run_test == NULL)
     return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
+printf("timeout <%ld>\n", cmd->timeout);
 
   target->current.io = NULL;
 
@@ -222,13 +223,15 @@ twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twope
 }
 
 int
-twopence_test_and_print_results(struct twopence_target *target, const char *username, const char *command, twopence_status_t *status)
+twopence_test_and_print_results
+  (struct twopence_target *target, const char *username, long timeout, const char *command, twopence_status_t *status)
 {
   if (target->ops->run_test) {
     twopence_command_t cmd;
 
     twopence_command_init(&cmd, command);
     cmd.user = username;
+    cmd.timeout = timeout;
 
     twopence_command_ostreams_reset(&cmd);
     twopence_command_iostream_redirect(&cmd, TWOPENCE_STDIN, 0, false);
@@ -242,13 +245,15 @@ twopence_test_and_print_results(struct twopence_target *target, const char *user
 }
 
 int
-twopence_test_and_drop_results(struct twopence_target *target, const char *username, const char *command, twopence_status_t *status)
+twopence_test_and_drop_results
+  (struct twopence_target *target, const char *username, long timeout, const char *command, twopence_status_t *status)
 {
   if (target->ops->run_test) {
     twopence_command_t cmd;
 
     twopence_command_init(&cmd, command);
     cmd.user = username;
+    cmd.timeout = timeout;
 
     /* Reset both ostreams to nothing */
     twopence_command_ostreams_reset(&cmd);
@@ -261,14 +266,16 @@ twopence_test_and_drop_results(struct twopence_target *target, const char *usern
 }
 
 int
-twopence_test_and_store_results_together(struct twopence_target *target, const char *username, const char *command,
-		twopence_buffer_t *buffer, twopence_status_t *status)
+twopence_test_and_store_results_together
+  (struct twopence_target *target, const char *username, long timeout, const char *command,
+   twopence_buffer_t *buffer, twopence_status_t *status)
 {
   if (target->ops->run_test) {
     twopence_command_t cmd;
 
     twopence_command_init(&cmd, command);
     cmd.user = username;
+    cmd.timeout = timeout;
 
     twopence_command_ostreams_reset(&cmd);
     twopence_command_iostream_redirect(&cmd, TWOPENCE_STDIN, 0, false);
@@ -284,14 +291,16 @@ twopence_test_and_store_results_together(struct twopence_target *target, const c
 }
 
 int
-twopence_test_and_store_results_separately(struct twopence_target *target, const char *username, const char *command,
-		twopence_buffer_t *stdout_buffer, twopence_buffer_t *stderr_buffer, twopence_status_t *status)
+twopence_test_and_store_results_separately
+  (struct twopence_target *target, const char *username, long timeout, const char *command,
+   twopence_buffer_t *stdout_buffer, twopence_buffer_t *stderr_buffer, twopence_status_t *status)
 {
   if (target->ops->run_test) {
     twopence_command_t cmd;
 
     twopence_command_init(&cmd, command);
     cmd.user = username;
+    cmd.timeout = timeout;
 
     twopence_command_ostreams_reset(&cmd);
     twopence_command_iostream_redirect(&cmd, TWOPENCE_STDIN, 0, false);
@@ -307,9 +316,10 @@ twopence_test_and_store_results_separately(struct twopence_target *target, const
 }
 
 int
-twopence_inject_file(struct twopence_target *target, const char *username,
-		const char *local_path, const char *remote_path,
-		int *remote_rc, bool print_dots)
+twopence_inject_file
+  (struct twopence_target *target, const char *username,
+   const char *local_path, const char *remote_path,
+   int *remote_rc, bool print_dots)
 {
   if (target->ops->inject_file == NULL)
     return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
@@ -323,9 +333,10 @@ twopence_inject_file(struct twopence_target *target, const char *username,
 }
 
 int
-twopence_extract_file(struct twopence_target *target, const char *username,
-		const char *remote_path, const char *local_path,
-		int *remote_rc, bool print_dots)
+twopence_extract_file
+  (struct twopence_target *target, const char *username,
+   const char *remote_path, const char *local_path,
+   int *remote_rc, bool print_dots)
 {
   if (target->ops->extract_file == NULL)
     return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;

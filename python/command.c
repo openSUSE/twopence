@@ -21,7 +21,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "extension.h"
 
 #include <fcntl.h>
-#include <sys/wait.h>
 
 #include "twopence.h"
 
@@ -40,11 +39,13 @@ static PyObject *	Command_suppressOutput(twopence_Command *, PyObject *, PyObjec
  * Or like this:
  *   out = bytearray()
  *   err = bytearray()
- *   cmd = twopence.Command("/bin/ls", stdout = out, stderr = err, user = "okir")
+ *   cmd = twopence.Command("/bin/ls", stdout = out, stderr = err, user = "wwwrun")
  *
  * Supported keyword arguments in the constructor:
  *   user
  *	The user to run this command as; default is "root"
+ *   timeout
+ *	The duration in seconds after which this command is aborted; default is 60L
  *   stdin
  *	The file to pass to the command's standard input. Right now,
  *	this only accepts a string specifying a path name. File or buffer
@@ -98,6 +99,7 @@ Command_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 	/* init members */
 	self->command = NULL;
 	self->user = NULL;
+	self->timeout = 0L;
 	self->stdinPath = NULL;
 	self->stdout = NULL;
 	self->stderr = NULL;
@@ -110,8 +112,8 @@ Command_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
  * Initialize the command object
  *
  * Typical ways to do this include
- *    cmd = twopence.Command("/bin/ls", user = "okir", stdout = bytearray());
- *    cmd = twopence.Command("/bin/ls", user = "okir", stdout = str());
+ *    cmd = twopence.Command("/bin/ls", user = "wwwrun", stdout = bytearray());
+ *    cmd = twopence.Command("/bin/ls", user = "wwwrun", stdout = str());
  *    cmd = twopence.Command("/usr/bin/wc", stdin = "/etc/hosts");
  */
 int
@@ -120,6 +122,7 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 	static char *kwlist[] = {
 		"command",
 		"user",
+		"timeout",
 		"stdin",
 		"stdout",
 		"stderr",
@@ -127,12 +130,14 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 	};
 	PyObject *stdinObject = NULL, *stdoutObject = NULL, *stderrObject = NULL;
 	char *command, *user = NULL;
+	long timeout = 0L;
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|sOOO", kwlist, &command, &user, &stdinObject, &stdoutObject, &stderrObject))
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|slOOO", kwlist, &command, &user, &timeout, &stdinObject, &stdoutObject, &stderrObject))
 		return -1;
 
 	self->command = strdup(command);
 	self->user = user? strdup(user) : NULL;
+	self->timeout = timeout? timeout: 60L;
 	self->stdout = NULL;
 	self->stderr = NULL;
 	self->stdinPath = NULL;
@@ -189,6 +194,7 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 	twopence_command_init(cmd, self->command);
 
 	cmd->user = self->user;
+	cmd->timeout = self->timeout;
 
 	twopence_command_ostreams_reset(cmd);
 	if (self->suppressOutput || self->stdout == Py_None) {
@@ -275,6 +281,8 @@ Command_getattr(twopence_Command *self, char *name)
 		return PyString_FromString(self->command);
 	if (!strcmp(name, "user"))
 		return PyString_FromString(self->user);
+	if (!strcmp(name, "timeout"))
+		return PyInt_FromLong(self->timeout);
 	if (!strcmp(name, "stdout"))
 		return Command_stdout(self);
 	if (!strcmp(name, "stderr"))
@@ -304,6 +312,14 @@ Command_setattr(twopence_Command *self, char *name, PyObject *v)
 		if (!PyString_Check(v) || (s = PyString_AsString(v)) == NULL)
 			goto bad_attr;
 		assign_string(&self->user, s);
+		return 0;
+	}
+	if (!strcmp(name, "timeout")) {
+		char *s;
+
+		if (!PyString_Check(v) || (s = PyString_AsString(v)) == NULL)
+			goto bad_attr;
+		self->timeout = atol(s);
 		return 0;
 	}
 
