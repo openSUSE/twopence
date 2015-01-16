@@ -215,7 +215,6 @@ twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twope
 {
   if (target->ops->run_test == NULL)
     return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
-printf("timeout <%ld>\n", cmd->timeout);
 
   target->current.io = NULL;
 

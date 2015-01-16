@@ -5,8 +5,13 @@ BUGS
 
    o Python:
      target.Command("cat");
-       does not react as a local "cat", while it should
+     does not react as a local "cat", while it should
      (interactive test)
+
+   o Python:
+     how to pipe result of local command to remote host?
+     (without intermediary files)
+     it's possible with shell and ruby versions
 
    o library, shell and ruby wrappers:
      buffer allocation errors are not handled anymore

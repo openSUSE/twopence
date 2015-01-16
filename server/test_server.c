@@ -42,7 +42,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #define BUFFER_SIZE 32768              // bytes
 #define LINE_TIMEOUT 5000              // milliseconds
-#define COMMAND_TIMEOUT 12             // seconds
 #define PASSIVE_WAIT 20000000L         // nanoseconds (this value is 1/50th of a second)
 
 #define TWOPENCE_SERVER_PARAMETER_ERROR -1
@@ -510,7 +509,7 @@ void print_message(int serial_fd, const char *format, ...)
 ////////////////////////////////////// Middle layer //////////////////////////
 
 // Run a linux command under a given username
-void linux_command(const char *username, const char *command, int *new_std)
+void linux_command(const char *username, long timeout, const char *command, int *new_std)
 {
   int rc;
 
@@ -533,7 +532,7 @@ void linux_command(const char *username, const char *command, int *new_std)
   }
 
   // Run the command
-  alarm(COMMAND_TIMEOUT);
+  alarm(timeout);
   rc = system(command);
 
   // Conclude with error codes
@@ -740,12 +739,13 @@ void run_command(int serial_fd, char *buffer)
 {
   int rc;
   char *username, *commandline;
+  long timeout;
   pid_t pid;
   int std_parent[4], std_child[4];
   int status;
 
   // Get the username and the Linux command
-  sscanf(buffer + 4, "%ms %m[^\n]s", &username, &commandline);
+  sscanf(buffer + 4, "%ms %ld %m[^\n]s", &username, &timeout, &commandline);
 
   // Create pipes for communication between parent and child
   rc = create_pipes
@@ -780,7 +780,7 @@ void run_command(int serial_fd, char *buffer)
   if (pid == 0)
   {
     close_pipes(std_parent);
-    linux_command(username, commandline, std_child);
+    linux_command(username, timeout, commandline, std_child);
 //  close_pipes(std_child);
     exit(0);
   }

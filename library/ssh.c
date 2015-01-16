@@ -36,7 +36,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #define BUFFER_SIZE 16384              // Size in bytes of the work buffer for receiving data from the remote host
 #define LINE_TIMEOUT 60                // Timeout (in seconds) for not receiving anything
-#define COMMAND_TIMEOUT 12             // Timeout (in seconds) for command execution
 
 // This structure encapsulates in an opaque way the behaviour of the library
 // It is not 100 % opaque, because it is publicly known that the first field is the plugin type
@@ -196,7 +195,7 @@ __twopence_ssh_read_output(struct twopence_ssh_target *handle, ssh_channel chann
 
 // Read the results of a command
 static int
-__twopence_ssh_read_results(struct twopence_ssh_target *handle, ssh_channel channel)
+__twopence_ssh_read_results(struct twopence_ssh_target *handle, long timeout, ssh_channel channel)
 {
   bool nothing_0, eof_0,
        nothing_1, eof_1,
@@ -207,7 +206,7 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, ssh_channel chan
   eof_0 = eof_1 = eof_2 = false;
   line_too_late = command_too_late = time(NULL);
   line_too_late += LINE_TIMEOUT;
-  command_too_late += COMMAND_TIMEOUT;
+  command_too_late += timeout;
 
   // While there might still be something to read from the remote host
   while (!eof_1 || !eof_2)
@@ -386,7 +385,8 @@ __twopence_ssh_connect_ssh(struct twopence_ssh_target *handle, const char *usern
 //
 // Returns 0 if everything went fine, a negative error code otherwise
 static int
-__twopence_ssh_command_ssh(struct twopence_ssh_target *handle, const char *command, twopence_status_t *status_ret)
+__twopence_ssh_command_ssh
+    (struct twopence_ssh_target *handle, twopence_command_t *cmd, twopence_status_t *status_ret)
 {
   ssh_session session = handle->session;
   ssh_channel channel;
@@ -423,7 +423,7 @@ __twopence_ssh_command_ssh(struct twopence_ssh_target *handle, const char *comma
   }
 
   // Execute the command
-  if (ssh_channel_request_exec(channel, command) != SSH_OK)
+  if (ssh_channel_request_exec(channel, cmd->command) != SSH_OK)
   {
     __twopence_ssh_close_channel(handle);
     twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
@@ -431,7 +431,7 @@ __twopence_ssh_command_ssh(struct twopence_ssh_target *handle, const char *comma
   }
 
   // Read "standard output", "standard error", and remote error code
-  rc = __twopence_ssh_read_results(handle, channel);
+  rc = __twopence_ssh_read_results(handle, cmd->timeout, channel);
 
   status_ret->minor = rc? 0: ssh_channel_get_exit_status(channel);
 
@@ -725,7 +725,7 @@ twopence_ssh_run_test
     return TWOPENCE_OPEN_SESSION_ERROR;
 
   // Execute the command
-  rc = __twopence_ssh_command_ssh(handle, cmd->command, status_ret);
+  rc = __twopence_ssh_command_ssh(handle, cmd, status_ret);
 
   // Disconnect from remote host
   __twopence_ssh_disconnect_ssh(handle);

@@ -550,7 +550,10 @@ int _twopence_receive_file
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 static int
-__twopence_pipe_command(struct twopence_pipe_target *handle, const char *username, const char *linux_command, twopence_status_t *status_ret)
+__twopence_pipe_command
+  (struct twopence_pipe_target *handle,
+   const char *username, long timeout, const char *linux_command,
+   twopence_status_t *status_ret)
 {
   char command[COMMAND_BUFFER_SIZE];
   int n;
@@ -571,7 +574,7 @@ __twopence_pipe_command(struct twopence_pipe_target *handle, const char *usernam
 
   // Prepare command to send to the remote host
   n = snprintf(command, COMMAND_BUFFER_SIZE,
-               "c...%s %s", username, linux_command);
+               "c...%s %ld %s", username, timeout, linux_command);
   if (n < 0 || n >= COMMAND_BUFFER_SIZE)
     return TWOPENCE_PARAMETER_ERROR;
   store_length(n + 1, command);
@@ -823,16 +826,19 @@ twopence_pipe_run_test
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   const char *username;
+  long timeout;
   const char *command;
   int rc;
 
   if ((command = cmd->command) == NULL)
     return TWOPENCE_PARAMETER_ERROR;
   username = cmd->user? : "root";
+  timeout = cmd->timeout? : 60L;
 
   handle->base.current.io = cmd->iostream;
 
-  rc = __twopence_pipe_command(handle, username, command, status_ret);
+  rc = __twopence_pipe_command
+           (handle, username, timeout, command, status_ret);
 
   return rc;
 }
