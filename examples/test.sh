@@ -1,66 +1,183 @@
 #! /bin/bash
-
+#
+# Test script to exercise the shell commands.
+#
+# Profile a target on the command line using
+#   test.sh virtio:/var/run/twopence/test.sock
+#   test.sh ssh:192.168.123.45
+#   test.sh serial:/dev/ttyS0
 ##########################################################
-# Adapt the following line to your setup
-#   export TARGET=virtio:/var/run/twopence/test.sock
-#   export TARGET=ssh:192.168.123.45
-#   export TARGET=serial:/dev/ttyS0
-export TARGET= YOUR_TARGET_HERE
-##########################################################
 
-echo ""
-echo "command 'ls -l'"
-twopence_command $TARGET 'ls -l'
-echo ""
+if [ $# -gt 0 ]; then
+	TARGET=$1
+fi
 
-echo "silent command 'ping -c1 8.8.8.8'"
+if [ -z "$TARGET" ]; then
+	cat >&2 <<-EOF
+	No twopence target given.
+	Please specify a target as a command line argument, or
+	using the TARGET environment variable.
+	EOF
+fi
+
+overall_status=0
+
+function twopence_command {
+
+	echo "### ./shell/command $@" >&2
+	export LD_LIBRARY_PATH=$PWD/library
+	./shell/command "$@"
+}
+
+function twopence_inject {
+
+	echo "### ./shell/inject $@" >&2
+	export LD_LIBRARY_PATH=$PWD/library
+	./shell/inject "$@"
+}
+
+function twopence_extract {
+
+	echo "### ./shell/extract $@" >&2
+	export LD_LIBRARY_PATH=$PWD/library
+	./shell/extract "$@"
+}
+
+function test_case_begin {
+
+	echo
+	echo "### TEST: $*"
+
+	test_case_status=0
+}
+
+function test_case_fail {
+
+	echo "### $*" >&2
+	test_case_status=1
+	overall_status=1
+}
+
+function test_case_check_status {
+
+	expected_status=0
+	if [ $# -eq 2 ]; then
+		expected_status=$2
+	fi
+		
+	if [ "$1" -ne $expected_status ]; then
+		test_case_fail "command exited with status $1"
+	fi
+}
+
+function test_case_report {
+
+	if [ -z "$test_case_status" ]; then
+		echo "### ERROR: test_case_report called without test_case_begin" >&2
+		overall_status=1
+	elif [ $test_case_status -ne 0 ]; then
+		echo "### FAIL"
+	else
+		echo "### SUCCESS"
+	fi >&2
+	echo ""
+	unset test_case_status
+}
+
+test_case_begin "command 'ls -l /'"
+twopence_command $TARGET 'ls -l /'
+test_case_check_status $?
+test_case_report
+
+test_case_begin "silent command 'ping -c1 8.8.8.8'"
 twopence_command -q $TARGET 'ping -c1 8.8.8.8'
-echo ""
+test_case_check_status $?
+test_case_report
 
-echo "local 'ls -l' piped to command 'cat'"
-ls -l | twopence_command $TARGET 'cat'
-echo ""
+test_case_begin "local 'ls -l' piped to command 'cat'"
+ls -l /etc > expect.txt
+rm -f got.txt
+cat expect.txt | twopence_command -o got.txt $TARGET 'cat'
+test_case_check_status $?
+if [ ! -f got.txt ]; then
+	test_case_fail "command didn't write output file"
+elif ! cmp expect.txt got.txt; then
+	test_case_fail "Files differ"
+	diff -u expect.txt got.txt
+else
+	echo "Good, files match"
+fi
+test_case_report
+rm -f expect.txt got.txt
 
-echo "command 'cat' (type Ctrl-D to exit)"
-twopence_command $TARGET 'cat'
-echo ""
+if false; then
+	# Skip this test. We want to run this non-interactively
+	test_case_begin "command 'cat' (type Ctrl-D to exit)"
+	twopence_command $TARGET 'cat'
+	test_case_check_status $?
+	test_case_report
+fi
 
-echo "command 'ls -l . /oops'"
-twopence_command -o output.txt $TARGET 'ls -l . /oops'
-echo "output and errors were:"
-cat output.txt
-rm output.txt
-echo ""
+test_case_begin "command 'ls -l /oops'"
+twopence_command -1 stdout.txt -2 stderr.txt $TARGET 'ls -l /oops'
+test_case_check_status $? 249
+if [ ! -f stdout.txt ]; then
+	test_case_fail "Command didn't write stdout.txt"
+elif [ -s stdout.txt ]; then
+	test_case_fail "Command produced standard output (should be empty)"
+	cat stdout.txt
+fi
+if [ ! -f stderr.txt ]; then
+	test_case_fail "Command didn't write stderr.txt"
+elif [ ! -s stderr.txt ]; then
+	test_case_fail "Command produced standard no error messages (should not be empty)"
+else
+	echo "Command produced the following error message"
+	cat stderr.txt
+fi
+test_case_report
+rm -f stdout.txt stderr.txt
 
-echo "command 'find /tmp -type s' run as user 'nobody'"
-twopence_command -u nobody -1 output.txt -2 errors.txt $TARGET 'find /tmp -type s'
+
+test_case_begin "command 'find /dev -type s' run as user 'nobody'"
+twopence_command -u nobody -1 output.txt -2 errors.txt $TARGET 'find /dev -type s'
+test_case_check_status $? 249
 echo "output was:"
 cat output.txt
 rm output.txt
 echo "errors were:"
 cat errors.txt
 rm errors.txt
-echo ""
+test_case_report
+rm -f  errors.txt output.txt
 
-echo "inject '/etc/services' => 'test.txt'"
+test_case_begin  "inject '/etc/services' => 'test.txt'"
 twopence_inject $TARGET /etc/services test.txt
-echo ""
+test_case_check_status $?
+test_case_report
 
-echo "inject '/etc/services' => '/oops/test.txt'"
+test_case_begin "inject '/etc/services' => '/oops/test.txt'"
 twopence_inject $TARGET /etc/services /oops/test.txt
-echo ""
+if [ $? -eq 0 ]; then
+	test_case_fail "command exited with status 0; should have flagged an error"
+fi
+test_case_report
 
-echo "extract 'test.txt' => 'etc_services.txt'"
+test_case_begin "extract 'test.txt' => 'etc_services.txt'"
 twopence_extract $TARGET test.txt etc_services.txt
-echo ""
+test_case_check_status $?
+if ! cmp /etc/services etc_services.txt; then
+	test_case_fail "/etc/services and etc_services.txt differ"
+	diff /etc/services etc_services.txt
+fi
+rm -f etc_services.txt
+test_case_report
 
-echo "compare '/etc/services' with 'etc_services.txt'"
-diff -q /etc/services etc_services.txt && \
-  echo "files are identical"
-rm etc_services.txt
-echo ""
-
-echo "extract 'oops' => 'bang'"
+test_case_begin "extract 'oops' => 'bang'"
 twopence_extract $TARGET oops bang
-echo ""
-rm bang
+test_case_check_status $? 246
+rm -f bang
+test_case_report
+
+echo "Overall status is $overall_status"
+exit $overall_status

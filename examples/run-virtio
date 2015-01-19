@@ -1,0 +1,35 @@
+#!/bin/bash
+#
+# Run a test script against a virtio target.
+#
+
+SCRIPT=$1; shift
+if [ -z "$SCRIPT" ]; then
+	echo "$0: you have to specify a test script as argument" >&2
+	exit 1;
+fi
+
+if [ ! -x "$SCRIPT" ]; then
+	echo "$0: test scrpt \"$SCRIPT\" does not exist or is not executable" >&2
+	exit 1
+fi
+
+# First, start the test server
+export LD_LIBRARY_PATH=$PWD/library
+strace -fo yyy ./server/twopence_test_server --port-unix /tmp/twopence.sock >server.log 2>&1 &
+
+$SCRIPT virtio:/tmp/twopence.sock
+status=$?
+
+if [ $status -ne 0 ]; then
+	echo "Test script failed (status=$status)" >&2
+	echo "Server log file can be found in server.log" >&2
+fi
+
+true
+kill %1
+if [ $? -ne 0 ]; then
+	echo "Server exited with status $?" >&2
+fi
+
+exit $status
