@@ -1,7 +1,6 @@
 BUGS
    o protocol.c:
-     interrupts and end of input are not forwarded anymore
-     to the test server
+     interrupts are not forwarded anymore to the test server
 
    o Python:
      target.Command("cat");
