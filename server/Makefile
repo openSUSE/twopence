@@ -7,7 +7,7 @@ CCOPT	= -Wall -O2 -g
 endif
 
 SERVER	= twopence_test_server
-OBJS	= test_server.o \
+OBJS	= main.o \
 	  connection.o \
 	  protocol.o \
 	  server.o \
