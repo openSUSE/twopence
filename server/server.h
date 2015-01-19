@@ -21,6 +21,7 @@
 #ifndef SERVER_H
 #define SERVER_H
 
+#include <stdint.h>
 #include "twopence.h"
 
 typedef struct socket socket_t;
