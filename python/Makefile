@@ -1,6 +1,5 @@
-
-CFLAGS	= -fPIC -I/usr/include/python2.6 -I../library -Wall -g
-PYDIR  ?= /usr/lib64/python2.6/site-packages
+CFLAGS	= -fPIC -I/usr/include/python -I../library -Wall -g
+PYDIR  ?= /usr/lib64/python/site-packages
 OBJS	= extension.o \
 	  command.o \
 	  config.o \
