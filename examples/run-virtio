@@ -26,8 +26,7 @@ if [ $status -ne 0 ]; then
 	echo "Server log file can be found in server.log" >&2
 fi
 
-true
-kill %1
+killall -TERM twopence_test_server
 if [ $? -ne 0 ]; then
 	echo "Server exited with status $?" >&2
 fi
