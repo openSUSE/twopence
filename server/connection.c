@@ -316,6 +316,7 @@ connection_pool_poll(connection_pool_t *pool)
 	unsigned int maxfds = 0;
 	struct pollfd *pfd;
 	unsigned int nfds;
+	sigset_t mask;
 
 	if (pool->connections == NULL)
 		return false;
@@ -358,7 +359,11 @@ connection_pool_poll(connection_pool_t *pool)
 		TRACE("No events to wait for?!\n");
 	}
 
-	(void) poll(pfd, nfds, -1);
+	/* Query the current sigprocmask, and allow SIGCHLD while we're polling */
+	sigprocmask(SIG_BLOCK, NULL, &mask);
+	sigdelset(&mask, SIGCHLD);
+
+	(void) ppoll(pfd, nfds, NULL, &mask);
 
 	for (conn = pool->connections; conn; conn = conn->next)
 		connection_doio(conn);

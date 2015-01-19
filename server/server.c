@@ -683,6 +683,14 @@ server_run(socket_t *sock)
 {
 	connection_pool_t *pool;
 	struct sigaction sa;
+	sigset_t mask, omask;
+
+	/* Block delivery of SIGCHLD while we're about and executing something.
+	 * We use ppoll to enable SIGCHLD, so that there is only one defined
+	 * place to receive that signal. */
+	sigemptyset(&mask);
+	sigaddset(&mask, SIGCHLD);
+	sigprocmask(SIG_BLOCK, &mask, &omask);
 
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_handler = child_handler;
@@ -695,4 +703,6 @@ server_run(socket_t *sock)
 	connection_pool_add_connection(pool, connection_new(&server_ops, sock));
 	while (connection_pool_poll(pool))
 		;
+
+	sigprocmask(SIG_SETMASK, &omask, NULL);
 }
