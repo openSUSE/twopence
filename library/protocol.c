@@ -460,7 +460,7 @@ _twopence_read_size(struct twopence_pipe_target *handle, int link_fd, int *size,
       break;
     case 'M':
       sscanf(buffer + 4, "%d", remote_rc);
-      break;
+      return TWOPENCE_RECEIVE_FILE_ERROR;
     default:
       return TWOPENCE_RECEIVE_FILE_ERROR;
   }
