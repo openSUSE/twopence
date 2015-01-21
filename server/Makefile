@@ -13,7 +13,7 @@ OBJS	= main.o \
 	  server.o \
 	  socket.o
 
-CFLAGS	= -D_GNU_SOURCE $(CCOPT)
+CFLAGS	= -D_GNU_SOURCE -I../library $(CCOPT)
 
 all: $(SERVER)
 
