@@ -40,7 +40,7 @@ struct semantics {
 	/* Server side operations */
 	bool		(*inject_file)(transaction_t *, const char *username, const char *filename, size_t len);
 	bool		(*extract_file)(transaction_t *, const char *username, const char *filename);
-	bool		(*run_command)(transaction_t *, const char *username, const char *cmdline);
+	bool		(*run_command)(transaction_t *, const char *username, unsigned int timeout, const char *cmdline);
 	bool		(*request_quit)(void);
 };
 
@@ -71,6 +71,7 @@ struct header {
 #define PROTO_HDR_TYPE_MAJOR	'M'
 #define PROTO_HDR_TYPE_MINOR	'm'
 #define PROTO_HDR_TYPE_SENDFILE	's'		/* sent in response to EXTRACT command */
+#define PROTO_HDR_TYPE_TIMEOUT	'T'
 
 
 struct buffer {
@@ -194,6 +195,7 @@ extern void		transaction_fail(transaction_t *, int);
 extern void		transaction_fail2(transaction_t *trans, int major, int minor);
 extern void		transaction_send_major(transaction_t *trans, unsigned int code);
 extern void		transaction_send_minor(transaction_t *trans, unsigned int code);
+extern void		transaction_send_timeout(transaction_t *trans);
 
 extern connection_t *	connection_new(semantics_t *semantics, socket_t *client_sock);
 extern void		connection_free(connection_t *conn);
