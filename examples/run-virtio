@@ -18,6 +18,7 @@ fi
 export LD_LIBRARY_PATH=$PWD/library
 ./server/twopence_test_server --daemon --port-unix /tmp/twopence.sock
 
+export PYTHONPATH=$PWD/python
 $SCRIPT virtio:/tmp/twopence.sock
 status=$?
 
