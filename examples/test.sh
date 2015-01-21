@@ -187,6 +187,7 @@ fi
 rm -f etc_services.txt
 test_case_report
 
+
 test_case_begin "make sure inject truncates the uploaded file"
 echo "a" > short_file
 twopence_inject $TARGET short_file $server_test_file
@@ -198,8 +199,22 @@ if ! cmp cat_file short_file; then
 	wc -l short_file
 	wc -l cat_file
 fi
+rm -f short_file cat_file
 test_case_report
 
+
+test_case_begin "upload a zero length file"
+twopence_inject $TARGET /dev/null $server_test_file
+twopence_command -o cat_file $TARGET "cat $server_test_file"
+test_case_check_status $?
+if test -s cat_file; then
+	test_case_fail "zero length file is no longer empty after extraction"
+	wc -l cat_file
+fi
+rm -f cat_file
+test_case_report
+
+exit 11
 
 test_case_begin "extract 'oops' => 'bang'"
 twopence_extract $TARGET oops bang
