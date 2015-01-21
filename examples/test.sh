@@ -74,7 +74,10 @@ function test_case_check_status {
 		
 	if [ "$1" -ne $expected_status ]; then
 		test_case_fail "command exited with status $1"
+		return 1
 	fi
+
+	return 0
 }
 
 function test_case_report {
@@ -95,6 +98,30 @@ test_case_begin "command 'ls -l /'"
 twopence_command $TARGET 'ls -l /'
 test_case_check_status $?
 test_case_report
+
+test_case_begin "detect server uid"
+username=`twopence_command -b $TARGET 'id -un'`
+if test_case_check_status $?; then
+	if [ "$username" = "root" ]; then
+		echo "Good, server executes commands as root by default"
+	else
+		test_case_fail "Server executes command as user \"$username\" by default"
+	fi
+fi
+test_case_report
+
+
+test_case_begin "run command as nobody"
+username=`twopence_command -u nobody -b $TARGET 'id -un'`
+if test_case_check_status $?; then
+	if [ "$username" = "nobody" ]; then
+		echo "Good, server executes commands as nobody as expected"
+	else
+		test_case_fail "Server executed command as user \"$username\" instead of nobody"
+	fi
+fi
+test_case_report
+
 
 test_case_begin "silent command 'ping -c1 8.8.8.8'"
 twopence_command -q $TARGET 'ping -c1 8.8.8.8'
@@ -214,7 +241,21 @@ fi
 rm -f cat_file
 test_case_report
 
-exit 11
+test_case_begin "upload a file as user nobody"
+twopence_command $TARGET "rm -f $server_test_file"
+test_case_check_status $?
+
+twopence_inject -u nobody $TARGET /dev/null $server_test_file
+if test_case_check_status $?; then
+	username=`twopence_command -b $TARGET "stat --format %U $server_test_file"`
+	if [ "$username" != "nobody" ]; then
+		test_case_fail "wrong file owner \"$username\", expected user nobody"
+	else
+		echo "Good, file is owned by user nobody"
+	fi
+fi
+test_case_report
+
 
 test_case_begin "extract 'oops' => 'bang'"
 twopence_extract $TARGET oops bang
