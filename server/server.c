@@ -456,6 +456,12 @@ server_inject_file(transaction_t *trans, const char *username, const char *filen
 
 	trans->byte_count = filesize;
 	trans->recv = server_inject_file_recv;
+
+	if (trans->byte_count == 0) {
+		transaction_send_minor(trans, 0);
+		socket_shutdown_write(trans->local_sink);
+		trans->done = true;
+	}
 	return true;
 }
 
