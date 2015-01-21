@@ -615,11 +615,18 @@ server_run_command_recv(transaction_t *trans, const header_t *hdr, buffer_t *pay
 		break;
 
 	case PROTO_HDR_TYPE_INTR:
-		fprintf(stderr, "Kill not implemented\n");
 		/* Send signal to process, and shut down all I/O.
 		 * When we send a signal, we're not really interested in what
 		 * it has to say, not even "aargh".
 		 */
+		if (trans->pid && !trans->done) {
+			int n;
+
+			kill(trans->pid, SIGKILL);
+			transaction_close_sink(trans);
+			for (n = 0; n < TRANSACTION_MAX_SOURCES; ++n)
+				transaction_close_source(trans, n);
+		}
 		break;
 
 	default:
