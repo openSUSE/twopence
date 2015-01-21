@@ -20,3 +20,7 @@ install::
 	mkdir -p $(DESTDIR)/usr/lib/twopence
 	cp add_virtio_channel.sh $(DESTDIR)/usr/lib/twopence/
 
+tests:
+	set -e; for plugin in virtio; do \
+		examples/run-$$plugin examples/test.sh; \
+	done
