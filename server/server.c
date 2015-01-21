@@ -439,7 +439,7 @@ server_inject_file(transaction_t *trans, const char *username, const char *filen
 	int status;
 	int fd;
 
-	if ((fd = server_open_file_as(username, filename, O_WRONLY|O_CREAT, &status)) < 0) {
+	if ((fd = server_open_file_as(username, filename, O_WRONLY|O_CREAT|O_TRUNC, &status)) < 0) {
 		transaction_fail(trans, status);
 		return false;
 	}
