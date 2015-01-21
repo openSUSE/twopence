@@ -29,6 +29,13 @@ function twopence_command {
 	./shell/command "$@"
 }
 
+function twopence_command_background {
+
+	echo "### ./shell/command $@" >&2
+	export LD_LIBRARY_PATH=$PWD/library
+	./shell/command "$@" &
+}
+
 function twopence_inject {
 
 	echo "### ./shell/inject $@" >&2
@@ -199,6 +206,17 @@ let elapsed=$t1-$t0
 if [ $elapsed -lt 9 -o $elapsed -gt 10 ]; then
 	test_case_fail "test case took $elapsed seconds to complete (expected to be between 9 and 10 secs)"
 fi
+test_case_report
+
+test_case_begin "test SIGINT handling"
+twopence_command_background $TARGET "sleep 5"
+pid=$!
+sleep 1
+echo "Sending SIGINT to $pid"
+ps hup $pid
+kill -INT $pid
+wait $pid
+test_case_check_status $? 9
 test_case_report
 
 echo "Overall status is $overall_status"
