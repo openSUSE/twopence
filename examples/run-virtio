@@ -16,7 +16,7 @@ fi
 
 # First, start the test server
 export LD_LIBRARY_PATH=$PWD/library
-./server/twopence_test_server --port-unix /tmp/twopence.sock >server.log 2>&1 &
+./server/twopence_test_server --daemon --port-unix /tmp/twopence.sock
 
 $SCRIPT virtio:/tmp/twopence.sock
 status=$?

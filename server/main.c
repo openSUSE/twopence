@@ -50,8 +50,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #define TWOPENCE_SERVER_PARAMETER_ERROR -1
 #define TWOPENCE_SERVER_SOCKET_ERROR -2
+#define TWOPENCE_SERVER_FORK_ERROR -3
 
 static void		service_connection(int);
+static void		server_daemonize(void);
 
 ////////////////////////////////////// Lower layer ///////////////////////////
 
@@ -162,20 +164,26 @@ int main(int argc, char *argv[])
     { "port-serial", required_argument, NULL, 'S' },
     { "port-pty", no_argument, NULL, 'P' },
     { "port-unix", required_argument, NULL, 'U' },
+    { "daemon", no_argument, NULL, 'D' },
     { NULL }
   };
   int opt_oneshot = 0;
   const char *opt_port_type = NULL;
   const char *opt_port_path = NULL;
+  bool opt_daemon = false;
   int c;
 
   // Welcome message, check arguments
   printf("Twopence test server version 0.3.0\n");
 
-  while ((c = getopt_long(argc, argv, "P:S::U:", long_opts, NULL)) != -1) {
+  while ((c = getopt_long(argc, argv, "DP:S::U:", long_opts, NULL)) != -1) {
     switch (c) {
     case '1':
       opt_oneshot = 1;
+      break;
+
+    case 'D':
+      opt_daemon = true;
       break;
 
     case 'S':
@@ -252,6 +260,11 @@ int main(int argc, char *argv[])
       if (serial_fd < 0)
         exit(TWOPENCE_SERVER_SOCKET_ERROR);
 
+      if (opt_daemon) {
+	server_daemonize();
+	opt_daemon = false;
+      }
+
       service_connection(serial_fd);
       close(serial_fd);
     } while (!opt_oneshot);
@@ -262,6 +275,11 @@ int main(int argc, char *argv[])
     listen_fd = open_unix_port(opt_port_path);
     if (listen_fd < 0)
       exit(TWOPENCE_SERVER_SOCKET_ERROR);
+
+    if (opt_daemon) {
+      server_daemonize();
+      opt_daemon = false;
+    }
 
     do {
       int sock_fd, retries = 0;
@@ -289,4 +307,29 @@ void
 service_connection(int serial_fd)
 {
   server_run(socket_new(serial_fd));
+}
+
+void
+server_daemonize(void)
+{
+  pid_t pid;
+
+  pid = fork();
+  if (pid < 0) {
+    perror("test_server: unable to fork");
+    exit(TWOPENCE_SERVER_FORK_ERROR);
+  }
+
+  if (pid != 0)
+    exit(0);
+
+  /* Close all stdio fds, and reconnect them to /dev/null.
+   * We need to do this, because some of our functions
+   * will currently print debugging and error messages to
+   * stdout and stderr.
+   */
+  if (daemon(0, 0) < 0) {
+    perror("test_server: unable to daemonize");
+    exit(TWOPENCE_SERVER_FORK_ERROR);
+  }
 }
