@@ -158,8 +158,15 @@ rm errors.txt
 test_case_report
 rm -f  errors.txt output.txt
 
-test_case_begin  "inject '/etc/services' => 'test.txt'"
-twopence_inject $TARGET /etc/services test.txt
+server_test_file=/tmp/twopence-test.txt
+
+test_case_begin "cleanup: remove $server_test_file"
+twopence_command $TARGET "rm -f $server_test_file"
+test_case_check_status $?
+test_case_report
+
+test_case_begin  "inject '/etc/services' => '$server_test_file'"
+twopence_inject $TARGET /etc/services $server_test_file
 test_case_check_status $?
 test_case_report
 
@@ -170,8 +177,8 @@ if [ $? -eq 0 ]; then
 fi
 test_case_report
 
-test_case_begin "extract 'test.txt' => 'etc_services.txt'"
-twopence_extract $TARGET test.txt etc_services.txt
+test_case_begin "extract '$server_test_file' => 'etc_services.txt'"
+twopence_extract $TARGET $server_test_file etc_services.txt
 test_case_check_status $?
 if ! cmp /etc/services etc_services.txt; then
 	test_case_fail "/etc/services and etc_services.txt differ"
@@ -179,6 +186,20 @@ if ! cmp /etc/services etc_services.txt; then
 fi
 rm -f etc_services.txt
 test_case_report
+
+test_case_begin "make sure inject truncates the uploaded file"
+echo "a" > short_file
+twopence_inject $TARGET short_file $server_test_file
+twopence_command -o cat_file $TARGET "cat $server_test_file"
+test_case_check_status $?
+if ! cmp cat_file short_file; then
+	test_case_fail "file mismatch when re-downloading short_file"
+	echo "Lines of text in each file:"
+	wc -l short_file
+	wc -l cat_file
+fi
+test_case_report
+
 
 test_case_begin "extract 'oops' => 'bang'"
 twopence_extract $TARGET oops bang
