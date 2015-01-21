@@ -21,7 +21,7 @@ $(SERVER): $(OBJS)
 	$(CC) $(OBJS) -o $@
 
 install: $(SERVER)
-	mkdir -p $(DESTDIR)/usr/lib/twopence
+	mkdir -p $(DESTDIR)/usr/bin
 	install -m555 $(SERVER) $(DESTDIR)/usr/bin
 
 clean:
