@@ -16,9 +16,9 @@ twopence_exit \- exit the test server
 .B twopence_exit
 makes the remote test server exit on the system under test (SUT).
 .PP
-The SUT can be accessed by any means provided by a Twopence
-plugin: virtio (for QEmu/KVM virtual machines) or serial
-(with a null-modem cable), with exception of the ssh plugin.
+The SUT can be accessed by any means provided by Twopence:
+virtio (for QEmu/KVM virtual machines) or serial
+(with a null-modem cable), with exception of the ssh access method.
 This access method and the exact
 location of the SUT are defined by the
 .I TARGET
@@ -50,20 +50,14 @@ so make sure to quote it if it contains spaces.
 The syntax for SSH does not make any sense, because SSH servers are
 not programmed for leaving on demand.
 
-.SH FILES
-.I /usr/lib/twopence/twopence_test_server
-.RS
-The server to be installed on the system under test when using
-the virtio or serial access methods.
-
 .SH EXAMPLES
-Example syntax for the virtio plugin:
+Example syntax for the virtio access method:
 .IP \fBtwopence_exit\ virtio:/tmp/sut.sock\fR
 it will use
 .I /tmp/sut.sock
 to communicate with the QEmu/KVM host.
 .PP
-Example syntax for the serial plugin:
+Example syntax for the serial access method:
 .IP \fBtwopence_exit\ serial:/dev/ttyS0\fR
 
 .SH BUGS
@@ -78,4 +72,9 @@ The Twopence developpers at SUSE Linux.
 .SH SEE ALSO
 .BR twopence_command (1),
 .BR twopence_inject (1),
-.BR twopence_extract (1).
+.BR twopence_extract (1),
+other shell commands to access the System Under Test.
+.PP
+.BR twopence_test_server (1),
+the server to be installed on the System Under Test when using
+the virtio or serial access methods.

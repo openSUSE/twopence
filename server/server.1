@@ -1,0 +1,45 @@
+.\" Process this file with
+.\" groff -man -Tascii server.1
+.\"
+.TH TWOPENCE_TEST_SERVER "1" "January 2015" "Twopence 0.3.0" "Server side commands"
+
+.SH NAME
+twopence_test_server \- Twopence test server for serial and virtio access methods.
+
+.SH SYNOPSIS
+.B twopence_test_server [
+.I serial_port
+.B ]
+
+.SH DESCRIPTION
+.B twopence_test_server
+is a part of Twopence test environment. It is meant to be installed in the
+System Under Tests (SUT).
+.PP
+.B twopence_test_server
+listens on a serial port, waiting for shell commands to execute, or for file
+transfer requests.
+
+.SH OPTIONS
+.IP \fIserial_port\fR
+The name of the serial port used to communicate with
+the controlling computer.
+.PP
+This "serial port" can either be a real device like
+.B /dev/ttyS0
+if the SUT is a real test machine, or a virtual port like
+.B /dev/org.opensuse.twopence.0
+provided by KVM's virtio_serial facility.
+.PP
+If this perameter is omitted,
+.B twopence_test_server
+will listen by default on
+.B /dev/org.opensuse.twopence.0
+which is suited for a System Under Tests running in a KVM virtual
+machine.
+
+.SH AUTHOR
+The Twopence developpers at SUSE Linux.
+
+.SH SEE ALSO
+.BR twopence_command (1)
