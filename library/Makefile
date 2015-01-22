@@ -2,8 +2,8 @@
 
 VERSION	= 0.3.0
 
-ifdef RPM_OPTIMIZE
-CCOPT	= $(RPM_OPTIMIZE)
+ifdef RPM_OPT_FLAGS
+CCOPT	= $(RPM_OPT_FLAGS)
 else
 CCOPT	= -Wall -O2 -g
 endif
@@ -23,6 +23,7 @@ libtwopence.so: twopence.h $(LIB_OBJS) Makefile
 install: libtwopence.so twopence.h
 	mkdir -p $(DESTDIR)$(LIBDIR)
 	install -m555 libtwopence.so $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION)
+	ln -sf libtwopence.so.$(VERSION) $(DESTDIR)$(LIBDIR)/libtwopence.so
 	mkdir -p $(DESTDIR)$(INCDIR)
 	install -m444 twopence.h $(DESTDIR)$(INCDIR)
 
