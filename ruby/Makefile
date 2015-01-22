@@ -1,6 +1,9 @@
 .PHONY: all install clean
 
-LIBDIR ?= /usr/lib64
+RBVERSION ?= 2.1.0
+LIBDIR    ?= /usr/lib64
+INCDIR    ?= /usr/include
+RBDIR      = $(LIBDIR)/ruby/gems/$(RBVERSION)
 
 all: twopence-0.3.0.gem
 
@@ -11,9 +14,19 @@ twopence-0.3.0.gem: twopence.gemspec Rakefile ext/twopence/extconf.rb \
 	gem build twopence.gemspec
 
 install: twopence-0.3.0.gem
-	gem install --local --install-dir $(DESTDIR)$(LIBDIR)/ruby/gems/2.1.0/ twopence-0.3.0.gem
-	cp twopence.gemspec $(DESTDIR)$(LIBDIR)/ruby/gems/2.1.0/gems/twopence-0.3.0
-	cp Rakefile $(DESTDIR)$(LIBDIR)/ruby/gems/2.1.0/gems/twopence-0.3.0
+	ln -s $(DESTDIR)$(LIBDIR)/libtwopence.so.0.3.0 $(DESTDIR)$(LIBDIR)/libtwopence.so
+	CFLAGS="-I$(DESTDIR)$(INCDIR)" \
+	  LDFLAGS="-L$(DESTDIR)$(LIBDIR)" \
+	  gem install --local --install-dir $(DESTDIR)$(RBDIR)/ -V --force twopence-0.3.0.gem
+	#
+	# comment out the following lines if you want to be able to rebuild the gem on the target system:
+	rm $(DESTDIR)$(LIBDIR)/libtwopence.so
+	rm $(DESTDIR)$(RBDIR)/gems/twopence-0.3.0/ext/twopence/.RUBYARCHDIR.time
+	rm $(DESTDIR)$(RBDIR)/gems/twopence-0.3.0/ext/twopence/extconf.rb
+	rm $(DESTDIR)$(RBDIR)/gems/twopence-0.3.0/ext/twopence/target.h
+	rm $(DESTDIR)$(RBDIR)/gems/twopence-0.3.0/ext/twopence/target.c
+	rm $(DESTDIR)$(RBDIR)/gems/twopence-0.3.0/ext/twopence/glue.c
+	rm $(DESTDIR)$(RBDIR)/gems/twopence-0.3.0/ext/library/twopence.h
 
 clean:
 	rm -f ext/library/twopence.h

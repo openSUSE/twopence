@@ -1,10 +1,11 @@
 PYVERSION ?= 2.6
+LIBDIR	  ?= /usr/lib64
 CFLAGS	   = -fPIC -I/usr/include/python${PYVERSION} -I../library -Wall -g
-PYDIR	  ?= /usr/lib64/python${PYVERSION}/site-packages
 OBJS	   = extension.o \
 	     command.o \
 	     status.o \
 	     target.o
+PYDIR	   = ${LIBDIR}/python${PYVERSION}/site-packages
 
 all: twopence.so
 
