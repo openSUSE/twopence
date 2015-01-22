@@ -15,9 +15,8 @@ target.run("/bin/pwd");
 print
 
 print "inject '/etc/hosts' => '/tmp/injected' with mode 0660"
-# TODO: move functionality from binding to library
-print "(note: defining the file mode should not be done in the"
-print "       Python binding, but in the underlying library)"
+# TODO: define permissions in library, pass parameter from wrappers
+print "(note: defining the file mode is not implemented yet)"
 target.inject("/etc/hosts", "/tmp/injected", mode = 0660)
 print
 
@@ -104,8 +103,8 @@ print "(note: test to be written)"
 print
 
 print "command='cat' (press Ctrl-D to end or Ctrl-C to interrupt)"
-# TODO: not functional yet
-print "(note: not functional yet)"
+# TODO: does not work at the moment
+print "(note: does not work at the moment)"
 cmd = twopence.Command("cat");
 target.run(cmd)
 print
