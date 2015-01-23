@@ -20,8 +20,8 @@ twopence_inject \- inject a test file
 .B twopence_inject
 injects a local file onto the system under test (SUT).
 .PP
-The SUT can be accessed by any means provided by a Twopence
-plugin: virtio (for QEmu/KVM virtual machines), ssh, or serial
+The SUT can be accessed by any means provided by Twopence:
+virtio (for QEmu/KVM virtual machines), ssh, or serial
 (with a null-modem cable). This access method and the exact
 location of the SUT are defined by the
 .I TARGET
@@ -69,26 +69,20 @@ is the filename of the local file to send.
 .I REMOTE
 is the filename under which the file should be saved on the SUT.
 
-.SH FILES
-.I /usr/lib/twopence/twopence_test_server
-.RS
-The server to be installed on the system under test when using
-the virtio or serial access methods.
-
 .SH EXAMPLES
-Example syntax for the virtio plugin:
+Example syntax for the virtio access method:
 .IP \fBtwopence_inject\ \-u\ johndoe\ virtio:/tmp/sut.sock\ local_file.txt\ remote_file.txt\fR
 it will use
 .I /tmp/sut.sock
 to communicate with the QEmu/KVM host.
 .PP
-Example syntax for the ssh plugin:
+Example syntax for the ssh access method:
 .IP \fBtwopence_inject\ \-\-user=johndoe\ ssh:host.example.com\ local_file.txt\ remote_file.txt\fR
 it is functionally equivalent to
 \fBscp local_file.txt johndoe@host.example.com:remote_file.txt\fR
 without server footprint verification.
 .PP
-Example syntax for the serial plugin:
+Example syntax for the serial access method:
 .IP \fBtwopence_inject\ serial:/dev/ttyS0\ local_file.txt\ remote_file.txt\fR
 
 .SH BUGS
@@ -107,4 +101,9 @@ The Twopence developpers at SUSE Linux.
 .SH SEE ALSO
 .BR twopence_command (1),
 .BR twopence_extract (1),
-.BR twopence_exit (1).
+.BR twopence_exit (1),
+other shell commands to access the System Under Test.
+.PP
+.BR twopence_test_server (1),
+the server to be installed on the System Under Test when using
+the virtio or serial access methods.
