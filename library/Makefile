@@ -23,7 +23,6 @@ libtwopence.so: twopence.h $(LIB_OBJS) Makefile
 install: libtwopence.so twopence.h
 	mkdir -p $(DESTDIR)$(LIBDIR)
 	install -m555 libtwopence.so $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION)
-	ln -sf libtwopence.so.$(VERSION) $(DESTDIR)$(LIBDIR)/libtwopence.so
 	mkdir -p $(DESTDIR)$(INCDIR)
 	install -m444 twopence.h $(DESTDIR)$(INCDIR)
 
