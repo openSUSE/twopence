@@ -24,30 +24,30 @@ overall_status=0
 
 function twopence_command {
 
-	echo "### ./shell/command $@" >&2
+	echo "### ../shell/command $@" >&2
 	export LD_LIBRARY_PATH=$PWD/library
-	./shell/command "$@"
+	../shell/command "$@"
 }
 
 function twopence_command_background {
 
-	echo "### ./shell/command $@" >&2
+	echo "### ../shell/command $@" >&2
 	export LD_LIBRARY_PATH=$PWD/library
-	./shell/command "$@" &
+	../shell/command "$@" &
 }
 
 function twopence_inject {
 
-	echo "### ./shell/inject $@" >&2
+	echo "### ../shell/inject $@" >&2
 	export LD_LIBRARY_PATH=$PWD/library
-	./shell/inject "$@"
+	../shell/inject "$@"
 }
 
 function twopence_extract {
 
-	echo "### ./shell/extract $@" >&2
+	echo "### ../shell/extract $@" >&2
 	export LD_LIBRARY_PATH=$PWD/library
-	./shell/extract "$@"
+	../shell/extract "$@"
 }
 
 function test_case_begin {
@@ -143,13 +143,6 @@ else
 fi
 test_case_report
 rm -f expect.txt got.txt
-
-# We want interactive tests, it's an important part of the functionality
-# I will disjoin automated tests (non-interactive) and examples
-test_case_begin "command 'cat' (type Ctrl-D to exit)"
-twopence_command $TARGET 'cat'
-test_case_check_status $?
-test_case_report
 
 test_case_begin "command 'ls -l /oops'"
 twopence_command -1 stdout.txt -2 stderr.txt $TARGET 'ls -l /oops'
