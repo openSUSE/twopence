@@ -31,6 +31,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <string.h>
 #include <stdlib.h>
 #include <malloc.h>
+#include <signal.h>
 
 #include "twopence.h"
 
@@ -45,7 +46,9 @@ struct twopence_ssh_target
 
   ssh_session template, session;
   ssh_channel channel;                 // Set during remote command execution only
+  bool use_tty;
   bool eof_sent;
+  bool interrupted;
 };
 
 extern const struct twopence_plugin twopence_ssh_ops;
@@ -211,6 +214,13 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, long timeout, ss
   // While there might still be something to read from the remote host
   while (!eof_1 || !eof_2)
   {
+    // If we have received a SIGINT, exit and close the channel without
+    // further delay.
+    if (handle->interrupted) {
+      printf("interrupt: break out of read loop\n");
+      return -6;
+    }
+
     // Nonblocking read from stdin
     if (!eof_0)
     {
@@ -413,13 +423,19 @@ __twopence_ssh_command_ssh
   }
   handle->channel = channel;
   handle->eof_sent = false;
+  handle->use_tty = false;
+  handle->interrupted = false;
 
   // Request that the command be run inside a tty
-  if (ssh_channel_request_pty(channel) != SSH_OK)
+  if (cmd->request_tty)
   {
-    __twopence_ssh_close_channel(handle);
-    twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
-    return TWOPENCE_OPEN_SESSION_ERROR;
+    if (ssh_channel_request_pty(channel) != SSH_OK)
+    {
+      __twopence_ssh_close_channel(handle);
+      twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
+      return TWOPENCE_OPEN_SESSION_ERROR;
+    }
+    handle->use_tty = true;
   }
 
   // Execute the command
@@ -433,22 +449,50 @@ __twopence_ssh_command_ssh
   // Read "standard output", "standard error", and remote error code
   rc = __twopence_ssh_read_results(handle, cmd->timeout, channel);
 
-  status_ret->minor = rc? 0: ssh_channel_get_exit_status(channel);
+  /* FIXME: might be better to return useful status values from
+   * __twopence_ssh_read_results in the first place. Currently we
+   * don't, thus we need to translate them here.
+   */
+  status_ret->minor = 0;
+  switch (rc)
+  {
+    case 0:
+      status_ret->minor = ssh_channel_get_exit_status(channel);
+      break;
+
+    case -1:
+      rc = TWOPENCE_FORWARD_INPUT_ERROR;
+      break;
+
+    case -2:
+    case -3:
+    case -4:
+      rc = TWOPENCE_RECEIVE_RESULTS_ERROR;
+      break;
+
+    case -5:
+      rc = TWOPENCE_COMMAND_TIMEOUT_ERROR;
+      break;
+
+    case -6:
+      /* The following matches what the serial/virtio server code currently
+       * does, but it feels wrong. What about TWOPENCE_COMMAND_INTERRUPTED_ERROR?
+       */
+      status_ret->major = EFAULT;
+      status_ret->minor = SIGINT;
+      rc = 0;
+      break;
+
+    default:
+      rc = TWOPENCE_RECEIVE_RESULTS_ERROR;
+  }
 
   // Terminate the channel
   __twopence_ssh_channel_eof(handle);
   __twopence_ssh_close_channel(handle);
 
   twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
-  switch (rc)
-  {
-    case -1: return TWOPENCE_FORWARD_INPUT_ERROR;
-    case -2:
-    case -3:
-    case -4: return TWOPENCE_RECEIVE_RESULTS_ERROR;
-    case -5: return TWOPENCE_COMMAND_TIMEOUT_ERROR;
-  }
-  return 0;
+  return rc;
 }
 
 // Inject a file into the remote host through SSH
@@ -592,13 +636,18 @@ __twopence_ssh_interrupt_ssh(struct twopence_ssh_target *handle)
   if (ssh_channel_request_send_signal(channel, "INT") != SSH_OK)
     return TWOPENCE_INTERRUPT_COMMAND_ERROR;
 #else
-  if (handle->eof_sent) {
-    printf("Cannot send Ctrl-C, channel already closed for writing\n");
-    return TWOPENCE_INTERRUPT_COMMAND_ERROR;
-  }
+  if (handle->use_tty) {
+    if (handle->eof_sent) {
+      printf("Cannot send Ctrl-C, channel already closed for writing\n");
+      return TWOPENCE_INTERRUPT_COMMAND_ERROR;
+    }
 
-  if (ssh_channel_write(channel, "\003", 1) != 1)
-    return TWOPENCE_INTERRUPT_COMMAND_ERROR;
+    if (ssh_channel_write(channel, "\003", 1) != 1)
+      return TWOPENCE_INTERRUPT_COMMAND_ERROR;
+  } else {
+    printf("Command not being run in tty, cannot interrupt it\n");
+    handle->interrupted = true;
+  }
 #endif
 
   return 0;

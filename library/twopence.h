@@ -172,6 +172,10 @@ struct twopence_command {
 	/* The duration in seconds after which we abort the command. Default to 60L */
 	long			timeout;
 
+	/* Execute the command in a tty rather than just connected to a pipe.
+	 * May be needed for some commands to behave properly */
+	bool			request_tty;
+
 	/* FIXME: support passing environment variables to the command --okir
 	 *
          * For the time being we can start "bash" as a command
