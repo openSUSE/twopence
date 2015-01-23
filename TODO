@@ -1,4 +1,7 @@
 BUGS
+   o twopence_command ssh:sut whoami
+     inserts \r at end of output
+
    o protocol.c:
      interrupts are not forwarded anymore to the test server
 
