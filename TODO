@@ -45,13 +45,6 @@ FUNCTIONALITY
      Ruby
      Python
 
-   o split into several packages
-     libtwopence0       (library)
-     twopence-client    (shell commands)
-     rubygem-twopence   (Ruby bindings)
-     python-twopence    (Python bindings)
-     twopence-server    (virtio and serial test server)
-
    o display a short help message for the twopence_exit command
      -h --help
 
