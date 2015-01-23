@@ -10,7 +10,6 @@ all: twopence-0.3.0.gem
 twopence-0.3.0.gem: twopence.gemspec Rakefile ext/twopence/extconf.rb \
                     ext/twopence/glue.c ext/twopence/target.h ext/twopence/target.c \
                     ../library/twopence.h
-	cp ../library/twopence.h ext/library/
 	gem build twopence.gemspec
 
 install: twopence-0.3.0.gem
@@ -26,7 +25,6 @@ install: twopence-0.3.0.gem
 	rm $(DESTDIR)$(RBDIR)/gems/twopence-0.3.0/ext/twopence/target.h
 	rm $(DESTDIR)$(RBDIR)/gems/twopence-0.3.0/ext/twopence/target.c
 	rm $(DESTDIR)$(RBDIR)/gems/twopence-0.3.0/ext/twopence/glue.c
-	rm $(DESTDIR)$(RBDIR)/gems/twopence-0.3.0/ext/library/twopence.h
 
 clean:
 	rm -f ext/library/twopence.h
