@@ -65,8 +65,6 @@ server_get_user(const char *username, int *status)
 struct saved_ids {
 	uid_t		uid;
 	gid_t		gid;
-	int		ngroups;
-	gid_t		groups[NGROUPS_MAX];
 };
 
 static void
@@ -75,21 +73,15 @@ server_restore_privileges(struct saved_ids *saved_ids)
 	if (saved_ids->uid == -1)
 		return;
 
-	setuid(saved_ids->uid);
-	if (getuid() != saved_ids->uid) {
+	seteuid(saved_ids->uid);
+	if (geteuid() != saved_ids->uid) {
 		fprintf(stderr, "Unable to restore previous uid %u: abort\n", saved_ids->uid);
 		abort();
 	}
 
-	setgid(saved_ids->gid);
-	if (getgid() != saved_ids->gid) {
+	setegid(saved_ids->gid);
+	if (getegid() != saved_ids->gid) {
 		fprintf(stderr, "Unable to restore previous gid %u: abort\n", saved_ids->gid);
-		abort();
-	}
-
-	if (saved_ids->ngroups >= 0
-	 && setgroups(saved_ids->ngroups, saved_ids->groups) < 0) {
-		fprintf(stderr, "Unable to restore previous supplementary gids: abort\n");
 		abort();
 	}
 }
@@ -111,7 +103,7 @@ server_build_path(const char *dir, const char *file)
 }
 
 static bool
-server_change_hats(const struct passwd *user, struct saved_ids *saved_ids, int *status)
+server_change_hats_temporarily(const struct passwd *user, struct saved_ids *saved_ids, int *status)
 {
 	/* Do nothing for the root user */
 	if (!strcmp(user->pw_name, "root")) {
@@ -121,19 +113,32 @@ server_change_hats(const struct passwd *user, struct saved_ids *saved_ids, int *
 
 	saved_ids->uid = getuid();
 	saved_ids->gid = getgid();
-	saved_ids->ngroups = getgroups(NGROUPS_MAX, saved_ids->groups);
 
-	if (saved_ids->ngroups < 0) {
-		fprintf(stderr, "root is in too many groups, cannot save group vector: %m");
-	} else {
-		if (initgroups(user->pw_name, user->pw_gid) < 0
-		 || setgid(user->pw_gid) < 0
-		 || setuid(user->pw_uid) < 0) {
-			*status = errno;
-			fprintf(stderr, "Unable to drop privileges to become user %s: %m", user->pw_name);
-			server_restore_privileges(saved_ids);
-			return false;
-		}
+	if (initgroups(user->pw_name, user->pw_gid) < 0
+	 || setegid(user->pw_gid) < 0
+	 || seteuid(user->pw_uid) < 0) {
+		*status = errno;
+		fprintf(stderr, "Unable to drop privileges to become user %s: %m", user->pw_name);
+		server_restore_privileges(saved_ids);
+		return false;
+	}
+
+	return true;
+}
+
+static bool
+server_change_hats_permanently(const struct passwd *user, int *status)
+{
+	/* Do nothing for the root user */
+	if (!strcmp(user->pw_name, "root"))
+		return true;
+
+	if (initgroups(user->pw_name, user->pw_gid) < 0
+	 || setgid(user->pw_gid) < 0
+	 || setuid(user->pw_uid) < 0) {
+		*status = errno;
+		fprintf(stderr, "Unable to drop privileges to become user %s: %m", user->pw_name);
+		return false;
 	}
 
 	return true;
@@ -169,7 +174,7 @@ server_open_file_as(const char *username, const char *filename, int oflags, int 
 		if (fd < 0)
 			*status = errno;
 	} else {
-		if (!server_change_hats(user, &saved_ids, status))
+		if (!server_change_hats_temporarily(user, &saved_ids, status))
 			return -1;
 		fd = open(filename, oflags, 0660);
 		if (fd < 0)
@@ -372,7 +377,6 @@ server_run_command_as(const char *username, unsigned int timeout, const char *cm
 		goto failed;
 	}
 	if (pid == 0) {
-		struct saved_ids saved_ids;
 		int fd, numfds;
 
 		/* Child */
@@ -386,7 +390,7 @@ server_run_command_as(const char *username, unsigned int timeout, const char *cm
 		for (fd = 3; fd < numfds; ++fd)
 			close(fd);
 
-		if (!server_change_hats(user, &saved_ids, status))
+		if (!server_change_hats_permanently(user, status))
 			exit(126);
 
 		alarm(timeout? timeout : DEFAULT_COMMAND_TIMEOUT);
@@ -439,7 +443,7 @@ server_inject_file(transaction_t *trans, const char *username, const char *filen
 	int status;
 	int fd;
 
-	if ((fd = server_open_file_as(username, filename, O_WRONLY|O_CREAT, &status)) < 0) {
+	if ((fd = server_open_file_as(username, filename, O_WRONLY|O_CREAT|O_TRUNC, &status)) < 0) {
 		transaction_fail(trans, status);
 		return false;
 	}
@@ -456,6 +460,12 @@ server_inject_file(transaction_t *trans, const char *username, const char *filen
 
 	trans->byte_count = filesize;
 	trans->recv = server_inject_file_recv;
+
+	if (trans->byte_count == 0) {
+		transaction_send_minor(trans, 0);
+		socket_shutdown_write(trans->local_sink);
+		trans->done = true;
+	}
 	return true;
 }
 

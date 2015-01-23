@@ -1,10 +1,19 @@
 PYVERSION ?= 2.6
-CFLAGS	   = -fPIC -I/usr/include/python${PYVERSION} -I../library -Wall -g
-PYDIR	  ?= /usr/lib64/python${PYVERSION}/site-packages
-OBJS	   = extension.o \
-	     command.o \
-	     status.o \
-	     target.o
+
+ifdef RPM_OPT_FLAGS
+CCOPT	= $(RPM_OPT_FLAGS)
+else
+CCOPT	= -Wall -O2 -g
+endif
+
+CFLAGS	= -fPIC -I/usr/include/python -I../library $(CCOPT)
+
+PYDIR  := $(shell readlink -f /usr/lib64/python/site-packages)
+
+OBJS	= extension.o \
+	  command.o \
+	  status.o \
+	  target.o
 
 all: twopence.so
 

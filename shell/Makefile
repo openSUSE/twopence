@@ -1,7 +1,7 @@
 .PHONY: all install clean
 
-ifdef RPM_OPTIMIZE
-CCOPT	= $(RPM_OPTIMIZE)
+ifdef RPM_OPT_FLAGS
+CCOPT	= $(RPM_OPT_FLAGS)
 else
 CCOPT	= -Wall -O2 -g
 endif

@@ -23,4 +23,5 @@ install::
 tests:
 	set -e; for plugin in virtio; do \
 		examples/run-$$plugin examples/test.sh; \
+		examples/run-$$plugin examples/test.py; \
 	done
