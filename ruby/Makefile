@@ -17,14 +17,7 @@ install: twopence-0.3.0.gem
 	CFLAGS="-I$(DESTDIR)$(INCDIR)" \
 	  LDFLAGS="-L$(DESTDIR)$(LIBDIR)" \
 	  gem install --local --install-dir $(DESTDIR)$(RBDIR)/ -V --force twopence-0.3.0.gem
-	#
-	# comment out the following lines if you want to be able to rebuild the gem on the target system:
 	rm $(DESTDIR)$(LIBDIR)/libtwopence.so
-	rm $(DESTDIR)$(RBDIR)/gems/twopence-0.3.0/ext/twopence/.RUBYARCHDIR.time
-	rm $(DESTDIR)$(RBDIR)/gems/twopence-0.3.0/ext/twopence/extconf.rb
-	rm $(DESTDIR)$(RBDIR)/gems/twopence-0.3.0/ext/twopence/target.h
-	rm $(DESTDIR)$(RBDIR)/gems/twopence-0.3.0/ext/twopence/target.c
-	rm $(DESTDIR)$(RBDIR)/gems/twopence-0.3.0/ext/twopence/glue.c
 
 clean:
 	rm -f ext/library/twopence.h
