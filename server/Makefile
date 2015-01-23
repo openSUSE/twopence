@@ -6,16 +6,23 @@ else
 CCOPT	= -Wall -O2 -g
 endif
 
+SERVER	= twopence_test_server
+OBJS	= main.o \
+	  connection.o \
+	  protocol.o \
+	  server.o \
+	  socket.o
+
 CFLAGS	= -D_GNU_SOURCE $(CCOPT)
 
-all: twopence_test_server
+all: $(SERVER)
 
-twopence_test_server: test_server.o
-	$(CC) test_server.o -o twopence_test_server
+$(SERVER): $(OBJS)
+	$(CC) $(OBJS) -o $@
 
-install: twopence_test_server
+install: $(SERVER)
 	mkdir -p $(DESTDIR)/usr/lib/twopence
-	cp twopence_test_server $(DESTDIR)/usr/lib/twopence/
+	install -m555 $(SERVER) $(DESTDIR)/usr/lib/twopence/
 
 clean:
-	rm -f twopence_test_server *.o
+	rm -f $(SERVER) *.o

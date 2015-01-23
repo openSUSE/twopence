@@ -48,6 +48,7 @@ twopence_pipe_target_init(struct twopence_pipe_target *target, int plugin_type, 
   target->base.ops = plugin_ops;
   target->link_timeout = LINE_TIMEOUT;
   target->link_ops = link_ops;
+  target->link_fd = -1;
 }
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
@@ -117,7 +118,9 @@ _twopence_invalid_username(const char *username)
 static int
 __twopence_pipe_open_link(struct twopence_pipe_target *handle)
 {
-  return handle->link_ops->open(handle);
+  if (handle->link_fd < 0)
+    handle->link_fd = handle->link_ops->open(handle);
+  return handle->link_fd;
 }
 
 static inline int
@@ -457,7 +460,7 @@ _twopence_read_size(struct twopence_pipe_target *handle, int link_fd, int *size,
       break;
     case 'M':
       sscanf(buffer + 4, "%d", remote_rc);
-      break;
+      return TWOPENCE_RECEIVE_FILE_ERROR;
     default:
       return TWOPENCE_RECEIVE_FILE_ERROR;
   }
@@ -597,7 +600,6 @@ __twopence_pipe_command
   if (sent != n + 1)
   {
     twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
-    close(link_fd);
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
 
@@ -606,13 +608,11 @@ __twopence_pipe_command
   if (rc < 0)
   {
     twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
-    close(link_fd);
     return rc;
   }
 
   /* FIXME: we should really reset the sink on all exit paths from this function */
   twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
-  close(link_fd);
   return 0;
 }
 
@@ -652,7 +652,6 @@ int _twopence_inject_virtio_serial
   sent = __twopence_pipe_sendbuf(handle, link_fd, command, n + 1);
   if (sent != n + 1)
   {
-    close(link_fd);
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
 
@@ -661,7 +660,6 @@ int _twopence_inject_virtio_serial
   rc = _twopence_read_major(handle, link_fd, remote_rc);
   if (*remote_rc != 0)
   {
-    close(link_fd);
     return TWOPENCE_SEND_FILE_ERROR;
   }
 
@@ -669,7 +667,6 @@ int _twopence_inject_virtio_serial
   rc = _twopence_send_file(handle, file_fd, link_fd, filestats.st_size);
   if (rc < 0)
   {
-    close(link_fd);
     return TWOPENCE_SEND_FILE_ERROR;
   }
 
@@ -677,11 +674,9 @@ int _twopence_inject_virtio_serial
   rc = _twopence_read_minor(handle, link_fd, remote_rc);
   if (rc < 0)
   {
-    close(link_fd);
     return TWOPENCE_SEND_FILE_ERROR;
   }
 
-  close(link_fd);
   return 0;
 }
 
@@ -720,7 +715,6 @@ int _twopence_extract_virtio_serial
   sent = __twopence_pipe_sendbuf(handle, link_fd, command, n + 1);
   if (sent != n + 1)
   {
-    close(link_fd);
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
 
@@ -728,7 +722,6 @@ int _twopence_extract_virtio_serial
   rc = _twopence_read_size(handle, link_fd, &size, remote_rc);
   if (rc < 0)
   {
-    close(link_fd);
     return TWOPENCE_RECEIVE_FILE_ERROR;
   }
 
@@ -740,7 +733,6 @@ int _twopence_extract_virtio_serial
       return TWOPENCE_RECEIVE_FILE_ERROR;
   }
 
-  close(link_fd);
   return 0;
 }
 
@@ -771,11 +763,9 @@ int _twopence_exit_virtio_serial
   sent = __twopence_pipe_sendbuf(handle, link_fd, command, n + 1);
   if (sent != n + 1)
   {
-    close(link_fd);
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
 
-  close(link_fd);
   return 0;
 }
 
@@ -806,11 +796,9 @@ int _twopence_interrupt_virtio_serial
   sent = __twopence_pipe_sendbuf(handle, link_fd, command, n + 1);
   if (sent != n + 1)
   {
-    close(link_fd);
     return TWOPENCE_INTERRUPT_COMMAND_ERROR;
   }
 
-  close(link_fd);
   return 0;
 }
 
@@ -934,6 +922,11 @@ void
 twopence_pipe_end(struct twopence_target *opaque_handle)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
+
+  if (handle->link_fd >= 0) {
+    close(handle->link_fd);
+    handle->link_fd = -1;
+  }
 
   free(handle);
 }

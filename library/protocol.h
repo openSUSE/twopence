@@ -12,6 +12,8 @@ struct twopence_pipe_target {
 
   unsigned long link_timeout;
   const struct twopence_pipe_ops *link_ops;
+
+  int link_fd;
 };
 
 
