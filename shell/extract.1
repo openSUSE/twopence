@@ -20,8 +20,8 @@ twopence_extract \- extract a test result
 .B twopence_extract
 extracts a remote file from the system under test (SUT).
 .PP
-The SUT can be accessed by any means provided by a Twopence
-plugin: virtio (for QEmu/KVM virtual machines), ssh, or serial
+The SUT can be accessed by any means provided by Twopence:
+virtio (for QEmu/KVM virtual machines), ssh, or serial
 (with a null-modem cable). This access method and the exact
 location of the SUT are defined by the
 .I TARGET
@@ -69,26 +69,20 @@ is the filename of the file to send from the SUT.
 .I LOCAL
 is the filename of the location where to write the received file.
 
-.SH FILES
-.I /usr/lib/twopence/twopence_test_server
-.RS
-The server to be installed on the system under test when using
-the virtio or serial access methods.
-
 .SH EXAMPLES
-Example syntax for the virtio plugin:
+Example syntax for the virtio access method:
 .IP \fBtwopence_extract\ \-u\ johndoe\ virtio:/tmp/sut.sock\ remote_file.txt\ local_file.txt\fR
 it will use
 .I /tmp/sut.sock
 to communicate with the QEmu/KVM host.
 .PP
-Example syntax for the ssh plugin:
+Example syntax for the ssh access method:
 .IP \fBtwopence_extract\ \-\-user=johndoe\ ssh:host.example.com\ remote_file.txt\ local_file.txt\fR
 it is functionally equivalent to
 \fBscp\ johndoe@host.example.com:remote_file.txt\ local_file.txt\fR
 without server footprint verification.
 .PP
-Example syntax for the serial plugin:
+Example syntax for the serial access method:
 .IP \fBtwopence_command\ serial:/dev/ttyS0\ remote_file.txt\ local_file.txt\fR
 
 .SH BUGS
@@ -107,4 +101,9 @@ The Twopence developpers at SUSE Linux.
 .SH SEE ALSO
 .BR twopence_command (1),
 .BR twopence_inject (1),
-.BR twopence_exit (1).
+.BR twopence_exit (1),
+other shell commands to access the System Under Test.
+.PP
+.BR twopence_test_server (1),
+the server to be installed on the System Under Test when using
+the virtio or serial access methods.

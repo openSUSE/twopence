@@ -6,6 +6,7 @@ else
 CCOPT	= -Wall -O2 -g
 endif
 
+BINDIR ?= /usr/bin
 SERVER	= twopence_test_server
 OBJS	= main.o \
 	  connection.o \
@@ -21,8 +22,10 @@ $(SERVER): $(OBJS)
 	$(CC) $(OBJS) -o $@
 
 install: $(SERVER)
-	mkdir -p $(DESTDIR)/usr/bin
-	install -m555 $(SERVER) $(DESTDIR)/usr/bin
+	mkdir -p $(DESTDIR)$(BINDIR)
+	install -m555 $(SERVER) $(DESTDIR)$(BINDIR)
+	mkdir -p $(DESTDIR)$(MANDIR)/man1
+	gzip -c server.1 > $(DESTDIR)$(MANDIR)/man1/twopence_test_server.1.gz
 
 clean:
 	rm -f $(SERVER) *.o

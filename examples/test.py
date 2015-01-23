@@ -307,5 +307,12 @@ print "command='cat' with stdin connected to the result of 'ls'"
 print "(note: test to be written)"
 print
 
+# I will disjoin examples and automated testing
+print "command='cat' (press Ctrl-D to end or Ctrl-C to interrupt)"
+# TODO: does not work at the moment
+print "(note: does not work at the moment)"
+cmd = twopence.Command("cat");
+target.run(cmd)
+print
 
 testSuiteExit()

@@ -1,4 +1,7 @@
 BUGS
+   o twopence_command ssh:sut whoami
+     inserts \r at end of output
+
    o protocol.c:
      interrupts are not forwarded anymore to the test server
 
@@ -41,13 +44,6 @@ FUNCTIONALITY
    o write help pages
      Ruby
      Python
-
-   o split into several packages
-     libtwopence0       (library)
-     twopence-client    (shell commands)
-     rubygem-twopence   (Ruby bindings)
-     python-twopence    (Python bindings)
-     twopence-server    (virtio and serial test server)
 
    o display a short help message for the twopence_exit command
      -h --help
