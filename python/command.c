@@ -195,6 +195,7 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 
 	cmd->user = self->user;
 	cmd->timeout = self->timeout;
+	cmd->request_tty = self->useTty;
 
 	twopence_command_ostreams_reset(cmd);
 	if (self->suppressOutput || self->stdout == Py_None) {
@@ -287,6 +288,13 @@ Command_getattr(twopence_Command *self, char *name)
 		return Command_stdout(self);
 	if (!strcmp(name, "stderr"))
 		return Command_stderr(self);
+	if (!strcmp(name, "useTty")) {
+		PyObject *rv;
+
+		rv = self->useTty? Py_True : Py_False;
+		Py_INCREF(rv);
+		return rv;
+	}
 
 	return Py_FindMethod(twopence_commandMethods, (PyObject *) self, name);
 }
@@ -320,6 +328,10 @@ Command_setattr(twopence_Command *self, char *name, PyObject *v)
 		if (!PyString_Check(v) || (s = PyString_AsString(v)) == NULL)
 			goto bad_attr;
 		self->timeout = atol(s);
+		return 0;
+	}
+	if (!strcmp(name, "useTty")) {
+		self->useTty = !!(PyObject_IsTrue(v));
 		return 0;
 	}
 

@@ -44,6 +44,7 @@ typedef struct {
 	int		suppressOutput;
 	PyObject *	stdout;
 	PyObject *	stderr;
+	bool		useTty;
 } twopence_Command;
 
 typedef struct {
