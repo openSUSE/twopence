@@ -2,10 +2,10 @@
 #
 # Test script to exercise the shell commands.
 #
-# Profile a target on the command line using
-#   test.sh virtio:/var/run/twopence/test.sock
-#   test.sh ssh:192.168.123.45
-#   test.sh serial:/dev/ttyS0
+# Provide a target on the command line using
+#   shell_test.sh virtio:/var/run/twopence/test.sock
+#   shell_test.sh ssh:192.168.123.45
+#   shell_test.sh serial:/dev/ttyS0
 ##########################################################
 
 if [ $# -gt 0 ]; then

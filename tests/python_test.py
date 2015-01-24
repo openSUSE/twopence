@@ -1,4 +1,12 @@
 #!/usr/bin/env python
+#
+# Test script to exercise the Python wrapper.
+#
+# Provide a target on the command line using
+#   python_test.py virtio:/var/run/twopence/test.sock
+#   python_test.py ssh:192.168.123.45
+#   python_test.py serial:/dev/ttyS0
+##########################################################
 
 import twopence
 import sys
@@ -148,7 +156,8 @@ testCaseReport()
 testCaseBegin("run command kill -9 $$")
 try:
 	status = target.run("bash -c 'kill -9 $$'")
-	# Weird exit status - not sure where this is coming from
+	# Weird exit status - not sure where this is coming from -- okir
+	# I get 9 in the major, makes more sense indeed -- ebischoff
 	testCaseCheckStatus(status, 947)
 except:
 	testCaseException()

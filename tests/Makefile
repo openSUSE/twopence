@@ -5,7 +5,7 @@
 
 all:
 	set -e; for access_method in virtio; do \
-		for test in test.sh test.py test.rb; do \
+		for test in shell_test.sh python_test.py ruby_test.sh; do \
 			./run-$$access_method ./$$test; \
 		done; \
 	done
