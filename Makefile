@@ -1,5 +1,5 @@
 .PHONY: all install clean \
-        library server ruby shell examples \
+        library server ruby shell examples tests \
         library-install server-install ruby-install shell-install examples-install \
         library-clean server-clean ruby-clean shell-clean examples-clean
 
@@ -20,8 +20,5 @@ install::
 	mkdir -p $(DESTDIR)/usr/lib/twopence-0
 	cp add_virtio_channel.sh $(DESTDIR)/usr/lib/twopence-0/
 
-tests:
-	set -e; for plugin in virtio; do \
-		examples/run-$$plugin examples/test.sh; \
-		examples/run-$$plugin examples/test.py; \
-	done
+tests: server shell
+	make -C tests

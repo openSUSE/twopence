@@ -11,6 +11,11 @@ BUGS
      (interactive test)
 
    o Python:
+     messages like
+       'run "ls" as user root'
+     are always displayed, no way to hide them
+
+   o Python:
      how to pipe result of local command to remote host?
      (without intermediary files)
      it's possible with shell and ruby versions
@@ -44,6 +49,11 @@ FUNCTIONALITY
    o write help pages
      Ruby
      Python
+
+   o Python:
+     have keywords for all attributes
+     currently unable to write for example
+       target.run("ping", suppressOutput = 1)
 
    o display a short help message for the twopence_exit command
      -h --help
