@@ -7,7 +7,8 @@ endif
 
 CFLAGS	= -fPIC -I/usr/include/python -I../library $(CCOPT)
 
-PYDIR  := $(shell readlink -f /usr/lib64/python/site-packages)
+LIBDIR ?= /usr/lib64
+PYDIR  := $(shell readlink -f $(LIBDIR)/python/site-packages)
 
 OBJS	= extension.o \
 	  command.o \
