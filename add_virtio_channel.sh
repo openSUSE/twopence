@@ -31,7 +31,7 @@ function add_port
     echo "Error: virtio port already exists in VM \"${domain}\""
     echo
   else
-    sed -i "/<\/console>/ a\ \
+    sed -i "/<devices>/ a\ \
    <channel type='unix'>\n\
        <source mode='bind' path='${socket}'/>\n\
        <target type='virtio' name='${name}'/>\n\
