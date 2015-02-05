@@ -13,7 +13,7 @@ twopence-0.3.0.gem: twopence.gemspec Rakefile ext/twopence/extconf.rb \
 	gem build twopence.gemspec
 
 install: twopence-0.3.0.gem
-	ln -s $(DESTDIR)$(LIBDIR)/libtwopence.so.0.3.0 $(DESTDIR)$(LIBDIR)/libtwopence.so
+	ln -sf $(DESTDIR)$(LIBDIR)/libtwopence.so.0.3.0 $(DESTDIR)$(LIBDIR)/libtwopence.so
 	CFLAGS="-I$(DESTDIR)$(INCDIR)" \
 	  LDFLAGS="-L$(DESTDIR)$(LIBDIR)" \
 	  gem install --local --install-dir $(DESTDIR)$(RBDIR)/ -V --force twopence-0.3.0.gem
