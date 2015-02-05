@@ -171,7 +171,7 @@ VALUE method_test_and_drop_results(VALUE self, VALUE ruby_args)
   if (len >= 3)
   {
     ruby_timeout = rb_ary_entry(ruby_args, 2);
-    Check_Type(ruby_timeout, T_BIGNUM);
+    Check_Type(ruby_timeout, T_FIXNUM);
   }
   else ruby_timeout = LONG2NUM(60L);
   Data_Get_Struct(self, struct twopence_target, target);
@@ -223,7 +223,7 @@ VALUE method_test_and_store_results_together(VALUE self, VALUE ruby_args)
   if (len >= 3)
   {
     ruby_timeout = rb_ary_entry(ruby_args, 2);
-    Check_Type(ruby_timeout, T_BIGNUM);
+    Check_Type(ruby_timeout, T_FIXNUM);
   }
   else ruby_timeout = LONG2NUM(60L);
   Data_Get_Struct(self, struct twopence_target, target);
@@ -280,7 +280,7 @@ VALUE method_test_and_store_results_separately(VALUE self, VALUE ruby_args)
   if (len >= 3)
   {
     ruby_timeout = rb_ary_entry(ruby_args, 2);
-    Check_Type(ruby_timeout, T_BIGNUM);
+    Check_Type(ruby_timeout, T_FIXNUM);
   }
   else ruby_timeout = LONG2NUM(60L);
   Data_Get_Struct(self, struct twopence_target, target);
