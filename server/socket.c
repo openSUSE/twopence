@@ -78,8 +78,6 @@ struct packet {
 #define SHUTDOWN_WANTED		1
 #define SHUTDOWN_SENT		2
 
-unsigned int	server_tracing = 1;
-
 void
 buffer_init(buffer_t *bp)
 {

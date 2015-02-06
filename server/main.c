@@ -55,6 +55,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 static void		service_connection(int);
 static void		server_daemonize(void);
 
+unsigned int		server_tracing = 0;
+
+
 ////////////////////////////////////// Lower layer ///////////////////////////
 
 // Open the serial port
@@ -203,6 +206,7 @@ int main(int argc, char *argv[])
     { "port-pty", no_argument, NULL, 'P' },
     { "port-unix", required_argument, NULL, 'U' },
     { "daemon", no_argument, NULL, 'D' },
+    { "debug", no_argument, NULL, 'd' },
     { NULL }
   };
   int opt_oneshot = 0;
@@ -214,10 +218,14 @@ int main(int argc, char *argv[])
   // Welcome message, check arguments
   printf("Twopence test server version 0.3.0\n");
 
-  while ((c = getopt_long(argc, argv, "DP:S::U:", long_opts, NULL)) != -1) {
+  while ((c = getopt_long(argc, argv, "DdP:S::U:", long_opts, NULL)) != -1) {
     switch (c) {
     case '1':
       opt_oneshot = 1;
+      break;
+
+    case 'd':
+      server_tracing++;
       break;
 
     case 'D':
