@@ -16,10 +16,13 @@ BUGS
      buffer allocation errors are not handled anymore
      (calloc() returning NULL)
 
+   o test server:
+     no more information about what is being done by the server
+     injects sometimes fail
+
    o Makefiles:
      "make clean" leaves files behind
 
-   o packaging: need to create /var/run/twopence (owned by qemu.qemu)
 
 REFACTORING
    o plugins:
