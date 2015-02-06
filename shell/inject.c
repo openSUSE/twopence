@@ -91,7 +91,7 @@ int main(int argc, char *argv[])
     printf("File successfully injected\n");
   else
   {
-    twopence_perror("Unable to extract file", rc);
+    twopence_perror("Unable to inject file", rc);
     rc = RC_EXTRACT_FILE_ERROR;
   }
   if (remote_error != 0)
