@@ -79,10 +79,17 @@ connection_new(semantics_t *semantics, socket_t *client_sock)
 }
 
 void
-connection_free(connection_t *conn)
+connection_close(connection_t *conn)
 {
 	if (conn->client_sock)
 		socket_free(conn->client_sock);
+	conn->client_sock = NULL;
+}
+
+void
+connection_free(connection_t *conn)
+{
+	connection_close(conn);
 	if (conn->current_transaction)
 		transaction_free(conn->current_transaction);
 	free(conn);
@@ -275,17 +282,23 @@ connection_doio(connection_t *conn)
 		}
 
 		if (socket_is_dead(sock)) {
-			socket_free(sock);
-			conn->client_sock = NULL;
+			connection_close(conn);
 		}
 	}
 
 	if ((trans = conn->current_transaction) != NULL) {
 		transaction_doio(trans);
+
 		if (trans->done) {
 			TRACE("current transaction done, free it\n");
 			conn->current_transaction = NULL;
 			transaction_free(trans);
+		} else
+		if (sock && socket_is_read_eof(sock)) {
+			TRACE("Client closed socket while transaction was in process. Terminate it\n");
+			conn->current_transaction = NULL;
+			transaction_free(trans);
+			connection_close(conn);
 		}
 	}
 }
