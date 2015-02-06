@@ -265,7 +265,6 @@ Target_run(PyObject *self, PyObject *args, PyObject *kwds)
 	if (Command_build(cmdObject, &cmd) < 0)
 		goto out;
 
-	printf("run \"%s\" as user %s\n", cmd.command, cmd.user);
 	rc = twopence_run_test(handle, &cmd, &status);
 	if (rc < 0) {
 		twopence_Exception("run", rc);

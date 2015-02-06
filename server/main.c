@@ -97,6 +97,44 @@ int open_serial_port(const char *filename)
 }
 
 /*
+ * This is a crude workaround for something that needs a better fix.
+ */
+void
+wait_for_virtio_host(int serial_fd)
+{
+  struct pollfd pfd;
+  int n, nfail = 0, nloop = 0;
+
+  pfd.fd = serial_fd;
+  while (true) {
+    pfd.events = POLLIN;
+
+    n = poll(&pfd, 1, 500);
+    if (n < 0) {
+      perror("poll on serial fd");
+      if (nfail >= 10) {
+	fprintf(stderr, "Giving up.\n");
+	exit(1);
+      }
+
+      sleep(++nfail);
+      continue;
+    }
+
+    if (n > 0) {
+      /* As long as nothing has connected to the server side,
+       * we will see a POLLHUP. */
+      if (!(pfd.revents & POLLHUP))
+	return;
+
+      if (nloop++ == 0)
+        fprintf(stderr, "Waiting for someone to connect to host side socket\n");
+      usleep(500000);
+    }
+  }
+}
+
+/*
  * Open the unix port
  *
  * Returns the file descriptor if successful, -1 otherwise.
@@ -259,6 +297,13 @@ int main(int argc, char *argv[])
       serial_fd = open_serial_port(opt_port_path);
       if (serial_fd < 0)
         exit(TWOPENCE_SERVER_SOCKET_ERROR);
+
+      /* the virtio serial port will return POLLHUP for as long
+       * as nothing has connected to the host side socket.
+       * Doing an acive wait is not nice but there's nothing else
+       * we seem to be able to do.
+       */
+      wait_for_virtio_host(serial_fd);
 
       if (opt_daemon) {
 	server_daemonize();
