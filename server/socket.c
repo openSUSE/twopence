@@ -78,8 +78,6 @@ struct packet {
 #define SHUTDOWN_WANTED		1
 #define SHUTDOWN_SENT		2
 
-unsigned int	server_tracing = 1;
-
 void
 buffer_init(buffer_t *bp)
 {
@@ -443,6 +441,13 @@ socket_recv_buffer(socket_t *sock, buffer_t *bp)
 		return -1;
 	}
 
+#if 0
+	/* Testing: simulate serial pipe behavior - large packets get chopped
+	 * up into 4k chunks */
+	if (count > 4096)
+		count = 4096;
+#endif
+
 	n = read(sock->fd, buffer_tail(bp), count);
 	if (n > 0)
 		buffer_advance_tail(bp, n);
@@ -485,7 +490,7 @@ socket_post_recvbuf_if_needed(socket_t *sock, unsigned int size)
 	 * receive buffer, there's no need to post a new one.
 	 * Return NULL.
 	 */
-	if (sock->read_eof && sock->recv_buf != NULL)
+	if (sock->read_eof || sock->recv_buf != NULL)
 		return NULL;
 
 	sock->recv_buf = buffer_new(size);
