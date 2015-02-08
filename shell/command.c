@@ -132,13 +132,11 @@ Command: any UNIX command\n", program_name);
 int main(int argc, char *argv[])
 {
   int option;
-  const char *opt_user;
-  long opt_timeout;
   const char *opt_output, *opt_stdout, *opt_stderr;
   bool opt_quiet, opt_batch;
-  int opt_type;
-  const char *opt_target, *opt_command;
+  const char *opt_target;
 
+  twopence_command_t cmd;
   struct twopence_target *target;
   struct sigaction old_action;
   twopence_buffer_t stdout_buf, stderr_buf;
@@ -146,15 +144,17 @@ int main(int argc, char *argv[])
   int rc;
 
   // Parse options
-  opt_user = NULL; opt_timeout = 0L;
   opt_output = NULL; opt_stdout = NULL; opt_stderr = NULL;
   opt_quiet = false; opt_batch = false;
+
+  twopence_command_init(&cmd, NULL);
+
   while ((option = getopt_long(argc, argv, short_options, long_options, NULL))
          != -1) switch(option)         // parse individual options
   {
-    case 'u': opt_user = optarg;
+    case 'u': cmd.user = optarg;
               break;
-    case 't': opt_timeout = atol(optarg);
+    case 't': cmd.timeout = atol(optarg);
               break;
     case 'o': opt_output = optarg;
               break;
@@ -168,36 +168,58 @@ int main(int argc, char *argv[])
               break;
     case 'h': usage(argv[0]);
               exit(RC_OK);
+
+    invalid_options:
     default: usage(argv[0]);
              exit(RC_INVALID_PARAMETERS);
   }
-  if (opt_user == NULL)                // default user
-    opt_user = "root";
-  if (opt_timeout == 0L)               // default timeout
-    opt_timeout = 60L;
-  if (opt_output == NULL &&            // output specifiers
-      opt_stdout == NULL && opt_stderr == NULL)
-    opt_type = opt_quiet? 2: 1;
-  else if (opt_quiet == false &&
-           opt_output != NULL &&
-           opt_stdout == NULL && opt_stderr == NULL)
-    opt_type = 3;
-  else if (opt_quiet == false &&
-           opt_output == NULL &&
-           opt_stdout != NULL && opt_stderr != NULL)
-    opt_type = 4;
-  else
-  {
-    usage(argv[0]);
-    exit(RC_INVALID_PARAMETERS);
-  }
+
   if (argc != optind + 2)              // mandatory arguments: target and command
-  {
-    usage(argv[0]);
-    exit(RC_INVALID_PARAMETERS);
-  }
+    goto invalid_options;
+
   opt_target = argv[optind++];
-  opt_command = argv[optind++];
+  cmd.command = argv[optind++];
+
+  twopence_command_ostreams_reset(&cmd);
+  twopence_command_iostream_redirect(&cmd, TWOPENCE_STDIN, 0, false);
+
+  twopence_buffer_init(&stdout_buf);
+  twopence_buffer_init(&stderr_buf);
+
+  if (opt_quiet) {
+    if (opt_output || opt_stdout || opt_stderr) {
+      fprintf(stderr, "You cannot use options -o, -1 or -2 with -q\n");
+      goto invalid_options;
+    }
+
+    /* Output streams are not connected. */
+  } else
+  if (opt_output) {
+    if (opt_stdout || opt_stderr) {
+      fprintf(stderr, "You cannot use options -o together with -1 or -2\n");
+      goto invalid_options;
+    }
+    /* Connect both output streams to the same buffer */
+    twopence_buffer_alloc(&stdout_buf, 65536);
+    twopence_command_ostream_capture(&cmd, TWOPENCE_STDOUT, &stdout_buf);
+    twopence_command_ostream_capture(&cmd, TWOPENCE_STDERR, &stdout_buf);
+  } else
+  if (opt_stdout || opt_stderr) {
+    /* Connect both output streams to separate buffers */
+    twopence_buffer_alloc(&stdout_buf, 65536);
+    twopence_command_ostream_capture(&cmd, TWOPENCE_STDOUT, &stdout_buf);
+    twopence_buffer_alloc(&stderr_buf, 65536);
+    twopence_command_ostream_capture(&cmd, TWOPENCE_STDERR, &stderr_buf);
+  } else {
+    /* No output, no -q option. Just send everything to our regular output. */
+
+    /* FIXME: if our stdout and stderr are redirected to the same file,
+     * we should merge the standard output of the command on the server
+     * side. */
+
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 1, false);
+    twopence_command_iostream_redirect(&cmd, TWOPENCE_STDERR, 2, false);
+  }
 
   // Create target object
   rc = twopence_target_new(opt_target, &target);
@@ -216,35 +238,8 @@ int main(int argc, char *argv[])
     exit(RC_SIGNAL_HANDLER_ERROR);
   }
 
-  twopence_buffer_init(&stdout_buf);
-  twopence_buffer_init(&stderr_buf);
-
   // Run command
-  switch (opt_type)
-  {
-    case 1:
-      rc = twopence_test_and_print_results
-             (target, opt_user, opt_timeout, opt_command,
-              &status);
-      break;
-    case 2:
-      rc = twopence_test_and_drop_results
-             (target, opt_user, opt_timeout, opt_command,
-              &status);
-      break;
-    case 3:
-      twopence_buffer_alloc(&stdout_buf, 65536);
-      rc = twopence_test_and_store_results_together
-             (target, opt_user, opt_timeout, opt_command,
-              &stdout_buf, &status);
-      break;
-    case 4:
-      twopence_buffer_alloc(&stdout_buf, 65536);
-      twopence_buffer_alloc(&stderr_buf, 65536);
-      rc = twopence_test_and_store_results_separately
-             (target, opt_user, opt_timeout, opt_command,
-              &stdout_buf, &stderr_buf, &status);
-  }
+  rc = twopence_run_test(twopence_handle, &cmd, &status);
 
   if (rc == 0)
   {
@@ -271,15 +266,14 @@ int main(int argc, char *argv[])
   }
 
   // Write captured stdout and stderr to 0, 1, or 2 files
-  switch (opt_type)
-  {
-    case 3:
-      if (write_output(opt_output, &stdout_buf) < 0)
-        if (rc == 0) rc = RC_WRITE_RESULTS_ERROR;
-      break;
-    case 4:
+  if (opt_output) {
+    if (write_output(opt_output, &stdout_buf) < 0)
+      if (rc == 0) rc = RC_WRITE_RESULTS_ERROR;
+  } else {
+    if (opt_stdout)
       if (write_output(opt_stdout, &stdout_buf) < 0)
         if (rc == 0) rc = RC_WRITE_RESULTS_ERROR;
+    if (opt_stderr)
       if (write_output(opt_stderr, &stderr_buf) < 0)
         if (rc == 0) rc = RC_WRITE_RESULTS_ERROR;
   }
