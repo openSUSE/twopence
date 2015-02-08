@@ -20,6 +20,12 @@ if [ -z "$TARGET" ]; then
 EOF
 fi
 
+rspec=`type -p rspec`
+if [ $? -ne 0 -o -z "$rspec" ]; then
+  echo "rspec command not found; skipping ruby tests"
+  exit 0
+fi
+
 # we can't pass command line arguments to rspec
 # but we can use $TARGET environment variable
 rspec spec/ruby_test.rb

@@ -20,33 +20,37 @@ if [ -z "$TARGET" ]; then
 	EOF
 fi
 
+if [ -z "$TOPDIR" ]; then
+	myname=`readlink -f $0`
+	TOPDIR=${myname%/tests/*}
+fi
+if [ -z "$LD_LIBRARY_PATH" ]; then
+	export LD_LIBRARY_PATH=$TOPDIR/library
+fi
+
 overall_status=0
 
 function twopence_command {
 
 	echo "### ../shell/command $@" >&2
-	export LD_LIBRARY_PATH=$PWD/library
 	../shell/command "$@"
 }
 
 function twopence_command_background {
 
 	echo "### ../shell/command $@" >&2
-	export LD_LIBRARY_PATH=$PWD/library
 	../shell/command "$@" &
 }
 
 function twopence_inject {
 
 	echo "### ../shell/inject $@" >&2
-	export LD_LIBRARY_PATH=$PWD/library
 	../shell/inject "$@"
 }
 
 function twopence_extract {
 
 	echo "### ../shell/extract $@" >&2
-	export LD_LIBRARY_PATH=$PWD/library
 	../shell/extract "$@"
 }
 
