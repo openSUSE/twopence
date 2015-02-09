@@ -127,8 +127,8 @@ fi
 test_case_report
 
 
-test_case_begin "silent command 'ping -c1 8.8.8.8'"
-twopence_command -q $TARGET 'ping -c1 8.8.8.8'
+test_case_begin "silent command 'ping -c1 127.0.0.1'"
+twopence_command -q $TARGET 'ping -c1 127.0.0.1'
 test_case_check_status $?
 test_case_report
 
