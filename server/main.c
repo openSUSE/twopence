@@ -218,7 +218,7 @@ int main(int argc, char *argv[])
   // Welcome message, check arguments
   printf("Twopence test server version 0.3.0\n");
 
-  while ((c = getopt_long(argc, argv, "DdP:S::U:", long_opts, NULL)) != -1) {
+  while ((c = getopt_long(argc, argv, "DdPS:U:", long_opts, NULL)) != -1) {
     switch (c) {
     case '1':
       opt_oneshot = 1;

@@ -1,45 +1,111 @@
 .\" Process this file with
 .\" groff -man -Tascii server.1
 .\"
+.\" Make this a variable in case we want to install it with a different
+.\" name at some point :)
+.ds SN \fBtwopence_test_server\fP
+.\"
 .TH TWOPENCE_TEST_SERVER "1" "January 2015" "Twopence 0.3.0" "Server side commands"
 
 .SH NAME
 twopence_test_server \- Twopence test server for serial and virtio access methods.
 
 .SH SYNOPSIS
-.B twopence_test_server [
-.I serial_port
-.B ]
+.BI "twopence_test_server [" options "] [" portspec "]
 
+.\" --------------------------------------------------------------
+.\"
+.\"
 .SH DESCRIPTION
 .B twopence_test_server
 is a part of Twopence test environment. It is meant to be installed in the
 System Under Tests (SUT).
 .PP
-.B twopence_test_server
-listens on a serial port, waiting for shell commands to execute, or for file
-transfer requests.
-
+The test server opens a port (which can be either a tty device
+or a Unix domain socket) and waits for shell commands to execute,
+or for file transfer requests.
+.PP
+.B Caveat:
+the twopence framework was designed for testing purposes and
+does not support any type of authentication. A running twopence server
+will execute
+.I any commands under any user identity 
+the client requests.
+.PP
+Note that at this time, the server will service only one incoming
+connection at a time.
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Port Specification
+Currently, the test server is able to service tty ports and Unix
+domain sockets.
+.PP
+TTY devices can be useful in several scenarios. One case is
+when the SUT is a virtual machine running under KVM, where you can
+use a virtio-serial device for communication between host and guest.
+The name under which the virtio port will appear inside the guest is
+controlled via the libvirt configuration file on the host side. If
+you use the \fBadd_virtio_channel.sh\fP script included in the twopence
+source distribution, the serial port will be named
+\fBorg.opensuse.twopence.0\fP.
+.PP
+The other use case for TTY based communication is if the SUT is a
+bare metal machine controlled through a serial port (eg a null modem
+cable). In this case, the serial port would be named \fB/dev/ttyS0\fP
+or similar.
+.PP
+Alternatively, the test server is currently able to service incoming
+connections on a Unix domain socket. This behavior can be enabled
+by specifying the \fB--port-unix\fP option on the command line. This
+is mostly useful for exercising the twopence test suite, but might
+also become useful if you want to build some sort of tunneling
+setup.
+.PP
+When using \*(SN in a container scenario, you could use either a
+pty master/slave pair or Unix socket to communicate with the test
+server running inside the SUT container.
+.PP
+The type and path of the port on which the test server will listen can
+be selected by command line options. It can be specified in one of the
+following ways:
+.IP "\fIdevice-path
+The specified pathname should refer to a tty device - \*(SN will open
+this device and configure it. The serial speed will be set to
+115200 Baud, and communication parameters will be set to 8N1 (eight
+bits, no parity, one stop bit).
+.IP "No port specification:
+This will cause \*(SN to service the default serial port
+\fB/dev/org.opensuse.twopence.0\fP. Serial parameters will be set
+as described above.
+.IP "\fB--port-unix\fP \fIpath\fP
+The specified pathname is used as the name of the Unix domain socket
+to create. If the socket exists already, it will be removed first.
+.PP
+.\" --------------------------------------------------------------
+.\"
+.\"
 .SH OPTIONS
-.IP \fIserial_port\fR
-The name of the serial port used to communicate with
-the controlling computer.
-.PP
-This "serial port" can either be a real device like
-.B /dev/ttyS0
-if the SUT is a real test machine, or a virtual port like
-.B /dev/org.opensuse.twopence.0
-provided by KVM's virtio_serial facility.
-.PP
-If this perameter is omitted,
-.B twopence_test_server
-will listen by default on
-.B /dev/org.opensuse.twopence.0
-which is suited for a System Under Tests running in a KVM virtual
-machine.
-
+.IP "\fB--daemon\fP
+By default, \*(SN will run in the foreground. Specifying the \fB--daemon\fP option
+causes the process to detach itself from the controlling terminal and proceed
+to run in the background.
+.IP
+Note the complete absence of locking mechanisms or PID files in this service.
+If you run two test servers on the same port, things will break quite badly.
+.IP "\fB--one-shot\fP
+When the client closes a connection, \*(SN will loop back and wait for a new
+incoming connection by default. If you want the server to exit after serving
+a single incoming connection, specify this option.
+.IP "\fB--debug\fP or \fB-d\fP
+This option requests increased debugging information. Specifying this option
+several times increases the verbosity.
+Currently, debug information is always printed to standard error, thus using
+this option together with \fB--daemon\fB is not all that useful.
+.\" --------------------------------------------------------------
+.\"
+.\"
 .SH AUTHOR
-The Twopence developpers at SUSE Linux.
-
+The Twopence developers at SUSE.
 .SH SEE ALSO
 .BR twopence_command (1)
