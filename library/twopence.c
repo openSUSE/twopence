@@ -218,6 +218,13 @@ twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twope
 
   target->current.io = NULL;
 
+  /* Populate defaults. Instead of hard-coding them, we could also set
+   * default values for a given target. */
+  if (cmd->timeout == 0)
+    cmd->timeout = 60;
+  if (cmd->user == NULL)
+    cmd->user = "root";
+
   return target->ops->run_test(target, cmd, status);
 }
 
