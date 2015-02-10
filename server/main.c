@@ -406,3 +406,17 @@ twopence_trace(const char *fmt, ...)
     vsyslog(LOG_DEBUG, fmt, ap);
   }
 }
+
+void
+twopence_log_error(const char *fmt, ...)
+{
+  va_list ap;
+
+  va_start(ap, fmt);
+  if (server_log_file) {
+    fprintf(server_log_file, "Error: ");
+    vfprintf(server_log_file, fmt, ap);
+  } else {
+    vsyslog(LOG_ERR, fmt, ap);
+  }
+}

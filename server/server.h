@@ -220,5 +220,6 @@ extern void		server_run(socket_t *);
 extern unsigned int	server_tracing;
 
 extern void		twopence_trace(const char *fmt, ...);
+extern void		twopence_log_error(const char *fmt, ...);
 
 #endif /* SERVER_H */
