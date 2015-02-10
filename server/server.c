@@ -75,13 +75,13 @@ server_restore_privileges(struct saved_ids *saved_ids)
 
 	seteuid(saved_ids->uid);
 	if (geteuid() != saved_ids->uid) {
-		fprintf(stderr, "Unable to restore previous uid %u: abort\n", saved_ids->uid);
+		twopence_log_error("Unable to restore previous uid %u: abort\n", saved_ids->uid);
 		abort();
 	}
 
 	setegid(saved_ids->gid);
 	if (getegid() != saved_ids->gid) {
-		fprintf(stderr, "Unable to restore previous gid %u: abort\n", saved_ids->gid);
+		twopence_log_error("Unable to restore previous gid %u: abort\n", saved_ids->gid);
 		abort();
 	}
 }
@@ -118,7 +118,7 @@ server_change_hats_temporarily(const struct passwd *user, struct saved_ids *save
 	 || setegid(user->pw_gid) < 0
 	 || seteuid(user->pw_uid) < 0) {
 		*status = errno;
-		fprintf(stderr, "Unable to drop privileges to become user %s: %m", user->pw_name);
+		twopence_log_error("Unable to drop privileges to become user %s: %m", user->pw_name);
 		server_restore_privileges(saved_ids);
 		return false;
 	}
@@ -137,7 +137,7 @@ server_change_hats_permanently(const struct passwd *user, int *status)
 	 || setgid(user->pw_gid) < 0
 	 || setuid(user->pw_uid) < 0) {
 		*status = errno;
-		fprintf(stderr, "Unable to drop privileges to become user %s: %m", user->pw_name);
+		twopence_log_error("Unable to drop privileges to become user %s: %m", user->pw_name);
 		return false;
 	}
 
@@ -193,11 +193,11 @@ server_file_size(const char *filename, int fd, int *status)
 
 	if (fstat(fd, &stb) < 0) {
 		*status = errno;
-		fprintf(stderr, "%s: unable to stat: %m\n", filename);
+		twopence_log_error("%s: unable to stat: %m\n", filename);
 		return -1;
 	}
 	if (!S_ISREG(stb.st_mode)) {
-		fprintf(stderr, "%s: not a regular file\n", filename);
+		twopence_log_error("%s: not a regular file\n", filename);
 		*status = EISDIR;
 		return -1;
 	}
@@ -373,7 +373,7 @@ server_run_command_as(const char *username, unsigned int timeout, const char *cm
 	pid = fork();
 	if (pid < 0) {
 		*status = errno;
-		fprintf(stderr, "unable to fork: %m\n");
+		twopence_log_error("unable to fork: %m\n");
 		goto failed;
 	}
 	if (pid == 0) {
@@ -398,7 +398,7 @@ server_run_command_as(const char *username, unsigned int timeout, const char *cm
 		/* Note: we may want to pass a standard environment, too */
 		execv(argv0, argv);
 
-		fprintf(stderr, "unable to run %s: %m", argv0);
+		twopence_log_error("unable to run %s: %m", argv0);
 		exit(127);
 	}
 
@@ -430,7 +430,7 @@ server_inject_file_recv(transaction_t *trans, const header_t *hdr, buffer_t *pay
 		break;
 
 	default:
-		fprintf(stderr, "Unknown command code '%c' in transaction context\n", hdr->type);
+		twopence_log_error("Unknown command code '%c' in transaction context\n", hdr->type);
 		transaction_fail(trans, EPROTO);
 		break;
 	}
@@ -474,7 +474,7 @@ server_extract_file_recv(transaction_t *trans, const header_t *hdr, buffer_t *pa
 {
 	switch (hdr->type) {
 	default:
-		fprintf(stderr, "Unknown command code '%c' in transaction context\n", hdr->type);
+		twopence_log_error("Unknown command code '%c' in transaction context\n", hdr->type);
 		transaction_fail(trans, EPROTO);
 		break;
 	}
@@ -645,7 +645,7 @@ server_run_command_recv(transaction_t *trans, const header_t *hdr, buffer_t *pay
 		break;
 
 	default:
-		fprintf(stderr, "Unknown command code '%c' in transaction context\n", hdr->type);
+		twopence_log_error("Unknown command code '%c' in transaction context\n", hdr->type);
 		break;
 	}
 
