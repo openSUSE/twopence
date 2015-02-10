@@ -212,10 +212,13 @@ extern void		server_run(socket_t *);
 #define __TRACE(level, fmt...) \
 	do { \
 		if (server_tracing >= level) \
-			printf(fmt); \
+			twopence_trace(fmt); \
 	} while (0)
 #define TRACE(fmt...)	__TRACE(1, fmt)
 #define TRACE2(fmt...)	__TRACE(2, fmt)
 
 extern unsigned int	server_tracing;
+
+extern void		twopence_trace(const char *fmt, ...);
+
 #endif /* SERVER_H */

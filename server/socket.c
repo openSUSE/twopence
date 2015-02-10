@@ -437,6 +437,7 @@ socket_recv_buffer(socket_t *sock, buffer_t *bp)
 
 	count = buffer_tailroom(bp);
 	if (count == 0) {
+		TRACE("%s: no tailroom in buffer", __func__);
 		errno = ENOBUFS;
 		return -1;
 	}
@@ -451,6 +452,8 @@ socket_recv_buffer(socket_t *sock, buffer_t *bp)
 	n = read(sock->fd, buffer_tail(bp), count);
 	if (n > 0)
 		buffer_advance_tail(bp, n);
+	else if (n < 0)
+		TRACE("%s: recv() returns error: %m", __func__);
 	return n;
 }
 
