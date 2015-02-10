@@ -31,7 +31,7 @@ Packet types:
   '1'           stdout
   '2'           stderr
   'T'           command timeout
-  's'           file size
+  'E'           end of file during extract transaction
 
             both directions
   'd'           file data

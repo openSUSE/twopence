@@ -93,6 +93,16 @@ protocol_command_buffer_new()
 }
 
 buffer_t *
+protocol_build_eof_packet(void)
+{
+	buffer_t *bp;
+
+	bp = protocol_command_buffer_new();
+	protocol_push_header(bp, PROTO_HDR_TYPE_EOF);
+	return bp;
+}
+
+buffer_t *
 protocol_build_uint_packet(unsigned char type, unsigned int value)
 {
 	buffer_t *bp;
@@ -383,18 +393,28 @@ transaction_doio(transaction_t *trans)
 			transaction_fail(trans, errno);
 			socket_mark_dead(sock);
 		}
-
-		if (socket_is_dead(sock))
-			transaction_close_source(trans, n);
 	}
 
 	if (trans->send)
 		trans->send(trans);
+
+	for (n = 0; n < trans->num_local_sources; ++n) {
+		sock = trans->local_source[n];
+
+		if (sock && socket_is_dead(sock))
+			transaction_close_source(trans, n);
+	}
+
 }
 
 inline void
 transaction_send_client(transaction_t *trans, buffer_t *bp)
 {
+	const header_t *h = (const header_t *) buffer_head(bp);
+
+	TRACE("%s()\n", __func__);
+	if (h)
+		TRACE("%s: sending packet type %c, payload=%u\n", __func__, h->type, ntohs(h->len) - TWOPENCE_PROTO_HEADER_SIZE);
 	socket_queue_xmit(trans->client_sock, bp);
 }
 

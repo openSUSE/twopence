@@ -439,35 +439,6 @@ _twopence_read_minor(struct twopence_pipe_target *handle, int link_fd, int *mino
   return 0;
 }
 
-// Read file size
-// It can also get a remote error code if, for example, the remote file does not exist
-//
-// Returns 0 if everything went fine, or a negative error code if failed
-static int
-_twopence_read_size(struct twopence_pipe_target *handle, int link_fd, int *size, int *remote_rc)
-{
-  char buffer[BUFFER_SIZE];
-  int rc;
-
-  rc = __twopence_pipe_read_frame(handle, link_fd, buffer, sizeof(buffer));
-  if (rc != 0)
-    return TWOPENCE_RECEIVE_FILE_ERROR;
-
-  switch (buffer[0])                   // Analyze the header
-  {
-    case 's':
-      sscanf(buffer + 4, "%d", size);
-      break;
-    case 'M':
-      sscanf(buffer + 4, "%d", remote_rc);
-      return TWOPENCE_RECEIVE_FILE_ERROR;
-    default:
-      return TWOPENCE_RECEIVE_FILE_ERROR;
-  }
-
-  return 0;
-}
-
 // Send a file in chunks to the link
 //
 // Returns 0 if everything went fine, or a negative error code if failed
@@ -509,42 +480,54 @@ int _twopence_send_file
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int _twopence_receive_file
-  (struct twopence_pipe_target *handle, int file_fd, int link_fd, int remaining)
+  (struct twopence_pipe_target *handle, int file_fd, int link_fd, int *remote_rc)
 {
   char buffer[BUFFER_SIZE];
-  int rc, received, written;
+  int rc, received, written, rv = 0;
+  int total = 0;
 
-  while (remaining > 0)
+  while (true)
   {
     rc = __twopence_pipe_read_frame(handle, link_fd, buffer, sizeof(buffer));
     if (rc != 0)
-    {
-      __twopence_pipe_output(handle, '\n');
-      return TWOPENCE_RECEIVE_FILE_ERROR;
-    }
+      goto recv_file_error;
 
     received = compute_length(buffer) - 4;
-    if (buffer[0] != 'd' || received < 0 || received > remaining)
-    {
-      __twopence_pipe_output(handle, '\n');
-      return TWOPENCE_RECEIVE_FILE_ERROR;
-    }
+    switch (buffer[0]) {
+    case 'M':
+      /* Remote error occurred, usually when trying to open the file */
+      sscanf(buffer + 4, "%d", remote_rc);
+      goto recv_file_error;
 
-    if (received > 0)
-    {
-      written = write                  // Write the data to the file
-        (file_fd, buffer + 4, received);
+    case 'E':
+      /* End of data */
+      goto out;
+
+    case 'd':
+      /* Write data to the file */
+      written = write(file_fd, buffer + 4, received);
       if (written != received)
-      {
-        __twopence_pipe_output(handle, '\n');
-        return TWOPENCE_LOCAL_FILE_ERROR;
-      }
+        goto local_file_error;
       __twopence_pipe_output(handle, '.');   // Progression dots
-      remaining -= received;           // One chunk less to write
+      total += received;
+      break;
+    default:
+      goto recv_file_error;
     }
   }
-  __twopence_pipe_output(handle, '\n');
-  return 0;
+
+out:
+  if (total)
+    __twopence_pipe_output(handle, '\n');
+  return rv;
+
+recv_file_error:
+  rv = TWOPENCE_RECEIVE_FILE_ERROR;
+  goto out;
+
+local_file_error:
+  rv = TWOPENCE_LOCAL_FILE_ERROR;
+  goto out;
 }
 
 ///////////////////////////// Top layer /////////////////////////////////////////
@@ -690,7 +673,6 @@ int _twopence_extract_virtio_serial
   int n;
   int link_fd;
   int sent, rc;
-  int size;
 
   // By default, no remote error
   *remote_rc = 0;
@@ -718,20 +700,9 @@ int _twopence_extract_virtio_serial
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
 
-  // Read the size of the file to receive
-  rc = _twopence_read_size(handle, link_fd, &size, remote_rc);
+  rc = _twopence_receive_file(handle, file_fd, link_fd, remote_rc);
   if (rc < 0)
-  {
     return TWOPENCE_RECEIVE_FILE_ERROR;
-  }
-
-  // Receive the file
-  if (size >= 0)
-  {
-    rc = _twopence_receive_file(handle, file_fd, link_fd, size);
-    if (rc < 0)
-      return TWOPENCE_RECEIVE_FILE_ERROR;
-  }
 
   return 0;
 }

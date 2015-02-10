@@ -147,6 +147,7 @@ server_change_hats_permanently(const struct passwd *user, int *status)
 int
 server_open_file_as(const char *username, const char *filename, int oflags, int *status)
 {
+	struct stat stb;
 	struct saved_ids saved_ids;
 	struct passwd *user;
 	int fd;
@@ -161,12 +162,14 @@ server_open_file_as(const char *username, const char *filename, int oflags, int 
 	if (filename[0] != '/') {
 		filename = server_build_path(user->pw_dir, filename);
 		if (filename == NULL) {
-			TRACE("Unable to build path from user %s's home \"%s\" and relative name \"%s\"\n",
+			twopence_log_error("Unable to build path from user %s's home \"%s\" and relative name \"%s\"\n",
 					username, user->pw_dir, filename);
 			*status = ENAMETOOLONG;
 			return false;
 		}
 	}
+
+	TRACE("%s(user=%s, file=%s, flags=0%0)\n", __func__, username, filename, oflags);
 
 	/* We may want to have the client specify the file mode as well */
 	if (!strcmp(username, "root")) {
@@ -181,6 +184,22 @@ server_open_file_as(const char *username, const char *filename, int oflags, int 
 			*status = errno;
 
 		server_restore_privileges(&saved_ids);
+	}
+
+	if (fd < 0)
+		return -1;
+
+	if (fstat(fd, &stb) < 0) {
+		*status = errno;
+		twopence_log_error("failed to stat \"%s\": %m", filename);
+		close(fd);
+		return -1;
+	}
+	if (!S_ISREG(stb.st_mode)) {
+		twopence_log_error("%s: not a regular file\n", filename);
+		*status = EISDIR;
+		close(fd);
+		return -1;
 	}
 
 	return fd;
@@ -487,6 +506,7 @@ server_extract_file_send(transaction_t *trans)
 	socket_t *sock;
 	buffer_t *bp;
 
+	TRACE("%s()\n", __func__);
 	if (trans->num_local_sources == 0)
 		return false;
 	if ((sock = trans->local_source[0]) == NULL)
@@ -494,23 +514,16 @@ server_extract_file_send(transaction_t *trans)
 
 	bp = socket_take_recvbuf(sock);
 	if (bp != NULL) {
-		unsigned int count;
-
-		count = buffer_count(bp);
-		if (count > trans->byte_count) {
-			count = trans->byte_count;
-			buffer_truncate(bp, count);
-		}
-		trans->byte_count -= count;
-
 		/* Add a header to the packet and send it out */
 		protocol_push_header(bp, PROTO_HDR_TYPE_DATA);
-		socket_queue_xmit(trans->client_sock, bp);
+		transaction_send_client(trans, bp);
+	}
 
-		if (trans->byte_count == 0) {
-			transaction_close_source(trans, 0);
-			trans->done = true;
-		}
+	if (socket_is_read_eof(sock)) {
+		TRACE("EOF on extracted file");
+		transaction_send_client(trans, protocol_build_eof_packet());
+		transaction_close_source(trans, 0);
+		trans->done = true;
 	}
 	return true;
 }
@@ -519,7 +532,6 @@ bool
 server_extract_file(transaction_t *trans, const char *username, const char *filename)
 {
 	int status;
-	long filesize;
 	int fd;
 
 	if ((fd = server_open_file_as(username, filename, O_RDONLY, &status)) < 0) {
@@ -527,28 +539,15 @@ server_extract_file(transaction_t *trans, const char *username, const char *file
 		return false;
 	}
 
-	filesize = server_file_size(filename, fd, &status);
-	if (filesize < 0) {
-		transaction_fail(trans, status);
-		return false;
-	}
-
 	if (!transaction_attach_local_source(trans, fd)) {
 		/* Something is wrong */
+		transaction_fail(trans, EIO);
 		close(fd);
 		return false;
 	}
 
-	transaction_send_client(trans, protocol_build_uint_packet(PROTO_HDR_TYPE_SENDFILE, filesize));
-
 	trans->recv = server_extract_file_recv;
 	trans->send = server_extract_file_send;
-	trans->byte_count = filesize;
-
-	if (trans->byte_count == 0) {
-		transaction_close_source(trans, 0);
-		trans->done = true;
-	}
 
 	return true;
 }

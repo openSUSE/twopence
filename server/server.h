@@ -70,7 +70,6 @@ struct header {
 #define PROTO_HDR_TYPE_INTR	'I'
 #define PROTO_HDR_TYPE_MAJOR	'M'
 #define PROTO_HDR_TYPE_MINOR	'm'
-#define PROTO_HDR_TYPE_SENDFILE	's'		/* sent in response to EXTRACT command */
 #define PROTO_HDR_TYPE_TIMEOUT	'T'
 
 
@@ -144,6 +143,7 @@ extern buffer_t *	socket_get_recvbuf(socket_t *);
 extern void		protocol_build_header(buffer_t *bp, unsigned char type);
 extern void		protocol_push_header(buffer_t *bp, unsigned char type);
 extern buffer_t *	protocol_command_buffer_new();
+extern buffer_t *	protocol_build_eof_packet(void);
 extern buffer_t *	protocol_build_uint_packet(unsigned char type, unsigned int value);
 extern buffer_t *	protocol_recv_buffer_new(void);
 extern bool		protocol_buffer_complete(const buffer_t *bp);
