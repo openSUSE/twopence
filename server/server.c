@@ -545,6 +545,11 @@ server_extract_file(transaction_t *trans, const char *username, const char *file
 	trans->send = server_extract_file_send;
 	trans->byte_count = filesize;
 
+	if (trans->byte_count == 0) {
+		transaction_close_source(trans, 0);
+		trans->done = true;
+	}
+
 	return true;
 }
 
