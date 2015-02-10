@@ -205,11 +205,10 @@ twopence_extract $TARGET $server_test_file etc_services.txt
 test_case_check_status $?
 if ! cmp /etc/services etc_services.txt; then
 	test_case_fail "/etc/services and etc_services.txt differ"
-	diff /etc/services etc_services.txt
+	diff -u /etc/services etc_services.txt | head -50
 fi
 rm -f etc_services.txt
 test_case_report
-
 
 test_case_begin "make sure inject truncates the uploaded file"
 echo "a" > short_file
@@ -257,6 +256,37 @@ test_case_begin "extract 'oops' => 'bang'"
 twopence_extract $TARGET oops bang
 test_case_check_status $? 7
 rm -f bang
+test_case_report
+
+test_case_begin "extract a directory (should fail)"
+twopence_extract $TARGET /etc extracted
+test_case_check_status $? 7
+rm -f extracted
+test_case_report
+
+test_case_begin "extract an empty file"
+twopence_command $TARGET "touch /tmp/twopence-test-empty-file"
+twopence_extract $TARGET /tmp/twopence-test-empty-file extracted
+test_case_check_status $? 0
+if [ ! -e extracted ]; then
+	test_case_fail "downloaded file does not exist"
+elif [ -s extracted ]; then
+	test_case_fail "downloaded file is not empty"
+fi
+twopence_command $TARGET "rm -f /tmp/twopence-test-empty-file"
+rm -f extracted
+test_case_report
+
+
+test_case_begin "extract a proc file"
+twopence_extract $TARGET /proc/interrupts extracted
+test_case_check_status $? 0
+if [ -e extracted -a ! -s extracted ]; then
+	test_case_fail "downloaded file is empty"
+else
+	echo "good, extracted file has `wc -l < extracted` lines"
+fi
+rm -f extracted
 test_case_report
 
 test_case_begin "test timeout of commands"
