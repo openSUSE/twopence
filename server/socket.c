@@ -261,7 +261,7 @@ buffer_puts(buffer_t *bp, const char *s)
 {
 	if (!s)
 		return true;
-	return buffer_append(bp, s, strlen(s));
+	return buffer_append(bp, s, strlen(s) + 1);
 }
 
 void

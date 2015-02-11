@@ -156,9 +156,7 @@ testCaseReport()
 testCaseBegin("run command kill -9 $$")
 try:
 	status = target.run("bash -c 'kill -9 $$'")
-	# Weird exit status - not sure where this is coming from -- okir
-	# I get 9 in the major, makes more sense indeed -- ebischoff
-	testCaseCheckStatus(status, 947)
+	testCaseCheckStatus(status, 9)
 except:
 	testCaseException()
 testCaseReport()
