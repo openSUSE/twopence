@@ -22,7 +22,7 @@ Packet types:
   'e'           extract file
   'q'           quit
   '0'           stdin
-  'E'           end of file on stdin
+  'E'           end of file on stdin, or during file injection
   'I'           interrupt command
 
         system under tests => local
@@ -43,5 +43,6 @@ Parameters are separated with spaces:
 
   run command   username timeout command
   insert file   username filesize filename
+  			(note, filesize is being ignored)
   extract file  username filename
 

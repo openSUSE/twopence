@@ -527,10 +527,6 @@ transaction_write_data(transaction_t *trans, buffer_t *payload)
 	}
 
 	count = buffer_count(payload);
-	if (count > trans->byte_count) {
-		fprintf(stderr, "%s: ignoring %u bytes of data\n", __func__, count - trans->byte_count);
-		count = trans->byte_count;
-	}
 
 	TRACE("About to write %u bytes of data to local sink\n", count);
 	if ((n = socket_write(sock, payload, count)) < 0) {
@@ -539,17 +535,6 @@ transaction_write_data(transaction_t *trans, buffer_t *payload)
 		return true;
 	}
 	assert(n == count);
-
-	if (trans->byte_count) {
-		trans->byte_count -= n;
-		TRACE("wrote %u bytes, %u left\n", n, trans->byte_count);
-
-		if (trans->byte_count == 0) {
-			transaction_send_minor(trans, 0);
-			socket_shutdown_write(sock);
-			trans->done = true;
-		}
-	}
 
 	return true;
 }

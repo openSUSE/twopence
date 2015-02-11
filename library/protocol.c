@@ -151,6 +151,8 @@ __twopence_pipe_recvbuf(struct twopence_pipe_target *handle, int link_fd, char *
 {
   size_t received = 0;
 
+  memset(buffer, 0, size);
+
   while (received < size) {
     int n, rc;
 
@@ -443,37 +445,49 @@ _twopence_read_minor(struct twopence_pipe_target *handle, int link_fd, int *mino
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int _twopence_send_file
-  (struct twopence_pipe_target *handle, int file_fd, int link_fd, int remaining)
+  (struct twopence_pipe_target *handle, int file_fd, int link_fd)
 {
   char buffer[BUFFER_SIZE];
-  int size, received;
+  int received, rv = 0;
+  int total = 0;
 
-  while (remaining > 0)
-  {
-    size =                             // Read at most BUFFER_SIZE - 4 bytes from the file
-           remaining < BUFFER_SIZE - 4?
-           remaining:
-           BUFFER_SIZE - 4;
-    received = read(file_fd, buffer + 4, size);
-    if (received != size)
-    {
-      __twopence_pipe_output(handle, '\n');
-      return TWOPENCE_LOCAL_FILE_ERROR;
+  buffer[1] = '\0';
+
+  do {
+    received = read(file_fd, buffer + 4, BUFFER_SIZE - 4);
+    if (received < 0) {
+      if (errno == EINTR)
+	continue;
+      goto local_file_error;
     }
-
-    buffer[0] = 'd';                   // Send them to the remote host, together with 4 bytes of header
+    if (received == 0) {
+      // Send an EOF packet to the remote host
+      buffer[0] = 'E';
+    } else {
+      // Send data to the remote host, together with 4 bytes of header
+      buffer[0] = 'd';
+    }
     store_length(received + 4, buffer);
+
     if (!__twopence_pipe_sendbuf(handle, link_fd, buffer, received + 4))
-    {
-      __twopence_pipe_output(handle, '\n');
-      return TWOPENCE_SEND_FILE_ERROR;
-    }
+      goto send_file_error;
 
     __twopence_pipe_output(handle, '.');     // Progression dots
-    remaining -= received;             // One chunk less to send
-  }
-  __twopence_pipe_output(handle, '\n');
-  return 0;
+    total += received;
+  } while (received != 0);
+
+out:
+  if (total)
+    __twopence_pipe_output(handle, '\n');
+  return rv;
+
+local_file_error:
+  rv = TWOPENCE_LOCAL_FILE_ERROR;
+  goto out;
+
+send_file_error:
+  rv = TWOPENCE_SEND_FILE_ERROR;
+  goto out;
 }
 
 // Receive a file in chunks from the link and write it to a file
@@ -609,7 +623,6 @@ int _twopence_inject_virtio_serial
   int n;
   int link_fd;
   int sent, rc;
-  struct stat filestats;
 
   // By default, no remote error
   *remote_rc = 0;
@@ -619,9 +632,8 @@ int _twopence_inject_virtio_serial
     return TWOPENCE_PARAMETER_ERROR;
 
   // Prepare command to send to the remote host
-  fstat(file_fd, &filestats);
   n = snprintf(command, COMMAND_BUFFER_SIZE,
-               "i...%s %ld %s", username, (long) filestats.st_size, remote_filename);
+               "i...%s %d %s", username, 0, remote_filename);
   if (n < 0 || n >= COMMAND_BUFFER_SIZE)
     return TWOPENCE_PARAMETER_ERROR;
   store_length(n + 1, command);
@@ -641,13 +653,13 @@ int _twopence_inject_virtio_serial
   // Read first return code before we start transferring the file
   // This enables to detect a remote problem even before we start the transfer
   rc = _twopence_read_major(handle, link_fd, remote_rc);
+  if (rc < 0)
+    return rc;
   if (*remote_rc != 0)
-  {
     return TWOPENCE_SEND_FILE_ERROR;
-  }
 
   // Send the file
-  rc = _twopence_send_file(handle, file_fd, link_fd, filestats.st_size);
+  rc = _twopence_send_file(handle, file_fd, link_fd);
   if (rc < 0)
   {
     return TWOPENCE_SEND_FILE_ERROR;

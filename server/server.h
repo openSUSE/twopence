@@ -168,7 +168,6 @@ struct transaction {
 
 	pid_t			pid;
 	int			status;
-	unsigned int		byte_count;
 
 	socket_t *		local_sink;
 

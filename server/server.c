@@ -443,9 +443,16 @@ server_inject_file_recv(transaction_t *trans, const header_t *hdr, buffer_t *pay
 {
 	switch (hdr->type) {
 	case PROTO_HDR_TYPE_DATA:
+		TRACE("inject: received %u bytes of data\n", buffer_count(payload));
 		transaction_write_data(trans, payload);
-		if (trans->byte_count == 0)
-			trans->done = true;
+		/* FIXME: how do we propagate write errors to the client? */
+		break;
+
+	case PROTO_HDR_TYPE_EOF:
+		TRACE("inject: received EOF\n");
+		transaction_send_minor(trans, 0);
+		socket_shutdown_write(trans->local_sink);
+		trans->done = true;
 		break;
 
 	default:
@@ -477,14 +484,9 @@ server_inject_file(transaction_t *trans, const char *username, const char *filen
 	 * this will start the actual transfer */
 	transaction_send_major(trans, 0);
 
-	trans->byte_count = filesize;
+	/* Ignore the file size - we're no longer interested in it */
 	trans->recv = server_inject_file_recv;
 
-	if (trans->byte_count == 0) {
-		transaction_send_minor(trans, 0);
-		socket_shutdown_write(trans->local_sink);
-		trans->done = true;
-	}
 	return true;
 }
 
