@@ -47,6 +47,7 @@ extern unsigned int	twopence_buf_count(const twopence_buf_t *bp);
 extern void *		twopence_buf_pull(twopence_buf_t *bp, unsigned int len);
 extern bool		twopence_buf_push(twopence_buf_t *bp, void *data, unsigned int len);
 extern bool		twopence_buf_resize(twopence_buf_t *bp, unsigned int want_size);
+extern bool		twopence_buf_ensure_tailroom(twopence_buf_t *bp, unsigned int want_tailroom);
 extern void		twopence_buf_reserve_head(twopence_buf_t *bp, unsigned int len);
 extern void *		twopence_buf_reserve_tail(twopence_buf_t *bp, unsigned int len);
 extern void		twopence_buf_advance_tail(twopence_buf_t *bp, unsigned int len);

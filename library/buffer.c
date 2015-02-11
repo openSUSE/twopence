@@ -153,6 +153,18 @@ twopence_buf_resize(twopence_buf_t *bp, unsigned int want_size)
 	return true;
 }
 
+bool
+twopence_buf_ensure_tailroom(twopence_buf_t *bp, unsigned int want_tailroom)
+{
+	unsigned int tailroom;
+
+	tailroom = twopence_buf_tailroom(bp);
+	if (tailroom < want_tailroom) {
+		twopence_buf_resize(bp, bp->tail + want_tailroom);
+	}
+	return true;
+}
+
 void
 twopence_buf_reserve_head(twopence_buf_t *bp, unsigned int amount)
 {
