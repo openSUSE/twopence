@@ -204,7 +204,7 @@ Target_property(twopence_Target *self, PyObject *args, PyObject *kwds)
  * Support this here.
  */
 int
-twopence_AppendBuffer(PyObject *buffer, const twopence_buffer_t *buf)
+twopence_AppendBuffer(PyObject *buffer, const twopence_buf_t *buf)
 {
 	unsigned int count;
 	int rv = 0;

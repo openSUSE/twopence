@@ -189,7 +189,7 @@ Command_Check(PyObject *self)
 int
 Command_build(twopence_Command *self, twopence_command_t *cmd)
 {
-	twopence_buffer_t *buffer = NULL;
+	twopence_buf_t *buffer = NULL;
 
 	twopence_command_init(cmd, self->command);
 

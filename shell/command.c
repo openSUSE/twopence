@@ -84,7 +84,7 @@ int restore_handler(int signum, const struct sigaction *old_action)
 // Write output to file, in case we were requested not to ouput it to screen
 //
 // Returns 0 on success, -1 on error
-int write_output(const char *filename, const twopence_buffer_t *bp)
+int write_output(const char *filename, const twopence_buf_t *bp)
 {
   FILE *fp;
   unsigned int count;
@@ -139,7 +139,7 @@ int main(int argc, char *argv[])
   twopence_command_t cmd;
   struct twopence_target *target;
   struct sigaction old_action;
-  twopence_buffer_t stdout_buf, stderr_buf;
+  twopence_buf_t stdout_buf, stderr_buf;
   twopence_status_t status;
   int rc;
 

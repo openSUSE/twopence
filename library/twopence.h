@@ -112,9 +112,6 @@ typedef enum {
 	__TWOPENCE_IO_MAX
 } twopence_iofd_t;
 
-/* Temporary alias for twopence_buf_t */
-typedef twopence_buf_t twopence_buffer_t;
-
 typedef struct twopence_substream twopence_substream_t;
 
 typedef struct twopence_iostream twopence_iostream_t;
@@ -186,7 +183,7 @@ struct twopence_command {
 	 */
 	twopence_iostream_t	iostream[__TWOPENCE_IO_MAX];
 
-	twopence_buffer_t	buffer[__TWOPENCE_IO_MAX];
+	twopence_buf_t	buffer[__TWOPENCE_IO_MAX];
 };
 
 /*
@@ -271,7 +268,7 @@ extern int		twopence_test_and_drop_results(struct twopence_target *target,
  */
 extern int		twopence_test_and_store_results_together(struct twopence_target *target,
 					const char *username, long timeout, const char *command,
-					twopence_buffer_t *buffer,
+					twopence_buf_t *buffer,
 					twopence_status_t *status);
 
 /*
@@ -292,7 +289,7 @@ extern int		twopence_test_and_store_results_together(struct twopence_target *tar
  */
 extern int		twopence_test_and_store_results_separately(struct twopence_target *target,
 					const char *username, long timeout, const char *command,
-					twopence_buffer_t *stdout_buffer, twopence_buffer_t *stderr_buffer,
+					twopence_buf_t *stdout_buffer, twopence_buf_t *stderr_buffer,
 					twopence_status_t *status);
 
 /*
@@ -376,10 +373,10 @@ extern void		twopence_perror(const char *, int rc);
  */
 extern void		twopence_command_init(twopence_command_t *cmd, const char *cmdline);
 extern void		twopence_command_destroy(twopence_command_t *cmd);
-extern twopence_buffer_t *twopence_command_alloc_buffer(twopence_command_t *, twopence_iofd_t, size_t);
+extern twopence_buf_t *twopence_command_alloc_buffer(twopence_command_t *, twopence_iofd_t, size_t);
 extern void		twopence_command_ostreams_reset(twopence_command_t *);
 extern void		twopence_command_ostream_reset(twopence_command_t *, twopence_iofd_t);
-extern void		twopence_command_ostream_capture(twopence_command_t *, twopence_iofd_t, twopence_buffer_t *);
+extern void		twopence_command_ostream_capture(twopence_command_t *, twopence_iofd_t, twopence_buf_t *);
 extern void		twopence_command_iostream_redirect(twopence_command_t *, twopence_iofd_t, int, bool closeit);
 
 /*
@@ -400,7 +397,7 @@ extern int		twopence_iostream_read(twopence_iostream_t *, char *, size_t);
 extern int		twopence_iostream_set_blocking(twopence_iostream_t *, bool);
 extern int		twopence_iostream_poll(twopence_iostream_t *, struct pollfd *, int mask);
 
-extern twopence_substream_t *twopence_substream_new_buffer(twopence_buffer_t *);
+extern twopence_substream_t *twopence_substream_new_buffer(twopence_buf_t *);
 extern twopence_substream_t *twopence_substream_new_fd(int fd, bool closeit);
 extern void		twopence_substream_close(twopence_substream_t *);
 

@@ -274,7 +274,7 @@ twopence_test_and_drop_results
 int
 twopence_test_and_store_results_together
   (struct twopence_target *target, const char *username, long timeout, const char *command,
-   twopence_buffer_t *buffer, twopence_status_t *status)
+   twopence_buf_t *buffer, twopence_status_t *status)
 {
   if (target->ops->run_test) {
     twopence_command_t cmd;
@@ -299,7 +299,7 @@ twopence_test_and_store_results_together
 int
 twopence_test_and_store_results_separately
   (struct twopence_target *target, const char *username, long timeout, const char *command,
-   twopence_buffer_t *stdout_buffer, twopence_buffer_t *stderr_buffer, twopence_status_t *status)
+   twopence_buf_t *stdout_buffer, twopence_buf_t *stderr_buffer, twopence_status_t *status)
 {
   if (target->ops->run_test) {
     twopence_command_t cmd;
@@ -441,7 +441,7 @@ twopence_command_init(twopence_command_t *cmd, const char *cmdline)
   cmd->command = cmdline;
 }
 
-static inline twopence_buffer_t *
+static inline twopence_buf_t *
 __twopence_command_buffer(twopence_command_t *cmd, twopence_iofd_t dst)
 {
   if (0 <= dst && dst < __TWOPENCE_IO_MAX)
@@ -449,10 +449,10 @@ __twopence_command_buffer(twopence_command_t *cmd, twopence_iofd_t dst)
   return NULL;
 }
 
-twopence_buffer_t *
+twopence_buf_t *
 twopence_command_alloc_buffer(twopence_command_t *cmd, twopence_iofd_t dst, size_t size)
 {
-  twopence_buffer_t *bp;
+  twopence_buf_t *bp;
 
   if ((bp = __twopence_command_buffer(cmd, dst)) == NULL)
     return NULL;
@@ -490,7 +490,7 @@ twopence_command_ostream_reset(twopence_command_t *cmd, twopence_iofd_t dst)
 }
 
 void
-twopence_command_ostream_capture(twopence_command_t *cmd, twopence_iofd_t dst, twopence_buffer_t *bp)
+twopence_command_ostream_capture(twopence_command_t *cmd, twopence_iofd_t dst, twopence_buf_t *bp)
 {
   twopence_iostream_t *stream;
 
@@ -779,7 +779,7 @@ twopence_substream_close(twopence_substream_t *substream)
 static int
 twopence_substream_buffer_write(twopence_substream_t *sink, const void *data, size_t len)
 {
-  twopence_buffer_t *bp = (twopence_buffer_t *) sink->data;
+  twopence_buf_t *bp = (twopence_buf_t *) sink->data;
 
   __twopence_buffer_put(bp, data, len);
   return len;
@@ -797,7 +797,7 @@ static twopence_io_ops_t twopence_buffer_io = {
 };
 
 twopence_substream_t *
-twopence_substream_new_buffer(twopence_buffer_t *bp)
+twopence_substream_new_buffer(twopence_buf_t *bp)
 {
   twopence_substream_t *io;
 
