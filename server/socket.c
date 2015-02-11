@@ -60,7 +60,7 @@ struct socket {
 	unsigned int	bytes_sent;
 
 	queue_t		xmit_queue;
-	buffer_t *	recv_buf;
+	twopence_buf_t *	recv_buf;
 
 	bool		read_eof;
 	unsigned char	write_eof;
@@ -72,20 +72,20 @@ struct packet {
 	packet_t *	next;
 
 	unsigned int	bytes;
-	buffer_t *	buffer;
+	twopence_buf_t *	buffer;
 };
 
 #define SHUTDOWN_WANTED		1
 #define SHUTDOWN_SENT		2
 
 void
-buffer_init(buffer_t *bp)
+twopence_buf_init(twopence_buf_t *bp)
 {
 	memset(bp, 0, sizeof(*bp));
 }
 
 void
-buffer_init_static(buffer_t *bp, void *data, size_t len)
+twopence_buf_init_static(twopence_buf_t *bp, void *data, size_t len)
 {
 	memset(bp, 0, sizeof(*bp));
 	bp->base = data;
@@ -93,15 +93,15 @@ buffer_init_static(buffer_t *bp, void *data, size_t len)
 }
 
 void
-buffer_destroy(buffer_t *bp)
+twopence_buf_destroy(twopence_buf_t *bp)
 {
-	buffer_init(bp);
+	twopence_buf_init(bp);
 }
 
-buffer_t *
-buffer_new(size_t size)
+twopence_buf_t *
+twopence_buf_new(size_t size)
 {
-	buffer_t *bp;
+	twopence_buf_t *bp;
 
 	bp = calloc(1, sizeof(*bp) + size);
 	bp->base = (char *)(bp + 1);
@@ -109,67 +109,67 @@ buffer_new(size_t size)
 	return bp;
 }
 
-buffer_t *
-buffer_clone(buffer_t *bp)
+twopence_buf_t *
+twopence_buf_clone(twopence_buf_t *bp)
 {
 	unsigned int count = bp->tail - bp->head;
-	buffer_t *clone;
+	twopence_buf_t *clone;
 
-	clone = buffer_new(count);
-	buffer_append(clone, bp->base, count);
+	clone = twopence_buf_new(count);
+	twopence_buf_append(clone, bp->base, count);
 	return clone;
 }
 
 void
-buffer_free(buffer_t *bp)
+twopence_buf_free(twopence_buf_t *bp)
 {
-	buffer_destroy(bp);
+	twopence_buf_destroy(bp);
 	free(bp);
 }
 
 const void *
-buffer_head(const buffer_t *bp)
+twopence_buf_head(const twopence_buf_t *bp)
 {
 	return bp->base + bp->head;
 }
 
 void *
-buffer_tail(const buffer_t *bp)
+twopence_buf_tail(const twopence_buf_t *bp)
 {
 	return bp->base + bp->tail;
 }
 
 unsigned int
-buffer_tailroom(const buffer_t *bp)
+twopence_buf_tailroom(const twopence_buf_t *bp)
 {
 	return bp->size - bp->tail;
 }
 
 unsigned int
-buffer_tailroom_max(const buffer_t *bp)
+twopence_buf_tailroom_max(const twopence_buf_t *bp)
 {
 	return bp->size - bp->tail;
 }
 
 unsigned int
-buffer_count(const buffer_t *bp)
+twopence_buf_count(const twopence_buf_t *bp)
 {
 	return bp->tail - bp->head;
 }
 
 void *
-buffer_pull(buffer_t *bp, unsigned int len)
+twopence_buf_pull(twopence_buf_t *bp, unsigned int len)
 {
 	void *h = bp->base + bp->head;
 
-	if (buffer_count(bp) < len)
+	if (twopence_buf_count(bp) < len)
 		return NULL;
 	bp->head += len;
 	return h;
 }
 
 bool
-buffer_push(buffer_t *bp, void *data, unsigned int len)
+twopence_buf_push(twopence_buf_t *bp, void *data, unsigned int len)
 {
 	if (bp->head < len)
 		return false;
@@ -180,7 +180,7 @@ buffer_push(buffer_t *bp, void *data, unsigned int len)
 
 #if 0
 bool
-buffer_resize(buffer_t *bp, unsigned int want_size)
+twopence_buf_resize(twopence_buf_t *bp, unsigned int want_size)
 {
 	unsigned int new_size;
 
@@ -209,46 +209,46 @@ buffer_resize(buffer_t *bp, unsigned int want_size)
 #endif
 
 void
-buffer_reserve_head(buffer_t *bp, unsigned int amount)
+twopence_buf_reserve_head(twopence_buf_t *bp, unsigned int amount)
 {
 	assert(bp->head == bp->tail && bp->size > amount);
 	bp->head = bp->tail = amount;
 }
 
 void *
-buffer_reserve_tail(buffer_t *bp, unsigned int len)
+twopence_buf_reserve_tail(twopence_buf_t *bp, unsigned int len)
 {
-	if (buffer_tailroom(bp) < len)
+	if (twopence_buf_tailroom(bp) < len)
 		return NULL;
 
 	return bp->base + bp->tail;
 }
 
 void
-buffer_advance_tail(buffer_t *bp, unsigned int len)
+twopence_buf_advance_tail(twopence_buf_t *bp, unsigned int len)
 {
-	assert(buffer_tailroom(bp) >= len);
+	assert(twopence_buf_tailroom(bp) >= len);
 	bp->tail += len;
 }
 
 void
-buffer_advance_head(buffer_t *bp, unsigned int len)
+twopence_buf_advance_head(twopence_buf_t *bp, unsigned int len)
 {
-	assert(buffer_count(bp) >= len);
+	assert(twopence_buf_count(bp) >= len);
 	bp->head += len;
 }
 
 void
-buffer_truncate(buffer_t *bp, unsigned int len)
+twopence_buf_truncate(twopence_buf_t *bp, unsigned int len)
 {
-	if (len < buffer_count(bp))
+	if (len < twopence_buf_count(bp))
 		bp->tail = bp->head + len;
 }
 
 bool
-buffer_append(buffer_t *bp, const void *data, unsigned int len)
+twopence_buf_append(twopence_buf_t *bp, const void *data, unsigned int len)
 {
-	if (!buffer_reserve_tail(bp, len))
+	if (!twopence_buf_reserve_tail(bp, len))
 		return false;
 
 	memcpy(bp->base + bp->tail, data, len);
@@ -257,24 +257,24 @@ buffer_append(buffer_t *bp, const void *data, unsigned int len)
 }
 
 bool
-buffer_puts(buffer_t *bp, const char *s)
+twopence_buf_puts(twopence_buf_t *bp, const char *s)
 {
 	if (!s)
 		return true;
-	return buffer_append(bp, s, strlen(s) + 1);
+	return twopence_buf_append(bp, s, strlen(s) + 1);
 }
 
 void
-buffer_reset(buffer_t *bp)
+twopence_buf_reset(twopence_buf_t *bp)
 {
-	assert(buffer_count(bp) == 0);
+	assert(twopence_buf_count(bp) == 0);
 	bp->head = bp->tail = 0;
 }
 
 void
-buffer_compact(buffer_t *bp)
+twopence_buf_compact(twopence_buf_t *bp)
 {
-	unsigned int count = buffer_count(bp);
+	unsigned int count = twopence_buf_count(bp);
 
 	if (count)
 		memmove(bp->base, bp->base + bp->head, count);
@@ -283,13 +283,13 @@ buffer_compact(buffer_t *bp)
 }
 
 packet_t *
-packet_new(buffer_t *bp)
+packet_new(twopence_buf_t *bp)
 {
 	packet_t *pkt;
 
 	pkt = calloc(1, sizeof(*pkt));
 	pkt->buffer = bp;
-	pkt->bytes = buffer_count(bp);
+	pkt->bytes = twopence_buf_count(bp);
 	return pkt;
 }
 
@@ -297,7 +297,7 @@ void
 packet_free(packet_t *pkt)
 {
 	if (pkt->buffer)
-		buffer_free(pkt->buffer);
+		twopence_buf_free(pkt->buffer);
 	free(pkt);
 }
 
@@ -419,7 +419,7 @@ socket_free(socket_t *sock)
 
 	queue_destroy(&sock->xmit_queue);
 	if (sock->recv_buf)
-		buffer_free(sock->recv_buf);
+		twopence_buf_free(sock->recv_buf);
 	free(sock);
 }
 
@@ -430,12 +430,12 @@ socket_id(const socket_t *sock)
 }
 
 int
-socket_recv_buffer(socket_t *sock, buffer_t *bp)
+socket_recv_buffer(socket_t *sock, twopence_buf_t *bp)
 {
 	unsigned int count;
 	int n;
 
-	count = buffer_tailroom(bp);
+	count = twopence_buf_tailroom(bp);
 	if (count == 0) {
 		TRACE("%s: no tailroom in buffer", __func__);
 		errno = ENOBUFS;
@@ -449,44 +449,44 @@ socket_recv_buffer(socket_t *sock, buffer_t *bp)
 		count = 4096;
 #endif
 
-	n = read(sock->fd, buffer_tail(bp), count);
+	n = read(sock->fd, twopence_buf_tail(bp), count);
 	if (n > 0)
-		buffer_advance_tail(bp, n);
+		twopence_buf_advance_tail(bp, n);
 	else if (n < 0)
 		TRACE("%s: recv() returns error: %m", __func__);
 	return n;
 }
 
-buffer_t *
+twopence_buf_t *
 socket_take_recvbuf(socket_t *sock)
 {
-	buffer_t *bp;
+	twopence_buf_t *bp;
 
 	if ((bp = sock->recv_buf) == NULL
-	 || buffer_count(bp) == 0)
+	 || twopence_buf_count(bp) == 0)
 		return NULL;
 
 	sock->recv_buf = NULL;
 	return bp;
 }
 
-buffer_t *
+twopence_buf_t *
 socket_get_recvbuf(socket_t *sock)
 {
 	return sock->recv_buf;
 }
 
 void
-socket_post_recvbuf(socket_t *sock, buffer_t *bp)
+socket_post_recvbuf(socket_t *sock, twopence_buf_t *bp)
 {
 	if (sock->recv_buf != NULL) {
-		assert(buffer_count(sock->recv_buf) == 0);
-		buffer_free(sock->recv_buf);
+		assert(twopence_buf_count(sock->recv_buf) == 0);
+		twopence_buf_free(sock->recv_buf);
 	}
 	sock->recv_buf = bp;
 }
 
-buffer_t *
+twopence_buf_t *
 socket_post_recvbuf_if_needed(socket_t *sock, unsigned int size)
 {
 	/* If the socket is at EOF, or if we already have posted a
@@ -496,48 +496,48 @@ socket_post_recvbuf_if_needed(socket_t *sock, unsigned int size)
 	if (sock->read_eof || sock->recv_buf != NULL)
 		return NULL;
 
-	sock->recv_buf = buffer_new(size);
+	sock->recv_buf = twopence_buf_new(size);
 	return sock->recv_buf;
 }
 
 int
-socket_write(socket_t *sock, buffer_t *bp, unsigned int count)
+socket_write(socket_t *sock, twopence_buf_t *bp, unsigned int count)
 {
 	int n;
 
 	if (count == 0)
 		return 0;
 
-	if (buffer_count(bp) < count)
-		count = buffer_count(bp);
+	if (twopence_buf_count(bp) < count)
+		count = twopence_buf_count(bp);
 
-	n = write(sock->fd, buffer_head(bp), count);
+	n = write(sock->fd, twopence_buf_head(bp), count);
 	if (n > 0)
 		sock->bytes_sent += n;
 	return n;
 }
 
 int
-socket_send_buffer(socket_t *sock, buffer_t *bp)
+socket_send_buffer(socket_t *sock, twopence_buf_t *bp)
 {
 	int n;
 
-	n = socket_write(sock, bp, buffer_count(bp));
+	n = socket_write(sock, bp, twopence_buf_count(bp));
 	if (n > 0) {
 		TRACE2("%s(%d): wrote %u bytes\n", __func__, sock->fd, n);
-		buffer_advance_head(bp, n);
+		twopence_buf_advance_head(bp, n);
 	}
 	return n;
 }
 
 void
-socket_queue_xmit(socket_t *sock, buffer_t *bp)
+socket_queue_xmit(socket_t *sock, twopence_buf_t *bp)
 {
 	packet_t *pkt;
 
 	if (sock->write_eof) {
 		fprintf(stderr, "%s: attempt to queue data after write shutdown\n", __func__);
-		buffer_free(bp);
+		twopence_buf_free(bp);
 		return;
 	}
 
@@ -546,7 +546,7 @@ socket_queue_xmit(socket_t *sock, buffer_t *bp)
 }
 
 void
-socket_send_or_queue(socket_t *sock, buffer_t *bp)
+socket_send_or_queue(socket_t *sock, twopence_buf_t *bp)
 {
 	packet_t *pkt;
 
@@ -560,8 +560,8 @@ socket_send_or_queue(socket_t *sock, buffer_t *bp)
 	if (queue_empty(&sock->xmit_queue))
 		(void) socket_send_buffer(sock, bp);
 
-	if (buffer_count(bp) != 0) {
-		pkt = packet_new(buffer_clone(bp));
+	if (twopence_buf_count(bp) != 0) {
+		pkt = packet_new(twopence_buf_clone(bp));
 		queue_append(&sock->xmit_queue, pkt);
 	}
 }
@@ -576,7 +576,7 @@ socket_send_queued(socket_t *sock)
 		return 0;
 
 	n = socket_send_buffer(sock, pkt->buffer);
-	if (buffer_count(pkt->buffer) == 0) {
+	if (twopence_buf_count(pkt->buffer) == 0) {
 		/* Sent the complete buffer */
 		queue_dequeue(&sock->xmit_queue);
 		packet_free(pkt);
@@ -688,7 +688,7 @@ static const char *
 socket_queue_desc(const socket_t *sock)
 {
 	static char buffer[60];
-	unsigned int recv_bytes = sock->recv_buf? buffer_count(sock->recv_buf) : 0;
+	unsigned int recv_bytes = sock->recv_buf? twopence_buf_count(sock->recv_buf) : 0;
 	unsigned int send_bytes = sock->xmit_queue.bytes;
 
 	if (recv_bytes == 0 && send_bytes == 0)
@@ -754,7 +754,7 @@ socket_fill_poll(socket_t *sock, struct pollfd *pfd)
 			pfd->events |= POLLOUT;
 	}
 	if (!sock->read_eof) {
-		if (sock->recv_buf != NULL && buffer_tailroom_max(sock->recv_buf) != 0)
+		if (sock->recv_buf != NULL && twopence_buf_tailroom_max(sock->recv_buf) != 0)
 			pfd->events |= POLLIN;
 	}
 
@@ -793,7 +793,7 @@ socket_doio(socket_t *sock)
 		unsigned int tailroom = 0;
 
 		if (sock->recv_buf)
-			tailroom = buffer_tailroom(sock->recv_buf);
+			tailroom = twopence_buf_tailroom(sock->recv_buf);
 		if (tailroom != 0) {
 			n = socket_recv_buffer(sock, sock->recv_buf);
 			TRACE2("socket_recv_buffer returns %d\n", n);

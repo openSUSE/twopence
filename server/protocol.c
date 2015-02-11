@@ -51,9 +51,9 @@
  * Protocol handling functions
  */
 void
-protocol_build_header(buffer_t *bp, unsigned char type)
+protocol_build_header(twopence_buf_t *bp, unsigned char type)
 {
-	unsigned int len = buffer_count(bp);
+	unsigned int len = twopence_buf_count(bp);
 	header_t hdr;
 
 	assert(len < 65536);
@@ -62,11 +62,11 @@ protocol_build_header(buffer_t *bp, unsigned char type)
 	hdr.pad = 0;
 	hdr.len = htons(len);
 
-	memcpy((void *) buffer_head(bp), &hdr, TWOPENCE_PROTO_HEADER_SIZE);
+	memcpy((void *) twopence_buf_head(bp), &hdr, TWOPENCE_PROTO_HEADER_SIZE);
 }
 
 void
-protocol_push_header(buffer_t *bp, unsigned char type)
+protocol_push_header(twopence_buf_t *bp, unsigned char type)
 {
 	/* When we post buffers to the output streams of a command, for instance,
 	 * we reserve the space needed for the header.
@@ -78,13 +78,13 @@ protocol_push_header(buffer_t *bp, unsigned char type)
 	protocol_build_header(bp, type);
 }
 
-buffer_t *
+twopence_buf_t *
 protocol_command_buffer_new()
 {
-	buffer_t *bp;
+	twopence_buf_t *bp;
 
-	bp = buffer_new(TWOPENCE_PROTO_MAX_PACKET);
-	buffer_reserve_tail(bp, TWOPENCE_PROTO_HEADER_SIZE);
+	bp = twopence_buf_new(TWOPENCE_PROTO_MAX_PACKET);
+	twopence_buf_reserve_tail(bp, TWOPENCE_PROTO_HEADER_SIZE);
 
 	/* Reserve head room */
 	bp->head = bp->tail = TWOPENCE_PROTO_HEADER_SIZE;
@@ -92,64 +92,64 @@ protocol_command_buffer_new()
 	return bp;
 }
 
-buffer_t *
+twopence_buf_t *
 protocol_build_eof_packet(void)
 {
-	buffer_t *bp;
+	twopence_buf_t *bp;
 
 	bp = protocol_command_buffer_new();
 	protocol_push_header(bp, PROTO_HDR_TYPE_EOF);
 	return bp;
 }
 
-buffer_t *
+twopence_buf_t *
 protocol_build_uint_packet(unsigned char type, unsigned int value)
 {
-	buffer_t *bp;
+	twopence_buf_t *bp;
 	char string[32];
 
 	bp = protocol_command_buffer_new();
 
 	snprintf(string, sizeof(string), "%u", value);
-	buffer_puts(bp, string);
+	twopence_buf_puts(bp, string);
 
 	protocol_push_header(bp, type);
 	return bp;
 }
 
-buffer_t *
+twopence_buf_t *
 protocol_recv_buffer_new(void)
 {
-	buffer_t *bp;
+	twopence_buf_t *bp;
 
-	bp = buffer_new(TWOPENCE_PROTO_MAX_PACKET);
-	buffer_reserve_tail(bp, TWOPENCE_PROTO_HEADER_SIZE);
+	bp = twopence_buf_new(TWOPENCE_PROTO_MAX_PACKET);
+	twopence_buf_reserve_tail(bp, TWOPENCE_PROTO_HEADER_SIZE);
 	return bp;
 }
 
 bool
-protocol_buffer_complete(const buffer_t *bp)
+protocol_buffer_complete(const twopence_buf_t *bp)
 {
 	const header_t *hdr;
 	unsigned int len;
 
-	len = buffer_count(bp);
+	len = twopence_buf_count(bp);
 	if (len < TWOPENCE_PROTO_HEADER_SIZE)
 		return false;
 
-	hdr = (header_t *) buffer_head(bp);
+	hdr = (header_t *) twopence_buf_head(bp);
 	if (len < htons(hdr->len))
 		return false;
 	return true;
 }
 
 const header_t *
-protocol_dissect(buffer_t *bp, buffer_t *payload)
+protocol_dissect(twopence_buf_t *bp, twopence_buf_t *payload)
 {
 	header_t *hdr;
 	unsigned int len;
 
-	if (!(hdr = buffer_pull(bp, TWOPENCE_PROTO_HEADER_SIZE)))
+	if (!(hdr = twopence_buf_pull(bp, TWOPENCE_PROTO_HEADER_SIZE)))
 		return NULL;
 
 	len = ntohs(hdr->len);
@@ -159,25 +159,25 @@ protocol_dissect(buffer_t *bp, buffer_t *payload)
 	}
 
 	len -= TWOPENCE_PROTO_HEADER_SIZE;
-	if (buffer_count(bp) < len) {
+	if (twopence_buf_count(bp) < len) {
 		fprintf(stderr, "%s: called on incomplete packet (payload: header %u buffer %u)\n",
-				__func__, len, buffer_count(bp));
+				__func__, len, twopence_buf_count(bp));
 		return NULL;
 	}
 
-	buffer_init_static(payload, (void *) buffer_head(bp), len);
-	buffer_advance_head(bp, len);
+	twopence_buf_init_static(payload, (void *) twopence_buf_head(bp), len);
+	twopence_buf_advance_head(bp, len);
 	return hdr;
 }
 
 bool
-protocol_dissect_string(buffer_t *bp, char *stringbuf, unsigned int size)
+protocol_dissect_string(twopence_buf_t *bp, char *stringbuf, unsigned int size)
 {
 	unsigned int n, k, count;
 	char *s;
 
-	count = buffer_count(bp);
-	s = (char *) buffer_head(bp);
+	count = twopence_buf_count(bp);
+	s = (char *) twopence_buf_head(bp);
 
 	for (n = 0; n < count && isspace(s[n]); ++n)
 		;
@@ -198,13 +198,13 @@ protocol_dissect_string(buffer_t *bp, char *stringbuf, unsigned int size)
 }
 
 bool
-protocol_dissect_string_delim(buffer_t *bp, char *stringbuf, unsigned int size, char delimiter)
+protocol_dissect_string_delim(twopence_buf_t *bp, char *stringbuf, unsigned int size, char delimiter)
 {
 	unsigned int n = 0, k, count;
 	char *s;
 
-	count = buffer_count(bp);
-	s = (char *) buffer_head(bp);
+	count = twopence_buf_count(bp);
+	s = (char *) twopence_buf_head(bp);
 
 	for (k = 0; n < count && s[n] != delimiter; ++n) {
 		if (k + 2 >= size)
@@ -218,7 +218,7 @@ protocol_dissect_string_delim(buffer_t *bp, char *stringbuf, unsigned int size, 
 }
 
 bool
-protocol_dissect_uint(buffer_t *bp, unsigned int *retval)
+protocol_dissect_uint(twopence_buf_t *bp, unsigned int *retval)
 {
 	char buffer[32], *s;
 
@@ -345,7 +345,7 @@ transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max
 
 			socket_prepare_poll(sock);
 			if (nfds < max) {
-				buffer_t *bp;
+				twopence_buf_t *bp;
 
 				/* If needed, post a new receive buffer to the socket. */
 				bp = socket_post_recvbuf_if_needed(sock, TWOPENCE_PROTO_MAX_PACKET);
@@ -355,7 +355,7 @@ transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max
 					 * the entire packet - instead, we reserve some room for the
 					 * protocol header, which we just tack on once we have the data.
 					 */
-					buffer_reserve_head(bp, TWOPENCE_PROTO_HEADER_SIZE);
+					twopence_buf_reserve_head(bp, TWOPENCE_PROTO_HEADER_SIZE);
 				}
 				if (socket_fill_poll(sock, pfd + nfds))
 					nfds++;
@@ -408,9 +408,9 @@ transaction_doio(transaction_t *trans)
 }
 
 inline void
-transaction_send_client(transaction_t *trans, buffer_t *bp)
+transaction_send_client(transaction_t *trans, twopence_buf_t *bp)
 {
-	const header_t *h = (const header_t *) buffer_head(bp);
+	const header_t *h = (const header_t *) twopence_buf_head(bp);
 
 	TRACE("%s()\n", __func__);
 	if (h)
@@ -480,7 +480,7 @@ transaction_fail2(transaction_t *trans, int major, int minor)
 void
 transaction_send_timeout(transaction_t *trans)
 {
-	buffer_t *bp;
+	twopence_buf_t *bp;
 
 	bp = protocol_command_buffer_new();
 	protocol_push_header(bp, PROTO_HDR_TYPE_TIMEOUT);
@@ -494,12 +494,12 @@ transaction_send_timeout(transaction_t *trans)
  *
  */
 void
-transaction_queue_stdin(transaction_t *trans, buffer_t *bp)
+transaction_queue_stdin(transaction_t *trans, twopence_buf_t *bp)
 {
 	socket_t *sock;
 
 	if ((sock = trans->local_sink) == NULL) {
-		buffer_free(bp);
+		twopence_buf_free(bp);
 		return;
 	}
 
@@ -515,7 +515,7 @@ transaction_queue_stdin(transaction_t *trans, buffer_t *bp)
  * transation.
  */
 bool
-transaction_write_data(transaction_t *trans, buffer_t *payload)
+transaction_write_data(transaction_t *trans, twopence_buf_t *payload)
 {
 	unsigned int count;
 	socket_t *sock;
@@ -526,7 +526,7 @@ transaction_write_data(transaction_t *trans, buffer_t *payload)
 		return false;
 	}
 
-	count = buffer_count(payload);
+	count = twopence_buf_count(payload);
 
 	TRACE("About to write %u bytes of data to local sink\n", count);
 	if ((n = socket_write(sock, payload, count)) < 0) {
@@ -557,7 +557,7 @@ transaction_process(transaction_t *trans)
 	socket_t *sock;
 
 	for (i = 0; i < trans->num_local_sources; ++i) {
-		buffer_t *bp;
+		twopence_buf_t *bp;
 
 		sock = trans->local_source[i];
 		if (sock && (bp = socket_take_recvbuf(sock)) != NULL) {

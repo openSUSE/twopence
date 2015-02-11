@@ -439,11 +439,11 @@ failed:
 }
 
 bool
-server_inject_file_recv(transaction_t *trans, const header_t *hdr, buffer_t *payload)
+server_inject_file_recv(transaction_t *trans, const header_t *hdr, twopence_buf_t *payload)
 {
 	switch (hdr->type) {
 	case PROTO_HDR_TYPE_DATA:
-		TRACE("inject: received %u bytes of data\n", buffer_count(payload));
+		TRACE("inject: received %u bytes of data\n", twopence_buf_count(payload));
 		transaction_write_data(trans, payload);
 		/* FIXME: how do we propagate write errors to the client? */
 		break;
@@ -491,7 +491,7 @@ server_inject_file(transaction_t *trans, const char *username, const char *filen
 }
 
 bool
-server_extract_file_recv(transaction_t *trans, const header_t *hdr, buffer_t *payload)
+server_extract_file_recv(transaction_t *trans, const header_t *hdr, twopence_buf_t *payload)
 {
 	switch (hdr->type) {
 	default:
@@ -506,7 +506,7 @@ bool
 server_extract_file_send(transaction_t *trans)
 {
 	socket_t *sock;
-	buffer_t *bp;
+	twopence_buf_t *bp;
 
 	TRACE("%s()\n", __func__);
 	if (trans->num_local_sources == 0)
@@ -565,14 +565,14 @@ server_run_command_send(transaction_t *trans)
 
 	pending_output = false;
 	for (i = 0; i < trans->num_local_sources; ++i) {
-		buffer_t *bp;
+		twopence_buf_t *bp;
 
 		if (!(sock = trans->local_source[i]))
 			continue;
 
 		bp = socket_take_recvbuf(sock);
 		if (bp != NULL) {
-			TRACE("read %u bytes from command fd %d\n", buffer_count(bp), i + 1);
+			TRACE("read %u bytes from command fd %d\n", twopence_buf_count(bp), i + 1);
 			protocol_push_header(bp, PROTO_HDR_TYPE_STDOUT + i);
 
 			socket_queue_xmit(trans->client_sock, bp);
@@ -618,12 +618,12 @@ server_run_command_send(transaction_t *trans)
 }
 
 bool
-server_run_command_recv(transaction_t *trans, const header_t *hdr, buffer_t *payload)
+server_run_command_recv(transaction_t *trans, const header_t *hdr, twopence_buf_t *payload)
 {
 	switch (hdr->type) {
 	case PROTO_HDR_TYPE_STDIN:
 		/* queue the buffer for output to the local command */
-		transaction_queue_stdin(trans, buffer_clone(payload));
+		transaction_queue_stdin(trans, twopence_buf_clone(payload));
 		break;
 
 	case PROTO_HDR_TYPE_EOF:
