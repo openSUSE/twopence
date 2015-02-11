@@ -124,25 +124,25 @@ twopence_buf_push(twopence_buf_t *bp, void *data, unsigned int len)
 	return true;
 }
 
-#if 0
 bool
 twopence_buf_resize(twopence_buf_t *bp, unsigned int want_size)
 {
+	static const unsigned int BUFFER_MIN_SIZE = 128;
+	static const unsigned int BUFFER_BIG_SIZE = 128 * 1024;
 	unsigned int new_size;
 
 	if (want_size <= bp->size)
 		return true;
 
-	if (want_size >= bp->max_size)
-		return false;
-
-	for (new_size = bp->size * 2; new_size < want_size; new_size *= 2)
-		;
-
-	if (new_size < BUFFER_MIN_SIZE)
+	if (want_size < BUFFER_MIN_SIZE) {
 		new_size = BUFFER_MIN_SIZE;
-	if (new_size > bp->max_size)
-		new_size = bp->max_size;
+	} else
+	if (want_size < BUFFER_BIG_SIZE) {
+		for (new_size = BUFFER_MIN_SIZE; new_size < want_size; new_size *= 2)
+			;
+	} else {
+		new_size = want_size;
+	}
 
 	assert(want_size <= new_size);
 
@@ -152,7 +152,6 @@ twopence_buf_resize(twopence_buf_t *bp, unsigned int want_size)
 	bp->size = new_size;
 	return true;
 }
-#endif
 
 void
 twopence_buf_reserve_head(twopence_buf_t *bp, unsigned int amount)
