@@ -617,7 +617,8 @@ __twopence_pipe_command
 //
 // Returns 0 if everything went fine
 int _twopence_inject_virtio_serial
-  (struct twopence_pipe_target *handle, const char *username, int file_fd, const char *remote_filename, int *remote_rc)
+  (struct twopence_pipe_target *handle, const char *username, int file_fd,
+   	const char *remote_filename, int remote_filemode, int *remote_rc)
 {
   char command[COMMAND_BUFFER_SIZE];
   int n;
@@ -633,7 +634,7 @@ int _twopence_inject_virtio_serial
 
   // Prepare command to send to the remote host
   n = snprintf(command, COMMAND_BUFFER_SIZE,
-               "i...%s %d %s", username, 0, remote_filename);
+               "i...%s %d %s", username, remote_filemode, remote_filename);
   if (n < 0 || n >= COMMAND_BUFFER_SIZE)
     return TWOPENCE_PARAMETER_ERROR;
   store_length(n + 1, command);
@@ -837,7 +838,7 @@ twopence_pipe_inject_file(struct twopence_target *opaque_handle,
 
   // Inject it
   rc = _twopence_inject_virtio_serial
-         (handle, username, fd, remote_filename, remote_rc);
+         (handle, username, fd, remote_filename, 0660, remote_rc);
   if (rc == 0 && *remote_rc != 0)
     rc = TWOPENCE_REMOTE_FILE_ERROR;
 

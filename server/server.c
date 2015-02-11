@@ -145,7 +145,7 @@ server_change_hats_permanently(const struct passwd *user, int *status)
 }
 
 int
-server_open_file_as(const char *username, const char *filename, int oflags, int *status)
+server_open_file_as(const char *username, const char *filename, unsigned int filemode, int oflags, int *status)
 {
 	struct stat stb;
 	struct saved_ids saved_ids;
@@ -464,12 +464,12 @@ server_inject_file_recv(transaction_t *trans, const header_t *hdr, buffer_t *pay
 }
 
 bool
-server_inject_file(transaction_t *trans, const char *username, const char *filename, size_t filesize)
+server_inject_file(transaction_t *trans, const char *username, const char *filename, size_t filemode)
 {
 	int status;
 	int fd;
 
-	if ((fd = server_open_file_as(username, filename, O_WRONLY|O_CREAT|O_TRUNC, &status)) < 0) {
+	if ((fd = server_open_file_as(username, filename, filemode, O_WRONLY|O_CREAT|O_TRUNC, &status)) < 0) {
 		transaction_fail(trans, status);
 		return false;
 	}
@@ -536,7 +536,7 @@ server_extract_file(transaction_t *trans, const char *username, const char *file
 	int status;
 	int fd;
 
-	if ((fd = server_open_file_as(username, filename, O_RDONLY, &status)) < 0) {
+	if ((fd = server_open_file_as(username, filename, 0600, O_RDONLY, &status)) < 0) {
 		transaction_fail(trans, status);
 		return false;
 	}

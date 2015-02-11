@@ -42,7 +42,6 @@ The length includes the 4 bytes of the header.
 Parameters are separated with spaces:
 
   run command   username timeout command
-  insert file   username filesize filename
-  			(note, filesize is being ignored)
+  insert file   username filemode filename
   extract file  username filename
 

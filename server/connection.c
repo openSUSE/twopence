@@ -160,20 +160,20 @@ connection_process_packet(connection_t *conn, buffer_t *bp)
 			char username[128];
 			char filename[PATH_MAX];
 			char command[2048];
-			unsigned int size = 0;
+			unsigned int filemode = 0;
 			unsigned int timeout = 0;
 
 			switch (hdr->type) {
 			case PROTO_HDR_TYPE_INJECT:
 				if (!protocol_dissect_string(&payload, username, sizeof(username))
-				 || !protocol_dissect_uint(&payload, &size)
+				 || !protocol_dissect_uint(&payload, &filemode)
 				 || !protocol_dissect_string(&payload, filename, sizeof(filename))) {
 					TRACE("cannot parse packet\n");
 					break;
 				}
 
 				trans = transaction_new(conn->client_sock, hdr->type, conn->next_id++);
-				semantics->inject_file(trans, username, filename, size);
+				semantics->inject_file(trans, username, filename, filemode);
 				break;
 
 			case PROTO_HDR_TYPE_EXTRACT:
