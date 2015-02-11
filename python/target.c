@@ -206,10 +206,12 @@ Target_property(twopence_Target *self, PyObject *args, PyObject *kwds)
 int
 twopence_AppendBuffer(PyObject *buffer, const twopence_buffer_t *buf)
 {
+	unsigned int count;
 	int rv = 0;
 
-	if (buffer != NULL && buffer != Py_None && buf->head != NULL) {
-		PyObject *temp = PyString_FromString(buf->head);
+	count = twopence_buf_count(buf);
+	if (buffer != NULL && buffer != Py_None && count != 0) {
+		PyObject *temp = PyString_FromStringAndSize(twopence_buf_head(buf), count);
 
 		if (PySequence_InPlaceConcat(buffer, temp) == NULL)
 			rv = -1;

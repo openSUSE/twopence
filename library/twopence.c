@@ -457,9 +457,9 @@ twopence_command_alloc_buffer(twopence_command_t *cmd, twopence_iofd_t dst, size
   if ((bp = __twopence_command_buffer(cmd, dst)) == NULL)
     return NULL;
 
-  twopence_buffer_free(bp);
+  twopence_buf_destroy(bp);
   if (size)
-    twopence_buffer_alloc(bp, size);
+    twopence_buf_resize(bp, size);
   return bp;
 }
 
@@ -513,39 +513,9 @@ twopence_command_destroy(twopence_command_t *cmd)
   unsigned int i;
 
   for (i = 0; i < __TWOPENCE_IO_MAX; ++i) {
-    twopence_buffer_free(&cmd->buffer[i]);
+    twopence_buf_destroy(&cmd->buffer[i]);
     twopence_iostream_destroy(&cmd->iostream[i]);
   }
-}
-
-/*
- * Output handling
- */
-static void
-__twopence_buffer_init(struct twopence_buffer *buf, char *head, size_t size)
-{
-  buf->head = buf->tail = head;
-  buf->end = head + size;
-}
-
-void
-twopence_buffer_init(twopence_buffer_t *buf)
-{
-  memset(buf, 0, sizeof(*buf));
-}
-
-void
-twopence_buffer_alloc(twopence_buffer_t *buf, size_t size)
-{
-  __twopence_buffer_init(buf, calloc(size, 1), size);
-}
-
-void
-twopence_buffer_free(twopence_buffer_t *buf)
-{
-  if (buf->head)
-    free(buf->head);
-  memset(buf, 0, sizeof(*buf));
 }
 
 /*
@@ -594,16 +564,15 @@ twopence_iostream_destroy(twopence_iostream_t *stream)
  * Buffering functions
  */
 static unsigned int
-__twopence_buffer_put(struct twopence_buffer *bp, const void *data, size_t len)
+__twopence_buffer_put(twopence_buf_t *bp, const void *data, size_t len)
 {
   size_t tailroom;
 
-  tailroom = bp->end - bp->tail;
+  tailroom = twopence_buf_tailroom(bp);
   if (len > tailroom)
     len = tailroom;
 
-  memcpy(bp->tail, data, len);
-  bp->tail += len;
+  twopence_buf_append(bp, data, len);
   return len;
 }
 

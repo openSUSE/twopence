@@ -112,12 +112,8 @@ typedef enum {
 	__TWOPENCE_IO_MAX
 } twopence_iofd_t;
 
-typedef struct twopence_buffer twopence_buffer_t;
-struct twopence_buffer {
-	char *		head;
-	char *		tail;
-	char *		end;
-};
+/* Temporary alias for twopence_buf_t */
+typedef twopence_buf_t twopence_buffer_t;
 
 typedef struct twopence_substream twopence_substream_t;
 
@@ -389,10 +385,6 @@ extern void		twopence_command_iostream_redirect(twopence_command_t *, twopence_i
 /*
  * Output handling functions
  */
-extern void		twopence_buffer_init(twopence_buffer_t *);
-extern void		twopence_buffer_alloc(twopence_buffer_t *, size_t);
-extern void		twopence_buffer_free(twopence_buffer_t *);
-
 extern twopence_iostream_t *twopence_target_stream(struct twopence_target *, twopence_iofd_t);
 extern int		twopence_target_set_blocking(struct twopence_target *, twopence_iofd_t, bool);
 extern int		twopence_target_putc(struct twopence_target *, twopence_iofd_t, char);
