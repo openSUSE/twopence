@@ -27,7 +27,7 @@ cat <<EOF
 --- Starting test server ---
 
 EOF
-../server/twopence_test_server --daemon --port-unix /tmp/twopence.sock
+../server/twopence_test_server --daemon --port-unix /tmp/twopence.sock $TWOPENCE_SERVER_OPTIONS
 
 cat <<EOF
 ------------------------------------------------------------------
