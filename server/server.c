@@ -189,13 +189,6 @@ server_open_file_as(const char *username, const char *filename, unsigned int fil
 	if (fd < 0)
 		return -1;
 
-	if (fchmod(fd, filemode) < 0) {
-		*status = errno;
-		twopence_log_error("failed to change file mode \"%s\" to 0%o: %m", filename, filemode);
-		close(fd);
-		return -1;
-	}
-
 	if (fstat(fd, &stb) < 0) {
 		*status = errno;
 		twopence_log_error("failed to stat \"%s\": %m", filename);
@@ -205,6 +198,12 @@ server_open_file_as(const char *username, const char *filename, unsigned int fil
 	if (!S_ISREG(stb.st_mode)) {
 		twopence_log_error("%s: not a regular file\n", filename);
 		*status = EISDIR;
+		close(fd);
+		return -1;
+	}
+	if (oflags != O_RDONLY && fchmod(fd, filemode) < 0) {
+		*status = errno;
+		twopence_log_error("failed to change file mode \"%s\" to 0%o: %m", filename, filemode);
 		close(fd);
 		return -1;
 	}
