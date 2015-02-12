@@ -356,15 +356,26 @@ twopence_extract_file
    const char *remote_path, const char *local_path,
    int *remote_rc, bool print_dots)
 {
+  twopence_iostream_t *local_stream;
+  int rv;
+
   if (target->ops->extract_file == NULL)
     return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
+
+  /* Open the file */
+  rv = twopence_iostream_open_file(local_path, O_CREAT|O_TRUNC|O_WRONLY, &local_stream);
+  if (rv < 0)
+    return rv;
 
   /* Reset output, and connect with stdout if we want to see the dots get printed */
   target->current.io = NULL;
   if (print_dots)
     __twopence_setup_stdout(target);
 
-  return target->ops->extract_file(target, username, remote_path, local_path, remote_rc, print_dots);
+  rv = target->ops->extract_file(target, username, remote_path, local_stream, remote_rc, print_dots);
+
+  twopence_iostream_free(local_stream);
+  return rv;
 }
 
 int
@@ -566,7 +577,7 @@ twopence_iostream_open_file(const char *filename, int mode, twopence_iostream_t 
 {
   int fd;
 
-  fd = open(filename, mode);
+  fd = open(filename, mode, 0660);
   if (fd == -1)
     return errno == ENAMETOOLONG?  TWOPENCE_PARAMETER_ERROR: TWOPENCE_LOCAL_FILE_ERROR;
 

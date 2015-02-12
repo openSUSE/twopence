@@ -308,7 +308,7 @@ __twopence_ssh_send_file(struct twopence_ssh_target *handle, twopence_iostream_t
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 static int
-__twopence_ssh_receive_file(struct twopence_ssh_target *handle, int file_fd, ssh_scp scp, int remaining, int *remote_rc)
+__twopence_ssh_receive_file(struct twopence_ssh_target *handle, twopence_iostream_t *local_stream, ssh_scp scp, int remaining, int *remote_rc)
 {
   char buffer[BUFFER_SIZE];
   int size, received, written;
@@ -326,8 +326,7 @@ __twopence_ssh_receive_file(struct twopence_ssh_target *handle, int file_fd, ssh
       return TWOPENCE_RECEIVE_FILE_ERROR;
     }
 
-    written = write                    // Write these data locally
-      (file_fd, buffer, size);
+    written = twopence_iostream_write(local_stream, buffer, size);
     if (written != size)
     {
       __twopence_ssh_output(handle, '\n');
@@ -548,7 +547,7 @@ __twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, twopence_iostream_
 //
 // Returns 0 if everything went fine
 static int
-__twopence_ssh_extract_ssh(struct twopence_ssh_target *handle, int file_fd, const char *remote_filename, int *remote_rc)
+__twopence_ssh_extract_ssh(struct twopence_ssh_target *handle, twopence_iostream_t *local_stream, const char *remote_filename, int *remote_rc)
 {
   ssh_session session = handle->session;
   ssh_scp scp;
@@ -586,7 +585,7 @@ __twopence_ssh_extract_ssh(struct twopence_ssh_target *handle, int file_fd, cons
 
   // Receive the file
   rc = __twopence_ssh_receive_file
-        (handle, file_fd, scp, size, remote_rc);
+        (handle, local_stream, scp, size, remote_rc);
   if (rc < 0)
   {
     ssh_scp_close(scp);
@@ -847,40 +846,27 @@ twopence_ssh_inject_file(struct twopence_target *opaque_handle,
 static int
 twopence_ssh_extract_file(struct twopence_target *opaque_handle,
 		const char *username,
-		const char *remote_filename, const char *local_filename,
+		const char *remote_filename, twopence_iostream_t *local_stream,
 		int *remote_rc, bool dots)
 {
   struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
-  int fd, rc;
+  int rc;
 
   // 'remote_rc' defaults to 0
   *remote_rc = 0;
 
-  // Open the file, creating it if it does not exist (u=rw,g=rw,o=)
-  fd = creat(local_filename, 00660);
-  if (fd == -1)
-    return errno == ENAMETOOLONG?
-           TWOPENCE_PARAMETER_ERROR:
-           TWOPENCE_LOCAL_FILE_ERROR;
-
   // Connect to the remote host
   if (__twopence_ssh_connect_ssh(handle, username) < 0)
-  {
-    close(fd);
     return TWOPENCE_OPEN_SESSION_ERROR;
-  }
 
   // Extract the file
   rc = __twopence_ssh_extract_ssh
-         (handle, fd, remote_filename, remote_rc);
+         (handle, local_stream, remote_filename, remote_rc);
   if (rc == 0 && *remote_rc != 0)
     rc = TWOPENCE_REMOTE_FILE_ERROR;
 
   // Disconnect from remote host
   __twopence_ssh_disconnect_ssh(handle);
-
-  // Close the file
-  close(fd);
 
   return rc;
 }

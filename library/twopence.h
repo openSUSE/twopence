@@ -81,7 +81,7 @@ struct twopence_plugin {
 	int			(*run_test)(struct twopence_target *, struct twopence_command *, twopence_status_t *);
 
 	int			(*inject_file)(struct twopence_target *, const char *, twopence_iostream_t *, const char *, int *, bool);
-	int			(*extract_file)(struct twopence_target *, const char *, const char *, const char *, int *, bool);
+	int			(*extract_file)(struct twopence_target *, const char *, const char *, twopence_iostream_t *, int *, bool);
 	int			(*exit_remote)(struct twopence_target *);
 	int			(*interrupt_command)(struct twopence_target *);
 	void			(*end)(struct twopence_target *);

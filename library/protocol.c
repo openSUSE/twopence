@@ -512,7 +512,7 @@ int _twopence_send_file
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int _twopence_receive_file
-  (struct twopence_pipe_target *handle, int file_fd, int link_fd, int *remote_rc)
+  (struct twopence_pipe_target *handle, twopence_iostream_t *local_stream, int link_fd, int *remote_rc)
 {
   char buffer[BUFFER_SIZE];
   int rc, received, written, rv = 0;
@@ -537,7 +537,7 @@ int _twopence_receive_file
 
     case 'd':
       /* Write data to the file */
-      written = write(file_fd, buffer + 4, received);
+      written = twopence_iostream_write(local_stream, buffer + 4, received);
       if (written != received)
         goto local_file_error;
       __twopence_pipe_output(handle, '.');   // Progression dots
@@ -699,7 +699,7 @@ int _twopence_inject_virtio_serial
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int _twopence_extract_virtio_serial
-  (struct twopence_pipe_target *handle, const char *username, int file_fd, const char *remote_filename, int *remote_rc)
+  (struct twopence_pipe_target *handle, const char *username, twopence_iostream_t *local_stream, const char *remote_filename, int *remote_rc)
 {
   char command[COMMAND_BUFFER_SIZE];
   int n;
@@ -732,7 +732,7 @@ int _twopence_extract_virtio_serial
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
 
-  rc = _twopence_receive_file(handle, file_fd, link_fd, remote_rc);
+  rc = _twopence_receive_file(handle, local_stream, link_fd, remote_rc);
   if (rc < 0)
     return TWOPENCE_RECEIVE_FILE_ERROR;
 
@@ -863,27 +863,18 @@ twopence_pipe_inject_file(struct twopence_target *opaque_handle,
 int
 twopence_pipe_extract_file(struct twopence_target *opaque_handle,
 		const char *username,
-		const char *remote_filename, const char *local_filename,
+		const char *remote_filename, twopence_iostream_t *local_stream,
 		int *remote_rc, bool dots)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
-  int fd, rc;
-
-  // Open the file, creating it if it does not exist (u=rw,g=rw,o=)
-  fd = creat(local_filename, 00660);
-  if (fd == -1)
-    return errno == ENAMETOOLONG?
-           TWOPENCE_PARAMETER_ERROR:
-           TWOPENCE_LOCAL_FILE_ERROR;
+  int rc;
 
   // Extract it
   rc = _twopence_extract_virtio_serial
-         (handle, username, fd, remote_filename, remote_rc);
+         (handle, username, local_stream, remote_filename, remote_rc);
   if (rc == 0 && *remote_rc != 0)
     rc = TWOPENCE_REMOTE_FILE_ERROR;
 
-  // Close it
-  close(fd);
   return rc;
 }
 
