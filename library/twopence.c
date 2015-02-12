@@ -564,7 +564,7 @@ twopence_command_ostream_capture(twopence_command_t *cmd, twopence_iofd_t dst, t
   twopence_iostream_t *stream;
 
   if ((stream = __twopence_command_ostream(cmd, dst)) != NULL)
-    twopence_iostream_add_substream(stream, twopence_substream_new_buffer(bp));
+    twopence_iostream_add_substream(stream, twopence_substream_new_buffer(bp, false));
 }
 
 void
@@ -673,10 +673,10 @@ twopence_iostream_wrap_fd(int fd, bool closeit, twopence_iostream_t **ret)
 }
 
 int
-twopence_iostream_wrap_buffer(twopence_buf_t *bp, twopence_iostream_t **ret)
+twopence_iostream_wrap_buffer(twopence_buf_t *bp, bool resizable, twopence_iostream_t **ret)
 {
   *ret = twopence_iostream_new();
-  twopence_iostream_add_substream(*ret, twopence_substream_new_buffer(bp));
+  twopence_iostream_add_substream(*ret, twopence_substream_new_buffer(bp, resizable));
   return 0;
 }
 
@@ -963,12 +963,17 @@ twopence_substream_close(twopence_substream_t *substream)
 }
 
 /*
- * Handle a buffered substream
+ * Handle a buffered substream.
+ * In the write case, the buffer size is limited, ie we do not grow the buffer
+ * dynamically in order  to accomodate arbitrary amounts of data.
  */
 static int
 twopence_substream_buffer_write(twopence_substream_t *sink, const void *data, size_t len)
 {
-  twopence_buf_t *bp = (twopence_buf_t *) sink->data;
+  twopence_buf_t *bp = sink->buffer;
+
+  if (sink->resizable)
+    twopence_buf_ensure_tailroom(bp, len);
 
   __twopence_buffer_put(bp, data, len);
   return len;
@@ -977,7 +982,7 @@ twopence_substream_buffer_write(twopence_substream_t *sink, const void *data, si
 static int
 twopence_substream_buffer_read(twopence_substream_t *src, void *data, size_t len)
 {
-  twopence_buf_t *bp = (twopence_buf_t *) src->data;
+  twopence_buf_t *bp = src->buffer;
   unsigned int avail;
 
   if (bp == NULL)
@@ -995,7 +1000,7 @@ twopence_substream_buffer_read(twopence_substream_t *src, void *data, size_t len
 static long
 twopence_substream_buffer_size(twopence_substream_t *src)
 {
-  twopence_buf_t *bp = (twopence_buf_t *) src->data;
+  twopence_buf_t *bp = src->buffer;
 
   if (bp == NULL)
     return -1;
@@ -1010,12 +1015,13 @@ static twopence_io_ops_t twopence_buffer_io = {
 };
 
 twopence_substream_t *
-twopence_substream_new_buffer(twopence_buf_t *bp)
+twopence_substream_new_buffer(twopence_buf_t *bp, bool resizable)
 {
   twopence_substream_t *io;
 
   io = __twopence_substream_new(&twopence_buffer_io);
-  io->data = bp;
+  io->buffer = bp;
+  io->resizable = resizable;
   return io;
 }
 

@@ -265,16 +265,12 @@ Transfer_setattr(twopence_Transfer *self, char *name, PyObject *v)
 		return 0;
 	}
 	if (!strcmp(name, "permissions")) {
-		long l;
-
 		if (!PyInt_Check(v))
 			goto bad_attr;
 		self->permissions = PyInt_AsLong(v);
 		return 0;
 	}
 	if (!strcmp(name, "timeout")) {
-		long l;
-
 		if (!PyInt_Check(v))
 			goto bad_attr;
 		self->timeout = PyInt_AsLong(v);

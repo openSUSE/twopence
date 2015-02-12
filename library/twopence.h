@@ -138,7 +138,10 @@ struct twopence_io_ops {
 struct twopence_substream {
 	const twopence_io_ops_t *ops;
 	union {
-	    void *		data;
+	    struct {
+	        twopence_buf_t *buffer;
+		bool		resizable;
+	    };
 	    struct {
 	        int		fd;
 		bool		close;
@@ -422,7 +425,7 @@ extern int		twopence_target_write(struct twopence_target *, twopence_iofd_t, con
 extern int		twopence_iostream_open_file(const char *filename, twopence_iostream_t **ret);
 extern int		twopence_iostream_create_file(const char *filename, unsigned int permissions, twopence_iostream_t **ret);
 extern int		twopence_iostream_wrap_fd(int fd, bool closeit, twopence_iostream_t **ret);
-extern int		twopence_iostream_wrap_buffer(twopence_buf_t *bp, twopence_iostream_t **ret);
+extern int		twopence_iostream_wrap_buffer(twopence_buf_t *bp, bool resizable, twopence_iostream_t **ret);
 extern void		twopence_iostream_free(twopence_iostream_t *);
 extern void		twopence_iostream_add_substream(twopence_iostream_t *, twopence_substream_t *);
 extern void		twopence_iostream_destroy(twopence_iostream_t *);
@@ -436,7 +439,7 @@ extern int		twopence_iostream_set_blocking(twopence_iostream_t *, bool);
 extern int		twopence_iostream_poll(twopence_iostream_t *, struct pollfd *, int mask);
 extern long		twopence_iostream_filesize(twopence_iostream_t *);
 
-extern twopence_substream_t *twopence_substream_new_buffer(twopence_buf_t *);
+extern twopence_substream_t *twopence_substream_new_buffer(twopence_buf_t *, bool resizable);
 extern twopence_substream_t *twopence_substream_new_fd(int fd, bool closeit);
 extern void		twopence_substream_close(twopence_substream_t *);
 

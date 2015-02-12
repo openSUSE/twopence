@@ -844,7 +844,7 @@ twopence_ssh_inject_file(struct twopence_target *opaque_handle,
       return TWOPENCE_LOCAL_FILE_ERROR;
 
     tmp_xfer.local_stream = NULL;
-    twopence_iostream_wrap_buffer(bp, &tmp_xfer.local_stream);
+    twopence_iostream_wrap_buffer(bp, false, &tmp_xfer.local_stream);
     rc = __twopence_ssh_inject_ssh(handle, &tmp_xfer, dirname, basename, status);
     twopence_iostream_free(tmp_xfer.local_stream);
   } else {
