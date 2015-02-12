@@ -8,6 +8,8 @@
 #   python_test.py serial:/dev/ttyS0
 ##########################################################
 
+testuser = "testuser"
+
 import twopence
 import sys
 import os
@@ -110,8 +112,8 @@ try:
 	status = target.run("/bin/pwd")
 	if testCaseCheckStatus(status):
 		pwd = str(status.stdout).strip();
-		if pwd != "/":
-			testCaseFail("expected pwd to print '/', instead got '%s'" % pwd);
+		if pwd != "/" and pwd != '/root':
+			testCaseFail("expected pwd to print '/' or '/root', instead got '%s'" % pwd);
 except:
 	testCaseException()
 testCaseReport()
@@ -137,9 +139,9 @@ except:
 os.remove("etc_hosts")
 testCaseReport()
 
-testCaseBegin("extract '/etc/hosts' => 'etc_hosts' as user 'nobody'")
+testCaseBegin("extract '/etc/hosts' => 'etc_hosts' as user '%s'" % testuser)
 try:
-	target.extract("/etc/hosts", "etc_hosts", user = "nobody")
+	target.extract("/etc/hosts", "etc_hosts", user = testuser)
 except:
 	testCaseException()
 os.remove("etc_hosts")
@@ -158,7 +160,7 @@ try:
 	status = target.run("bash -c 'kill -9 $$'")
 	# Weird exit status - not sure where this is coming from -- okir
 	# I get 9 in the major, makes more sense indeed -- ebischoff
-	testCaseCheckStatus(status, 947)
+	testCaseCheckStatus(status, 9)
 except:
 	testCaseException()
 testCaseReport()
@@ -178,15 +180,15 @@ except:
 testCaseReport()
 
 
-testCaseBegin("verify that command is run as nobody")
+testCaseBegin("verify that command is run as %s" % testuser)
 try:
-	status = target.run("id -un", user = "nobody")
+	status = target.run("id -un", user = testuser)
 	if testCaseCheckStatus(status):
 		user = str(status.stdout).strip()
-		if user == "nobody":
-			print "Good, command was run as nobody"
+		if user == testuser:
+			print "Good, command was run as %s" % testuser
 		else:
-			testCaseFail("Command was run as %s instead of user nobody" % user)
+			testCaseFail("Command was run as %s instead of user %s" % (user, testuser))
 except:
 	testCaseException()
 testCaseReport()
@@ -244,18 +246,18 @@ except:
 testCaseReport()
 
 
-testCaseBegin("run command as nobody")
+testCaseBegin("run command as %s" % testuser)
 try:
-	cmd = twopence.Command("id -un", user = "nobody");
+	cmd = twopence.Command("id -un", user = testuser);
 	cmd.suppressOutput()
 	cmd.stderr = None
 	status = target.run(cmd)
 	if testCaseCheckStatus(status):
 		user = str(cmd.stdout).strip()
-		if user != "nobody":
-			testCaseFail("command ran as user %s instead of nobody" % user)
+		if user != testuser:
+			testCaseFail("command ran as user %s instead of %s" % (user, testuser))
 		else:
-			print "Good, command ran as user nobody"
+			print "Good, command ran as user %s" % testuser
 except:
 	testCaseException()
 testCaseReport()

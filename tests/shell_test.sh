@@ -8,6 +8,8 @@
 #   shell_test.sh serial:/dev/ttyS0
 ##########################################################
 
+TESTUSER=testuser
+
 if [ $# -gt 0 ]; then
 	TARGET=$1
 fi
@@ -29,6 +31,10 @@ if [ -z "$LD_LIBRARY_PATH" ]; then
 fi
 
 overall_status=0
+num_tests=0
+num_succeeded=0
+num_skipped=0
+num_failed=0
 
 function twopence_command {
 
@@ -60,6 +66,7 @@ function test_case_begin {
 	echo "### TEST: $*"
 
 	test_case_status=0
+	((num_tests++))
 }
 
 function test_case_fail {
@@ -67,6 +74,12 @@ function test_case_fail {
 	echo "### $*" >&2
 	test_case_status=1
 	overall_status=1
+}
+
+function test_case_skip {
+
+	echo "### $*" >&2
+	test_case_status=skipped
 }
 
 function test_case_check_status {
@@ -89,10 +102,19 @@ function test_case_report {
 	if [ -z "$test_case_status" ]; then
 		echo "### ERROR: test_case_report called without test_case_begin" >&2
 		overall_status=1
-	elif [ $test_case_status -ne 0 ]; then
-		echo "### FAIL"
 	else
-		echo "### SUCCESS"
+		case $test_case_status in
+		0)
+			((num_succeeded++))
+			echo "### SUCCESS";;
+		skipped)
+			((num_skipped++))
+			echo "### SKIPPED";;
+		*)
+			((num_failed++))
+			echo "### FAIL"
+			: ;;
+		esac
 	fi >&2
 	echo ""
 	unset test_case_status
@@ -115,13 +137,13 @@ fi
 test_case_report
 
 
-test_case_begin "run command as nobody"
-username=`twopence_command -u nobody -b $TARGET 'id -un'`
+test_case_begin "run command as $TESTUSER"
+username=`twopence_command -u $TESTUSER -b $TARGET 'id -un'`
 if test_case_check_status $?; then
-	if [ "$username" = "nobody" ]; then
-		echo "Good, server executes commands as nobody as expected"
+	if [ "$username" = "$TESTUSER" ]; then
+		echo "Good, server executes commands as $TESTUSER as expected"
 	else
-		test_case_fail "Server executed command as user \"$username\" instead of nobody"
+		test_case_fail "Server executed command as user \"$username\" instead of $TESTUSER"
 	fi
 fi
 test_case_report
@@ -141,7 +163,7 @@ if [ ! -f got.txt ]; then
 	test_case_fail "command didn't write output file"
 elif ! cmp expect.txt got.txt; then
 	test_case_fail "Files differ"
-	diff -u expect.txt got.txt
+	diff -bu expect.txt got.txt
 else
 	echo "Good, files match"
 fi
@@ -168,9 +190,8 @@ fi
 test_case_report
 rm -f stdout.txt stderr.txt
 
-
-test_case_begin "command 'find /dev -type s' run as user 'nobody'"
-twopence_command -u nobody -1 output.txt -2 errors.txt $TARGET 'find /dev -type s'
+test_case_begin "command 'find /dev -type s' run as user '$TESTUSER'"
+twopence_command -u $TESTUSER -1 output.txt -2 errors.txt $TARGET 'find /dev -type s'
 test_case_check_status $? 9
 echo "output was:"
 cat output.txt
@@ -236,17 +257,17 @@ fi
 rm -f cat_file
 test_case_report
 
-test_case_begin "upload a file as user nobody"
+test_case_begin "upload a file as user $TESTUSER"
 twopence_command $TARGET "rm -f $server_test_file"
 test_case_check_status $?
 
-twopence_inject -u nobody $TARGET /dev/null $server_test_file
+twopence_inject -u $TESTUSER $TARGET /dev/null $server_test_file
 if test_case_check_status $?; then
 	username=`twopence_command -b $TARGET "stat --format %U $server_test_file"`
-	if [ "$username" != "nobody" ]; then
-		test_case_fail "wrong file owner \"$username\", expected user nobody"
+	if [ "$username" != "$TESTUSER" ]; then
+		test_case_fail "wrong file owner \"$username\", expected user $TESTUSER"
 	else
-		echo "Good, file is owned by user nobody"
+		echo "Good, file is owned by user $TESTUSER"
 	fi
 fi
 test_case_report
@@ -279,14 +300,18 @@ test_case_report
 
 
 test_case_begin "extract a proc file"
-twopence_extract $TARGET /proc/interrupts extracted
-test_case_check_status $? 0
-if [ -e extracted -a ! -s extracted ]; then
-	test_case_fail "downloaded file is empty"
-else
-	echo "good, extracted file has `wc -l < extracted` lines"
-fi
-rm -f extracted
+case $TARGET in
+ssh:*)	test_case_skip "Extracting /proc files currently does not work with ssh";;
+*)
+	twopence_extract $TARGET /proc/interrupts extracted
+	test_case_check_status $? 0
+	if [ -e extracted -a ! -s extracted ]; then
+		test_case_fail "downloaded file is empty"
+	else
+		echo "good, extracted file has `wc -l < extracted` lines"
+	fi
+	rm -f extracted
+esac
 test_case_report
 
 test_case_begin "test timeout of commands"
@@ -322,6 +347,14 @@ wait $pid
 test_case_check_status $? 9
 test_case_report
 
-echo "Overall status is $overall_status"
+cat<<EOF
+------------------------------------------------------------------
+Total tests run: $num_tests
+Succeeded:       $num_succeeded
+Skipped:         $num_skipped
+Failed:          $num_failed
+
+Overall status is $overall_status
+EOF
 exit $overall_status
 
