@@ -498,7 +498,7 @@ __twopence_ssh_command_ssh
 //
 // Returns 0 if everything went fine
 static int
-__twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, twopence_iostream_t *local_stream, const char *remote_filename, int *remote_rc)
+__twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
   ssh_session session = handle->session;
   char *copy;
@@ -506,11 +506,11 @@ __twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, twopence_iostream_
   long filesize;
   int rc;
 
-  filesize = twopence_iostream_filesize(local_stream);
+  filesize = twopence_iostream_filesize(xfer->local_stream);
   assert(filesize >= 0);
 
   // Create and initialize a SCP session
-  copy = strdup(remote_filename);
+  copy = strdup(xfer->remote.name);
   scp = ssh_scp_new(session, SSH_SCP_WRITE, dirname(copy));
   free(copy);
   if (scp == NULL)
@@ -522,11 +522,11 @@ __twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, twopence_iostream_
   }
 
   // Tell the remote host about the file size
-  copy = strdup(remote_filename);
+  copy = strdup(xfer->remote.name);
   if (ssh_scp_push_file
-         (scp, basename(copy), filesize, 00660) != SSH_OK)
+         (scp, basename(copy), filesize, xfer->remote.mode) != SSH_OK)
   {
-    *remote_rc = ssh_get_error_code(session);
+    status->major = ssh_get_error_code(session);
     free(copy);
     ssh_scp_close(scp);
     ssh_scp_free(scp);
@@ -535,7 +535,7 @@ __twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, twopence_iostream_
   free(copy);
 
   // Send the file
-  rc = __twopence_ssh_send_file(handle, local_stream, scp, filesize, remote_rc);
+  rc = __twopence_ssh_send_file(handle, xfer->local_stream, scp, filesize, &status->major);
 
   // Close the SCP session
   ssh_scp_close(scp);
@@ -789,20 +789,14 @@ twopence_ssh_run_test
 // Returns 0 if everything went fine
 static int
 twopence_ssh_inject_file(struct twopence_target *opaque_handle,
-		const char *username,
-		twopence_iostream_t *local_stream, const char *remote_filename,
-		int *remote_rc, bool dots)
+		twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
   struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
-  twopence_iostream_t *buffer_stream = NULL;
   long filesize;
   int rc;
 
-  // 'remote_rc' defaults to 0
-  *remote_rc = 0;
-
   // Connect to the remote host
-  if (__twopence_ssh_connect_ssh(handle, username) < 0)
+  if (__twopence_ssh_connect_ssh(handle, xfer->user) < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
 
@@ -812,30 +806,28 @@ twopence_ssh_inject_file(struct twopence_target *opaque_handle,
    * If we've been asked to read from eg a pipe or some other special
    * iostream, just buffer everything and then send it as a whole.
    */
-  filesize = twopence_iostream_filesize(local_stream);
+  filesize = twopence_iostream_filesize(xfer->local_stream);
   if (filesize < 0) {
+    twopence_file_xfer_t tmp_xfer = *xfer;
     twopence_buf_t *bp;
 
-    bp = twopence_iostream_read_all(local_stream);
+    bp = twopence_iostream_read_all(xfer->local_stream);
     if (bp == NULL)
       return TWOPENCE_LOCAL_FILE_ERROR;
 
-    twopence_iostream_wrap_buffer(bp, &buffer_stream);
-    local_stream = buffer_stream;
+    tmp_xfer.local_stream = NULL;
+    twopence_iostream_wrap_buffer(bp, &tmp_xfer.local_stream);
+    rc = __twopence_ssh_inject_ssh(handle, &tmp_xfer, status);
+    twopence_iostream_free(tmp_xfer.local_stream);
+  } else {
+    rc = __twopence_ssh_inject_ssh(handle, xfer, status);
   }
 
-  // Inject the file
-  rc = __twopence_ssh_inject_ssh
-         (handle, local_stream, remote_filename, remote_rc);
-
-  if (rc == 0 && *remote_rc != 0)
+  if (rc == 0 && (status->major != 0 || status->major != 0))
     rc = TWOPENCE_REMOTE_FILE_ERROR;
 
   // Disconnect from remote host
   __twopence_ssh_disconnect_ssh(handle);
-
-  if (buffer_stream)
-    twopence_iostream_free(buffer_stream);
 
   return rc;
 }

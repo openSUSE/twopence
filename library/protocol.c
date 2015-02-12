@@ -634,26 +634,21 @@ __twopence_pipe_command
 // Inject a file into the remote host
 //
 // Returns 0 if everything went fine
-int _twopence_inject_virtio_serial
-  (struct twopence_pipe_target *handle, const char *username,
-	twopence_iostream_t *local_stream,
-   	const char *remote_filename, int remote_filemode, int *remote_rc)
+int __twopence_pipe_inject_file
+  (struct twopence_pipe_target *handle, twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
   char command[COMMAND_BUFFER_SIZE];
   int n;
   int link_fd;
   int sent, rc;
 
-  // By default, no remote error
-  *remote_rc = 0;
-
   // Check that the username is valid
-  if (_twopence_invalid_username(username))
+  if (_twopence_invalid_username(xfer->user))
     return TWOPENCE_PARAMETER_ERROR;
 
   // Prepare command to send to the remote host
   n = snprintf(command, COMMAND_BUFFER_SIZE,
-               "i...%s %d %s", username, remote_filemode, remote_filename);
+               "i...%s %d %s", xfer->user, xfer->remote.mode, xfer->remote.name);
   if (n < 0 || n >= COMMAND_BUFFER_SIZE)
     return TWOPENCE_PARAMETER_ERROR;
   store_length(n + 1, command);
@@ -672,21 +667,21 @@ int _twopence_inject_virtio_serial
 
   // Read first return code before we start transferring the file
   // This enables to detect a remote problem even before we start the transfer
-  rc = _twopence_read_major(handle, link_fd, remote_rc);
+  rc = _twopence_read_major(handle, link_fd, &status->major);
   if (rc < 0)
     return rc;
-  if (*remote_rc != 0)
+  if (status->major != 0)
     return TWOPENCE_SEND_FILE_ERROR;
 
   // Send the file
-  rc = _twopence_send_file_iostream(handle, local_stream, link_fd);
+  rc = _twopence_send_file_iostream(handle, xfer->local_stream, link_fd);
   if (rc < 0)
   {
     return TWOPENCE_SEND_FILE_ERROR;
   }
 
   // Read second return code from remote
-  rc = _twopence_read_minor(handle, link_fd, remote_rc);
+  rc = _twopence_read_minor(handle, link_fd, &status->minor);
   if (rc < 0)
   {
     return TWOPENCE_SEND_FILE_ERROR;
@@ -841,17 +836,13 @@ twopence_pipe_run_test
  */
 int
 twopence_pipe_inject_file(struct twopence_target *opaque_handle,
-		const char *username,
-		twopence_iostream_t *local_stream, const char *remote_filename,
-		int *remote_rc, bool dots)
+		twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   int rc;
 
-  // Inject it
-  rc = _twopence_inject_virtio_serial
-         (handle, username, local_stream, remote_filename, 0660, remote_rc);
-  if (rc == 0 && *remote_rc != 0)
+  rc = __twopence_pipe_inject_file(handle, xfer, status);
+  if (rc == 0 && (status->major != 0 || status->major != 0))
     rc = TWOPENCE_REMOTE_FILE_ERROR;
 
   return rc;

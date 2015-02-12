@@ -328,26 +328,49 @@ twopence_inject_file
    const char *local_path, const char *remote_path,
    int *remote_rc, bool print_dots)
 {
-  twopence_iostream_t *local_stream;
+  twopence_status_t status;
+  twopence_file_xfer_t xfer;
   int rv;
 
-  if (target->ops->inject_file == NULL)
-    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
+  twopence_file_xfer_init(&xfer);
 
   /* Open the file */
-  rv = twopence_iostream_open_file(local_path, O_RDONLY, &local_stream);
+  rv = twopence_iostream_open_file(local_path, O_RDONLY, &xfer.local_stream);
   if (rv < 0)
     return rv;
 
+  xfer.user = username;
+  xfer.remote.name = remote_path;
+  xfer.remote.mode = 0660;
+  xfer.print_dots = print_dots;
+
+  rv = twopence_send_file(target, &xfer, &status);
+
+  twopence_file_xfer_destroy(&xfer);
+  return rv;
+}
+
+int
+twopence_send_file(struct twopence_target *target, twopence_file_xfer_t *xfer, twopence_status_t *status)
+{
+  if (target->ops->inject_file == NULL)
+    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
+
+  if (xfer->local_stream == NULL)
+    return TWOPENCE_PARAMETER_ERROR;
+
   /* Reset output, and connect with stdout if we want to see the dots get printed */
   target->current.io = NULL;
-  if (print_dots)
+  if (xfer->print_dots)
     __twopence_setup_stdout(target);
 
-  rv = target->ops->inject_file(target, username, local_stream, remote_path, remote_rc, print_dots);
+  if (xfer->user == NULL)
+    xfer->user = "root";
+  if (xfer->remote.mode == 0)
+    xfer->remote.mode = 0644;
 
-  twopence_iostream_free(local_stream);
-  return rv;
+  memset(status, 0, sizeof(*status));
+  return target->ops->inject_file(target, xfer, status);
 }
 
 int
@@ -538,6 +561,25 @@ twopence_command_destroy(twopence_command_t *cmd)
   for (i = 0; i < __TWOPENCE_IO_MAX; ++i) {
     twopence_buf_destroy(&cmd->buffer[i]);
     twopence_iostream_destroy(&cmd->iostream[i]);
+  }
+}
+
+/*
+ * File transfer object
+ */
+void
+twopence_file_xfer_init(twopence_file_xfer_t *xfer)
+{
+  memset(xfer, 0, sizeof(*xfer));
+  xfer->remote.mode = 0640;
+}
+
+void
+twopence_file_xfer_destroy(twopence_file_xfer_t *xfer)
+{
+  if (xfer->local_stream) {
+    twopence_iostream_free(xfer->local_stream);
+    xfer->local_stream = NULL;
   }
 }
 

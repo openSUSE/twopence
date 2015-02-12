@@ -73,6 +73,7 @@ typedef struct twopence_status {
 /* Forward decls for the plugin functions */
 struct twopence_command;
 typedef struct twopence_iostream twopence_iostream_t;
+typedef struct twopence_file_xfer twopence_file_xfer_t;
 
 struct twopence_plugin {
 	const char *		name;
@@ -80,7 +81,7 @@ struct twopence_plugin {
 	struct twopence_target *(*init)(const char *);
 	int			(*run_test)(struct twopence_target *, struct twopence_command *, twopence_status_t *);
 
-	int			(*inject_file)(struct twopence_target *, const char *, twopence_iostream_t *, const char *, int *, bool);
+	int			(*inject_file)(struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);
 	int			(*extract_file)(struct twopence_target *, const char *, const char *, twopence_iostream_t *, int *, bool);
 	int			(*exit_remote)(struct twopence_target *);
 	int			(*interrupt_command)(struct twopence_target *);
@@ -185,6 +186,24 @@ struct twopence_command {
 	twopence_iostream_t	iostream[__TWOPENCE_IO_MAX];
 
 	twopence_buf_t	buffer[__TWOPENCE_IO_MAX];
+};
+
+typedef struct twopence_remote_file twopence_remote_file_t;
+struct twopence_remote_file {
+	const char *		name;
+	unsigned int		mode;
+};
+
+struct twopence_file_xfer {
+	twopence_iostream_t *	local_stream;
+	twopence_remote_file_t	remote;
+
+	/* remote user account to use for this transfer.
+	 * If NULL, defaults to root */
+	const char *		user;
+
+	/* if true, print dots for every chunk of data transferred */
+	bool			print_dots;
 };
 
 /*
@@ -311,6 +330,9 @@ extern int		twopence_inject_file(struct twopence_target *target,
 					const char *username, const char *local_path, const char *remote_path,
 					int *remote_rc, bool blabla);
 
+extern int		twopence_send_file(struct twopence_target *target,
+					twopence_file_xfer_t *xfer, twopence_status_t *status);
+
 /*
  * Extract a file from the system under test
  *
@@ -379,6 +401,12 @@ extern void		twopence_command_ostreams_reset(twopence_command_t *);
 extern void		twopence_command_ostream_reset(twopence_command_t *, twopence_iofd_t);
 extern void		twopence_command_ostream_capture(twopence_command_t *, twopence_iofd_t, twopence_buf_t *);
 extern void		twopence_command_iostream_redirect(twopence_command_t *, twopence_iofd_t, int, bool closeit);
+
+/*
+ * Utilitiy functions for the xfer struct
+ */
+extern void		twopence_file_xfer_init(twopence_file_xfer_t *xfer);
+extern void		twopence_file_xfer_destroy(twopence_file_xfer_t *xfer);
 
 /*
  * Output handling functions
