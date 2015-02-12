@@ -23,6 +23,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <ctype.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <errno.h>
 #include <sys/poll.h>
 
 #include "twopence.h"
@@ -327,15 +328,26 @@ twopence_inject_file
    const char *local_path, const char *remote_path,
    int *remote_rc, bool print_dots)
 {
+  twopence_iostream_t *local_stream;
+  int rv;
+
   if (target->ops->inject_file == NULL)
     return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
+
+  /* Open the file */
+  rv = twopence_iostream_open_file(local_path, O_RDONLY, &local_stream);
+  if (rv < 0)
+    return rv;
 
   /* Reset output, and connect with stdout if we want to see the dots get printed */
   target->current.io = NULL;
   if (print_dots)
     __twopence_setup_stdout(target);
 
-  return target->ops->inject_file(target, username, local_path, remote_path, remote_rc, print_dots);
+  rv = target->ops->inject_file(target, username, local_stream, remote_path, remote_rc, print_dots);
+
+  twopence_iostream_free(local_stream);
+  return rv;
 }
 
 int
@@ -533,6 +545,52 @@ __twopence_setup_stdout(struct twopence_target *target)
   target->current.io = dots_iostream;
 }
 
+twopence_iostream_t *
+twopence_iostream_new(void)
+{
+  twopence_iostream_t *stream;
+
+  stream = calloc(1, sizeof(*stream));
+  return stream;
+}
+
+void
+twopence_iostream_free(twopence_iostream_t *stream)
+{
+  twopence_iostream_destroy(stream);
+  free(stream);
+}
+
+int
+twopence_iostream_open_file(const char *filename, int mode, twopence_iostream_t **ret)
+{
+  int fd;
+
+  fd = open(filename, mode);
+  if (fd == -1)
+    return errno == ENAMETOOLONG?  TWOPENCE_PARAMETER_ERROR: TWOPENCE_LOCAL_FILE_ERROR;
+
+  *ret = twopence_iostream_new();
+  twopence_iostream_add_substream(*ret, twopence_substream_new_fd(fd, true));
+
+  return 0;
+}
+
+int
+twopence_iostream_wrap_fd(int fd, bool closeit, twopence_iostream_t **ret)
+{
+  *ret = twopence_iostream_new();
+  twopence_iostream_add_substream(*ret, twopence_substream_new_fd(fd, closeit));
+  return 0;
+}
+
+int
+twopence_iostream_wrap_buffer(twopence_buf_t *bp, twopence_iostream_t **ret)
+{
+  *ret = twopence_iostream_new();
+  twopence_iostream_add_substream(*ret, twopence_substream_new_buffer(bp));
+  return 0;
+}
 
 void
 twopence_iostream_add_substream(twopence_iostream_t *stream, twopence_substream_t *substream)
@@ -558,6 +616,21 @@ twopence_iostream_destroy(twopence_iostream_t *stream)
     free(substream);
   }
   memset(stream, 0, sizeof(*stream));
+}
+
+long
+twopence_iostream_filesize(twopence_iostream_t *stream)
+{
+  twopence_substream_t *substream;
+
+  if (stream->count != 1)
+    return TWOPENCE_LOCAL_FILE_ERROR;
+
+  substream = stream->substream[0];
+  if (substream->ops->filesize == NULL)
+    return TWOPENCE_LOCAL_FILE_ERROR;
+
+  return substream->ops->filesize(substream);
 }
 
 /*
@@ -707,6 +780,34 @@ twopence_iostream_read(twopence_iostream_t *stream, char *data, size_t len)
   return 0;
 }
 
+twopence_buf_t *
+twopence_iostream_read_all(twopence_iostream_t *stream)
+{
+  twopence_buf_t *bp;
+  char buffer[8192];
+  long size;
+  int len;
+
+  if ((size = twopence_iostream_filesize(stream)) < 0)
+	  size = 0;
+
+  bp = twopence_buf_new(size);
+  while (true) {
+    len = twopence_iostream_read(stream, buffer, sizeof(buffer));
+    if (len < 0) {
+      twopence_buf_free(bp);
+      return NULL;
+    }
+    if (len == 0)
+      break;
+
+    twopence_buf_ensure_tailroom(bp, len);
+    twopence_buf_append(bp, buffer, len);
+  }
+
+  return bp;
+}
+
 /*
  * Write to a sink object
  */
@@ -788,12 +889,36 @@ twopence_substream_buffer_write(twopence_substream_t *sink, const void *data, si
 static int
 twopence_substream_buffer_read(twopence_substream_t *src, void *data, size_t len)
 {
-  return -1; // Not supported for now
+  twopence_buf_t *bp = (twopence_buf_t *) src->data;
+  unsigned int avail;
+
+  if (bp == NULL)
+    return -1;
+
+  avail = twopence_buf_count(bp);
+  if (len > avail)
+    len = avail;
+
+  memcpy(data, twopence_buf_head(bp), len);
+  twopence_buf_advance_head(bp, len);
+  return len;
+}
+
+static long
+twopence_substream_buffer_size(twopence_substream_t *src)
+{
+  twopence_buf_t *bp = (twopence_buf_t *) src->data;
+
+  if (bp == NULL)
+    return -1;
+
+  return twopence_buf_count(bp);
 }
 
 static twopence_io_ops_t twopence_buffer_io = {
 	.read	= twopence_substream_buffer_read,
 	.write	= twopence_substream_buffer_write,
+	.filesize = twopence_substream_buffer_size,
 };
 
 twopence_substream_t *
@@ -837,7 +962,22 @@ twopence_substream_file_read(twopence_substream_t *src, void *data, size_t len)
   if (fd < 0)
     return -1;
 
-   return read(fd, data, len);
+  return read(fd, data, len);
+}
+
+static long
+twopence_substream_file_size(twopence_substream_t *src)
+{
+  int fd = src->fd;
+  struct stat stb;
+
+  if (fd < 0)
+    return -1;
+
+  if (fstat(fd, &stb) < 0 || !S_ISREG(stb.st_mode))
+    return -1;
+
+  return stb.st_size;
 }
 
 int
@@ -880,6 +1020,7 @@ static twopence_io_ops_t twopence_file_io = {
 	.write	= twopence_substream_file_write,
 	.set_blocking = twopence_substream_file_set_blocking,
 	.poll	= twopence_substream_file_poll,
+	.filesize = twopence_substream_file_size,
 };
 
 twopence_substream_t *

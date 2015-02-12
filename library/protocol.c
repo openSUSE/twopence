@@ -441,11 +441,11 @@ _twopence_read_minor(struct twopence_pipe_target *handle, int link_fd, int *mino
   return 0;
 }
 
-// Send a file in chunks to the link
+// Send a file in chunks to the link; iostream version
 //
 // Returns 0 if everything went fine, or a negative error code if failed
-int _twopence_send_file
-  (struct twopence_pipe_target *handle, int file_fd, int link_fd)
+int _twopence_send_file_iostream
+  (struct twopence_pipe_target *handle, twopence_iostream_t *file_stream, int link_fd)
 {
   char buffer[BUFFER_SIZE];
   int received, rv = 0;
@@ -454,7 +454,7 @@ int _twopence_send_file
   buffer[1] = '\0';
 
   do {
-    received = read(file_fd, buffer + 4, BUFFER_SIZE - 4);
+    received = twopence_iostream_read(file_stream, buffer + 4, BUFFER_SIZE - 4);
     if (received < 0) {
       if (errno == EINTR)
 	continue;
@@ -488,6 +488,24 @@ local_file_error:
 send_file_error:
   rv = TWOPENCE_SEND_FILE_ERROR;
   goto out;
+}
+
+// Send a file in chunks to the link
+//
+// Returns 0 if everything went fine, or a negative error code if failed
+int _twopence_send_file
+  (struct twopence_pipe_target *handle, int file_fd, int link_fd)
+{
+  twopence_iostream_t *file_stream;
+  int rc;
+
+  rc = twopence_iostream_wrap_fd(file_fd, false, &file_stream);
+  if (rc < 0)
+    return TWOPENCE_LOCAL_FILE_ERROR;
+
+  rc = _twopence_send_file_iostream(handle, file_stream, link_fd);
+  twopence_iostream_free(file_stream);
+  return rc;
 }
 
 // Receive a file in chunks from the link and write it to a file
@@ -617,7 +635,8 @@ __twopence_pipe_command
 //
 // Returns 0 if everything went fine
 int _twopence_inject_virtio_serial
-  (struct twopence_pipe_target *handle, const char *username, int file_fd,
+  (struct twopence_pipe_target *handle, const char *username,
+	twopence_iostream_t *local_stream,
    	const char *remote_filename, int remote_filemode, int *remote_rc)
 {
   char command[COMMAND_BUFFER_SIZE];
@@ -660,7 +679,7 @@ int _twopence_inject_virtio_serial
     return TWOPENCE_SEND_FILE_ERROR;
 
   // Send the file
-  rc = _twopence_send_file(handle, file_fd, link_fd);
+  rc = _twopence_send_file_iostream(handle, local_stream, link_fd);
   if (rc < 0)
   {
     return TWOPENCE_SEND_FILE_ERROR;
@@ -823,27 +842,18 @@ twopence_pipe_run_test
 int
 twopence_pipe_inject_file(struct twopence_target *opaque_handle,
 		const char *username,
-		const char *local_filename, const char *remote_filename,
+		twopence_iostream_t *local_stream, const char *remote_filename,
 		int *remote_rc, bool dots)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
-  int fd, rc;
-
-  // Open the file
-  fd = open(local_filename, O_RDONLY);
-  if (fd == -1)
-    return errno == ENAMETOOLONG?
-           TWOPENCE_PARAMETER_ERROR:
-           TWOPENCE_LOCAL_FILE_ERROR;
+  int rc;
 
   // Inject it
   rc = _twopence_inject_virtio_serial
-         (handle, username, fd, remote_filename, 0660, remote_rc);
+         (handle, username, local_stream, remote_filename, 0660, remote_rc);
   if (rc == 0 && *remote_rc != 0)
     rc = TWOPENCE_REMOTE_FILE_ERROR;
 
-  // Close it
-  close(fd);
   return rc;
 }
 

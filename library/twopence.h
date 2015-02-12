@@ -72,6 +72,7 @@ typedef struct twopence_status {
 
 /* Forward decls for the plugin functions */
 struct twopence_command;
+typedef struct twopence_iostream twopence_iostream_t;
 
 struct twopence_plugin {
 	const char *		name;
@@ -79,7 +80,7 @@ struct twopence_plugin {
 	struct twopence_target *(*init)(const char *);
 	int			(*run_test)(struct twopence_target *, struct twopence_command *, twopence_status_t *);
 
-	int			(*inject_file)(struct twopence_target *, const char *, const char *, const char *, int *, bool);
+	int			(*inject_file)(struct twopence_target *, const char *, twopence_iostream_t *, const char *, int *, bool);
 	int			(*extract_file)(struct twopence_target *, const char *, const char *, const char *, int *, bool);
 	int			(*exit_remote)(struct twopence_target *);
 	int			(*interrupt_command)(struct twopence_target *);
@@ -114,7 +115,6 @@ typedef enum {
 
 typedef struct twopence_substream twopence_substream_t;
 
-typedef struct twopence_iostream twopence_iostream_t;
 
 #define TWOPENCE_IOSTREAM_MAX_SUBSTREAMS	4
 struct twopence_iostream {
@@ -131,6 +131,7 @@ struct twopence_io_ops {
 	int			(*read)(twopence_substream_t *, void *, size_t);
 	int			(*set_blocking)(twopence_substream_t *, bool);
 	int			(*poll)(twopence_substream_t *, struct pollfd *, int);
+	long			(*filesize)(twopence_substream_t *);
 };
 
 struct twopence_substream {
@@ -387,6 +388,10 @@ extern int		twopence_target_set_blocking(struct twopence_target *, twopence_iofd
 extern int		twopence_target_putc(struct twopence_target *, twopence_iofd_t, char);
 extern int		twopence_target_write(struct twopence_target *, twopence_iofd_t, const char *, size_t);
 
+extern int		twopence_iostream_open_file(const char *filename, int mode, twopence_iostream_t **ret);
+extern int		twopence_iostream_wrap_fd(int fd, bool closeit, twopence_iostream_t **ret);
+extern int		twopence_iostream_wrap_buffer(twopence_buf_t *bp, twopence_iostream_t **ret);
+extern void		twopence_iostream_free(twopence_iostream_t *);
 extern void		twopence_iostream_add_substream(twopence_iostream_t *, twopence_substream_t *);
 extern void		twopence_iostream_destroy(twopence_iostream_t *);
 extern bool		twopence_iostream_eof(const twopence_iostream_t *);
@@ -394,8 +399,10 @@ extern int		twopence_iostream_putc(twopence_iostream_t *, char);
 extern int		twopence_iostream_write(twopence_iostream_t *, const char *, size_t);
 extern int		twopence_iostream_getc(twopence_iostream_t *);
 extern int		twopence_iostream_read(twopence_iostream_t *, char *, size_t);
+extern twopence_buf_t *	twopence_iostream_read_all(twopence_iostream_t *);
 extern int		twopence_iostream_set_blocking(twopence_iostream_t *, bool);
 extern int		twopence_iostream_poll(twopence_iostream_t *, struct pollfd *, int mask);
+extern long		twopence_iostream_filesize(twopence_iostream_t *);
 
 extern twopence_substream_t *twopence_substream_new_buffer(twopence_buf_t *);
 extern twopence_substream_t *twopence_substream_new_fd(int fd, bool closeit);

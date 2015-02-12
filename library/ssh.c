@@ -27,11 +27,11 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <errno.h>
 #include <libgen.h>
 
-#include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
 #include <malloc.h>
 #include <signal.h>
+#include <assert.h>
 
 #include "twopence.h"
 
@@ -272,7 +272,7 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, long timeout, ss
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 static int
-__twopence_ssh_send_file(struct twopence_ssh_target *handle, int file_fd, ssh_scp scp, int remaining, int *remote_rc)
+__twopence_ssh_send_file(struct twopence_ssh_target *handle, twopence_iostream_t *local_stream, ssh_scp scp, int remaining, int *remote_rc)
 {
   char buffer[BUFFER_SIZE];
   int size, received;
@@ -282,7 +282,7 @@ __twopence_ssh_send_file(struct twopence_ssh_target *handle, int file_fd, ssh_sc
     size = remaining < BUFFER_SIZE?    // Read at most BUFFER_SIZE bytes from the file
            remaining:
            BUFFER_SIZE;
-    received = read(file_fd, buffer, size);
+    received = twopence_iostream_read(local_stream, buffer, size);
     if (received != size)
     {
       __twopence_ssh_output(handle, '\n');
@@ -499,13 +499,16 @@ __twopence_ssh_command_ssh
 //
 // Returns 0 if everything went fine
 static int
-__twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, int file_fd, const char *remote_filename, int *remote_rc)
+__twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, twopence_iostream_t *local_stream, const char *remote_filename, int *remote_rc)
 {
   ssh_session session = handle->session;
   char *copy;
   ssh_scp scp;
-  struct stat filestats;
+  long filesize;
   int rc;
+
+  filesize = twopence_iostream_filesize(local_stream);
+  assert(filesize >= 0);
 
   // Create and initialize a SCP session
   copy = strdup(remote_filename);
@@ -520,10 +523,9 @@ __twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, int file_fd, const
   }
 
   // Tell the remote host about the file size
-  fstat(file_fd, &filestats);
   copy = strdup(remote_filename);
   if (ssh_scp_push_file
-         (scp, basename(copy), filestats.st_size, 00660) != SSH_OK)
+         (scp, basename(copy), filesize, 00660) != SSH_OK)
   {
     *remote_rc = ssh_get_error_code(session);
     free(copy);
@@ -534,7 +536,7 @@ __twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, int file_fd, const
   free(copy);
 
   // Send the file
-  rc = __twopence_ssh_send_file(handle, file_fd, scp, filestats.st_size, remote_rc);
+  rc = __twopence_ssh_send_file(handle, local_stream, scp, filesize, remote_rc);
 
   // Close the SCP session
   ssh_scp_close(scp);
@@ -789,40 +791,52 @@ twopence_ssh_run_test
 static int
 twopence_ssh_inject_file(struct twopence_target *opaque_handle,
 		const char *username,
-		const char *local_filename, const char *remote_filename,
+		twopence_iostream_t *local_stream, const char *remote_filename,
 		int *remote_rc, bool dots)
 {
   struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
-  int fd, rc;
+  twopence_iostream_t *buffer_stream = NULL;
+  long filesize;
+  int rc;
 
   // 'remote_rc' defaults to 0
   *remote_rc = 0;
 
-  // Open the file
-  fd = open(local_filename, O_RDONLY);
-  if (fd == -1)
-    return errno == ENAMETOOLONG?
-           TWOPENCE_PARAMETER_ERROR:
-           TWOPENCE_LOCAL_FILE_ERROR;
-
   // Connect to the remote host
   if (__twopence_ssh_connect_ssh(handle, username) < 0)
-  {
-    close(fd);
     return TWOPENCE_OPEN_SESSION_ERROR;
+
+
+  /* Unfortunately, the SCP protocol requires the size of the file to be
+   * transmitted :-(
+   *
+   * If we've been asked to read from eg a pipe or some other special
+   * iostream, just buffer everything and then send it as a whole.
+   */
+  filesize = twopence_iostream_filesize(local_stream);
+  if (filesize < 0) {
+    twopence_buf_t *bp;
+
+    bp = twopence_iostream_read_all(local_stream);
+    if (bp == NULL)
+      return TWOPENCE_LOCAL_FILE_ERROR;
+
+    twopence_iostream_wrap_buffer(bp, &buffer_stream);
+    local_stream = buffer_stream;
   }
 
   // Inject the file
   rc = __twopence_ssh_inject_ssh
-         (handle, fd, remote_filename, remote_rc);
+         (handle, local_stream, remote_filename, remote_rc);
+
   if (rc == 0 && *remote_rc != 0)
     rc = TWOPENCE_REMOTE_FILE_ERROR;
 
   // Disconnect from remote host
   __twopence_ssh_disconnect_ssh(handle);
 
-  // Close the file
-  close(fd);
+  if (buffer_stream)
+    twopence_iostream_free(buffer_stream);
 
   return rc;
 }
