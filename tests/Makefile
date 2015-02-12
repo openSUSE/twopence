@@ -4,8 +4,8 @@
 # it could however be nice to have a "twopence-testsuite" package someday
 
 all:
-	set -e; for access_method in virtio; do \
+	set -e; for access_method in virtio ssh; do \
 		for test in shell_test.sh python_test.py ruby_test.sh; do \
-			./run-$$access_method ./$$test; \
+			./run-one $$access_method ./$$test; \
 		done; \
 	done

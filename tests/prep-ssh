@@ -1,0 +1,117 @@
+#!/bin/bash
+#
+# Set up test system to run twopence unit tests over ssh
+#
+
+function sshpath {
+
+	user=$1
+	relative_name=$2
+
+	case $user in
+	root)	dir=/root;;
+	*)	dir=/home/$user;;
+	esac
+
+	if [ -n $relative_name ]; then
+		echo "$dir/.ssh/$relative_name"
+	else
+		echo "$dir/.ssh"
+	fi
+}
+
+function make_sshdir {
+
+	user=$1
+
+	sshdir=`sshpath $user`
+	if [ ! -d $sshdir ]; then
+		mkdir -p $sshdir
+		chown $user $sshdir
+	fi
+}
+
+function make_rsakey {
+
+	user=$1
+
+	make_sshdir $user
+
+	keyfile=`sshpath $user id_rsa`
+	if [ ! -s "$keyfile" ]; then
+		echo "*** Creating rsa key for user $user"
+		ssh-keygen -q -t rsa -N '' -f $keyfile
+	fi
+}
+
+function clear_hostkey {
+
+	hostname=$1
+
+	ssh-keygen -R $hostname
+}
+
+function add_pubkey {
+
+	user=$1
+	pubkey_path=$2
+
+	echo "*** Adding pubkey $pubkey_path to user $user"
+
+	authkeyfile=`sshpath $user authorized_keys`
+	(
+		test -f $authkeyfile && cat $authkeyfile
+		cat $pubkey_path
+	) > $authkeyfile.new
+	uniq $authkeyfile.new > $authkeyfile
+
+	chown $user $authkeyfile
+	chmod 644 $authkeyfile
+}
+
+function add_hostkey {
+
+	hostname=$1
+
+	echo "*** Updating $hostname's key in known_hosts_key"
+	clear_hostkey $hostname
+
+	# This will automatically add $hostname's key to our known_hosts_key file
+	ssh -o StrictHostKeyChecking=no -o PreferredAuthentications=publickey root@$hostname /bin/true
+}
+
+function make_user {
+
+	user=$1
+
+	echo "*** Creating user account $user"
+	useradd -g users $user -d /home/$user
+	install -o $user -g users -d /home/$user
+}
+
+function verify_ssh {
+
+	user=$1
+	hostname=${2:-localhost}
+
+	echo "*** Verifying that we can ssh to $user@$hostname"
+	if ! ssh -o PreferredAuthentications=publickey $user@$hostname /bin/true; then
+		echo "Unable to ssh to root@localhost" >&2
+		exit 1
+	fi
+}
+
+make_rsakey root
+add_pubkey root `sshpath root id_rsa.pub`
+add_hostkey localhost
+
+verify_ssh root
+
+for account; do
+	if ! id $account >/dev/null 2>&1; then
+		make_user $account
+	fi
+	make_sshdir $account
+	add_pubkey $account `sshpath root id_rsa.pub`
+	verify_ssh $account
+done
