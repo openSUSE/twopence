@@ -28,6 +28,7 @@ testCaseRunning = False
 testCaseStatus = None
 numFailed = 0
 numErrors = 0
+numSkipped = 0
 numTests = 0
 
 def testCaseError(msg):
@@ -102,6 +103,7 @@ def testSuiteExit():
 		exitStatus = 0
 		result = "SUCCESS"
 
+	print "### SUMMARY %d %d %d %d" % (numTests, numSkipped, numFailed, numErrors)
 	print
 	print "Overall test suite status:", result
 	print " %4d tests run" % numTests

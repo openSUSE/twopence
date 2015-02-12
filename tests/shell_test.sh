@@ -348,7 +348,7 @@ test_case_check_status $? 9
 test_case_report
 
 cat<<EOF
-------------------------------------------------------------------
+### SUMMARY $num_tests $num_skipped $num_failed 0
 Total tests run: $num_tests
 Succeeded:       $num_succeeded
 Skipped:         $num_skipped
