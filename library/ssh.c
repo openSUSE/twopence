@@ -572,14 +572,14 @@ __twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, twopence_file_xfer
 //
 // Returns 0 if everything went fine
 static int
-__twopence_ssh_extract_ssh(struct twopence_ssh_target *handle, twopence_iostream_t *local_stream, const char *remote_filename, int *remote_rc)
+__twopence_ssh_extract_ssh(struct twopence_ssh_target *handle, twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
   ssh_session session = handle->session;
   ssh_scp scp;
   int size, rc;
 
   // Create and initialize a SCP session
-  scp = ssh_scp_new(session, SSH_SCP_READ, remote_filename);
+  scp = ssh_scp_new(session, SSH_SCP_READ, xfer->remote.name);
   if (scp == NULL)
     return TWOPENCE_OPEN_SESSION_ERROR;
   if (ssh_scp_init(scp) != SSH_OK)
@@ -591,7 +591,7 @@ __twopence_ssh_extract_ssh(struct twopence_ssh_target *handle, twopence_iostream
   // Get the file size from the remote host
   if (ssh_scp_pull_request(scp) != SSH_SCP_REQUEST_NEWFILE)
   {
-    *remote_rc = ssh_get_error_code(session);
+    status->major = ssh_get_error_code(session);
     ssh_scp_close(scp);
     ssh_scp_free(scp);
     return TWOPENCE_RECEIVE_FILE_ERROR;
@@ -602,7 +602,7 @@ __twopence_ssh_extract_ssh(struct twopence_ssh_target *handle, twopence_iostream
   // Accept the transfer request
   if (ssh_scp_accept_request(scp) != SSH_OK)
   {
-    *remote_rc = ssh_get_error_code(session);
+    status->major = ssh_get_error_code(session);
     ssh_scp_close(scp);
     ssh_scp_free(scp);
     return TWOPENCE_RECEIVE_FILE_ERROR;
@@ -610,7 +610,7 @@ __twopence_ssh_extract_ssh(struct twopence_ssh_target *handle, twopence_iostream
 
   // Receive the file
   rc = __twopence_ssh_receive_file
-        (handle, local_stream, scp, size, remote_rc);
+        (handle, xfer->local_stream, scp, size, &status->major);
   if (rc < 0)
   {
     ssh_scp_close(scp);
@@ -621,7 +621,7 @@ __twopence_ssh_extract_ssh(struct twopence_ssh_target *handle, twopence_iostream
   // Check for proper termination
   if (ssh_scp_pull_request(scp) != SSH_SCP_REQUEST_EOF)
   {
-    *remote_rc = ssh_get_error_code(session);
+    status->major = ssh_get_error_code(session);
     ssh_scp_close(scp);
     ssh_scp_free(scp);
     return TWOPENCE_RECEIVE_FILE_ERROR;
@@ -851,7 +851,7 @@ twopence_ssh_inject_file(struct twopence_target *opaque_handle,
     rc = __twopence_ssh_inject_ssh(handle, xfer,dirname, basename,  status);
   }
 
-  if (rc == 0 && (status->major != 0 || status->major != 0))
+  if (rc == 0 && (status->major != 0 || status->minor != 0))
     rc = TWOPENCE_REMOTE_FILE_ERROR;
 
   // Disconnect from remote host
@@ -869,24 +869,18 @@ twopence_ssh_inject_file(struct twopence_target *opaque_handle,
 // Returns 0 if everything went fine
 static int
 twopence_ssh_extract_file(struct twopence_target *opaque_handle,
-		const char *username,
-		const char *remote_filename, twopence_iostream_t *local_stream,
-		int *remote_rc, bool dots)
+		twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
   struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
   int rc;
 
-  // 'remote_rc' defaults to 0
-  *remote_rc = 0;
-
   // Connect to the remote host
-  if (__twopence_ssh_connect_ssh(handle, username) < 0)
+  if (__twopence_ssh_connect_ssh(handle, xfer->user) < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
   // Extract the file
-  rc = __twopence_ssh_extract_ssh
-         (handle, local_stream, remote_filename, remote_rc);
-  if (rc == 0 && *remote_rc != 0)
+  rc = __twopence_ssh_extract_ssh(handle, xfer, status);
+  if (rc == 0 && (status->major != 0 || status->minor != 0))
     rc = TWOPENCE_REMOTE_FILE_ERROR;
 
   // Disconnect from remote host

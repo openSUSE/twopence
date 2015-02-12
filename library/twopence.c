@@ -379,26 +379,49 @@ twopence_extract_file
    const char *remote_path, const char *local_path,
    int *remote_rc, bool print_dots)
 {
-  twopence_iostream_t *local_stream;
+  twopence_status_t status;
+  twopence_file_xfer_t xfer;
   int rv;
 
-  if (target->ops->extract_file == NULL)
-    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
+  twopence_file_xfer_init(&xfer);
 
   /* Open the file */
-  rv = twopence_iostream_open_file(local_path, O_CREAT|O_TRUNC|O_WRONLY, &local_stream);
+  rv = twopence_iostream_open_file(local_path, O_CREAT|O_TRUNC|O_WRONLY, &xfer.local_stream);
   if (rv < 0)
     return rv;
 
+  xfer.user = username;
+  xfer.remote.name = remote_path;
+  xfer.remote.mode = 0660;
+  xfer.print_dots = print_dots;
+
+  rv = twopence_recv_file(target, &xfer, &status);
+
+  twopence_file_xfer_destroy(&xfer);
+  return rv;
+}
+
+int
+twopence_recv_file(struct twopence_target *target, twopence_file_xfer_t *xfer, twopence_status_t *status)
+{
+  if (target->ops->inject_file == NULL)
+    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
+
+  if (xfer->local_stream == NULL)
+    return TWOPENCE_PARAMETER_ERROR;
+
   /* Reset output, and connect with stdout if we want to see the dots get printed */
   target->current.io = NULL;
-  if (print_dots)
+  if (xfer->print_dots)
     __twopence_setup_stdout(target);
 
-  rv = target->ops->extract_file(target, username, remote_path, local_stream, remote_rc, print_dots);
+  if (xfer->user == NULL)
+    xfer->user = "root";
+  if (xfer->remote.mode == 0)
+    xfer->remote.mode = 0644;
 
-  twopence_iostream_free(local_stream);
-  return rv;
+  memset(status, 0, sizeof(*status));
+  return target->ops->extract_file(target, xfer, status);
 }
 
 int

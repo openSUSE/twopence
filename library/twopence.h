@@ -82,7 +82,7 @@ struct twopence_plugin {
 	int			(*run_test)(struct twopence_target *, struct twopence_command *, twopence_status_t *);
 
 	int			(*inject_file)(struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);
-	int			(*extract_file)(struct twopence_target *, const char *, const char *, twopence_iostream_t *, int *, bool);
+	int			(*extract_file)(struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);
 	int			(*exit_remote)(struct twopence_target *);
 	int			(*interrupt_command)(struct twopence_target *);
 	void			(*end)(struct twopence_target *);
@@ -350,6 +350,9 @@ extern int		twopence_send_file(struct twopence_target *target,
 extern int		twopence_extract_file(struct twopence_target *target,
 					const char *username, const char *remote_path, const char *local_path,
 					int *remote_rc, bool blabla);
+
+extern int		twopence_recv_file(struct twopence_target *target,
+					twopence_file_xfer_t *xfer, twopence_status_t *status);
 
 /*
  * Tell the remote test server to exit
