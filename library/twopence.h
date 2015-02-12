@@ -419,7 +419,8 @@ extern int		twopence_target_set_blocking(struct twopence_target *, twopence_iofd
 extern int		twopence_target_putc(struct twopence_target *, twopence_iofd_t, char);
 extern int		twopence_target_write(struct twopence_target *, twopence_iofd_t, const char *, size_t);
 
-extern int		twopence_iostream_open_file(const char *filename, int mode, twopence_iostream_t **ret);
+extern int		twopence_iostream_open_file(const char *filename, twopence_iostream_t **ret);
+extern int		twopence_iostream_create_file(const char *filename, unsigned int permissions, twopence_iostream_t **ret);
 extern int		twopence_iostream_wrap_fd(int fd, bool closeit, twopence_iostream_t **ret);
 extern int		twopence_iostream_wrap_buffer(twopence_buf_t *bp, twopence_iostream_t **ret);
 extern void		twopence_iostream_free(twopence_iostream_t *);

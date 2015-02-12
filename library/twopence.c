@@ -335,7 +335,7 @@ twopence_inject_file
   twopence_file_xfer_init(&xfer);
 
   /* Open the file */
-  rv = twopence_iostream_open_file(local_path, O_RDONLY, &xfer.local_stream);
+  rv = twopence_iostream_open_file(local_path, &xfer.local_stream);
   if (rv < 0)
     return rv;
 
@@ -386,7 +386,7 @@ twopence_extract_file
   twopence_file_xfer_init(&xfer);
 
   /* Open the file */
-  rv = twopence_iostream_open_file(local_path, O_CREAT|O_TRUNC|O_WRONLY, &xfer.local_stream);
+  rv = twopence_iostream_create_file(local_path, 0660, &xfer.local_stream);
   if (rv < 0)
     return rv;
 
@@ -637,12 +637,12 @@ twopence_iostream_free(twopence_iostream_t *stream)
   free(stream);
 }
 
-int
-twopence_iostream_open_file(const char *filename, int mode, twopence_iostream_t **ret)
+static int
+__twopence_iostream_open_file(const char *filename, int mode, unsigned int permissions, twopence_iostream_t **ret)
 {
   int fd;
 
-  fd = open(filename, mode, 0660);
+  fd = open(filename, mode, permissions);
   if (fd == -1)
     return errno == ENAMETOOLONG?  TWOPENCE_PARAMETER_ERROR: TWOPENCE_LOCAL_FILE_ERROR;
 
@@ -650,6 +650,18 @@ twopence_iostream_open_file(const char *filename, int mode, twopence_iostream_t 
   twopence_iostream_add_substream(*ret, twopence_substream_new_fd(fd, true));
 
   return 0;
+}
+
+int
+twopence_iostream_open_file(const char *filename, twopence_iostream_t **ret)
+{
+	return __twopence_iostream_open_file(filename, O_RDONLY, 0, ret);
+}
+
+int
+twopence_iostream_create_file(const char *filename, unsigned int permissions, twopence_iostream_t **ret)
+{
+	return __twopence_iostream_open_file(filename, O_CREAT|O_TRUNC|O_WRONLY, 0, ret);
 }
 
 int
