@@ -85,5 +85,6 @@ inittwopence(void)
 
 	twopence_registerType(m, "Target", &twopence_TargetType);
 	twopence_registerType(m, "Command", &twopence_CommandType);
+	twopence_registerType(m, "Transfer", &twopence_TransferType);
 	twopence_registerType(m, "Status", &twopence_StatusType);
 }

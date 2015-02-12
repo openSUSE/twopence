@@ -65,6 +65,13 @@ def testCaseCheckStatus(status, expectExitCode = 0):
 		return False
 	return True
 
+def testCaseCheckStatusQuiet(status, expectExitCode = 0):
+	if status.code != expectExitCode:
+		print # command may not have printed a newline
+		testCaseFail("command exited with status %d, expected %d" % (status.code, expectExitCode));
+		return False
+	return True
+
 def testCaseException():
 	info = sys.exc_info()
 	testCaseFail("caught python exception %s: %s" % info[0:2])
@@ -308,6 +315,76 @@ try:
 			print "remote: ", remoteOut
 except:
 	testCaseException()
+testCaseReport()
+
+testCaseBegin("Verify twopence.Transfer attributes")
+try:
+	xfer = twopence.Transfer("/remote/filename", localfile = "/local/filename", permissions = 0421);
+	if xfer.remotefile != "/remote/filename":
+		testCaseFail("xfer.remotefile attribute invalid")
+	if xfer.localfile != "/local/filename":
+		testCaseFail("xfer.localfile attribute invalid")
+	if xfer.permissions != 0421:
+		testCaseFail("xfer.permissions attribute invalid")
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("sendfile '/etc/hosts' => '/tmp/injected'")
+try:
+	xfer = twopence.Transfer("/tmp/injected", localfile = "/etc/hosts");
+	status = target.sendfile(xfer);
+	testCaseCheckStatus(status)
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("downloading file again using recvfile")
+try:
+	xfer = twopence.Transfer("/tmp/injected", localfile = "etc_hosts");
+	status = target.recvfile(xfer);
+	if testCaseCheckStatus(status):
+		rc = os.system("cmp /etc/hosts etc_hosts")
+		if rc == 0:
+			print "Good, /etc/hosts and downloaded file match"
+		else:
+			testCaseFail("Original /etc/hosts and downloaded file differ");
+			rc = os.system("diff -u /etc/hosts etc_hosts")
+except:
+	testCaseException()
+target.run("rm -f /tmp/injected");
+os.remove("etc_hosts")
+testCaseReport()
+
+testCaseBegin("verify that sendfile assigns the requested permissions")
+try:
+	xfer = twopence.Transfer("/tmp/injected", localfile = "/etc/hosts");
+	cmd = twopence.Command("stat -c 0%a /tmp/injected")
+	cmd.suppressOutput();
+
+	for xfer.permissions in (0400, 0111, 0666, 0421):
+		print "creating file with mode 0%o" % xfer.permissions
+		status = target.sendfile(xfer);
+		if not testCaseCheckStatusQuiet(status):
+			break
+
+		cmd.stdout = bytearray();
+		status = target.run(cmd)
+		if not testCaseCheckStatusQuiet(status):
+			break
+
+		expect = "0%03o" % xfer.permissions
+		mode = str(status.stdout).strip()
+		if mode == expect:
+			print "Good, file mode is set to %s" % mode
+		else:
+			testCaseFail("File mode should be %s, but is %s" % (expect, mode));
+			break
+
+		target.run("rm -f /tmp/injected");
+except:
+	testCaseException()
+target.run("rm -f /tmp/injected");
 testCaseReport()
 
 

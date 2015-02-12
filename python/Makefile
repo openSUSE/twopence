@@ -12,6 +12,7 @@ PYDIR  := $(shell readlink -f $(LIBDIR)/python/site-packages)
 
 OBJS	= extension.o \
 	  command.o \
+	  transfer.o \
 	  status.o \
 	  target.o
 
