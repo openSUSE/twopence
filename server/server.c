@@ -173,13 +173,13 @@ server_open_file_as(const char *username, const char *filename, unsigned int fil
 
 	/* We may want to have the client specify the file mode as well */
 	if (!strcmp(username, "root")) {
-		fd = open(filename, oflags, 0660);
+		fd = open(filename, oflags, filemode);
 		if (fd < 0)
 			*status = errno;
 	} else {
 		if (!server_change_hats_temporarily(user, &saved_ids, status))
 			return -1;
-		fd = open(filename, oflags, 0660);
+		fd = open(filename, oflags, filemode);
 		if (fd < 0)
 			*status = errno;
 
@@ -188,6 +188,13 @@ server_open_file_as(const char *username, const char *filename, unsigned int fil
 
 	if (fd < 0)
 		return -1;
+
+	if (fchmod(fd, filemode) < 0) {
+		*status = errno;
+		twopence_log_error("failed to change file mode \"%s\" to 0%o: %m", filename, filemode);
+		close(fd);
+		return -1;
+	}
 
 	if (fstat(fd, &stb) < 0) {
 		*status = errno;
