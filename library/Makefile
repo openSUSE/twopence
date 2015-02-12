@@ -24,7 +24,7 @@ install: libtwopence.so twopence.h
 	mkdir -p $(DESTDIR)$(LIBDIR)
 	install -m555 libtwopence.so $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION)
 	mkdir -p $(DESTDIR)$(INCDIR)
-	install -m444 twopence.h $(DESTDIR)$(INCDIR)
+	install -m444 twopence.h buffer.h $(DESTDIR)$(INCDIR)
 
 clean:
 	rm -f *.o *.so
