@@ -494,14 +494,36 @@ __twopence_ssh_command_ssh
   return rc;
 }
 
+static bool
+__twopence_ssh_check_remote_dir(struct twopence_ssh_target *handle, const char *remote_dirname)
+{
+  ssh_session session = handle->session;
+  ssh_scp scp = NULL;
+  bool exists = false;
+
+  scp = ssh_scp_new(session, SSH_SCP_READ|SSH_SCP_RECURSIVE, remote_dirname);
+  if (scp != NULL
+   && ssh_scp_init(scp) == SSH_OK
+   && ssh_scp_pull_request(scp) == SSH_SCP_REQUEST_NEWDIR)
+    exists = true;
+
+  if (scp) {
+    ssh_scp_close(scp);
+    ssh_scp_free(scp);
+  }
+
+  return exists;
+}
+
 // Inject a file into the remote host through SSH
 //
 // Returns 0 if everything went fine
 static int
-__twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, twopence_file_xfer_t *xfer, twopence_status_t *status)
+__twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, twopence_file_xfer_t *xfer,
+		const char *remote_dirname, const char *remote_basename,
+		twopence_status_t *status)
 {
   ssh_session session = handle->session;
-  char *copy;
   ssh_scp scp;
   long filesize;
   int rc;
@@ -509,10 +531,15 @@ __twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, twopence_file_xfer
   filesize = twopence_iostream_filesize(xfer->local_stream);
   assert(filesize >= 0);
 
-  // Create and initialize a SCP session
-  copy = strdup(xfer->remote.name);
-  scp = ssh_scp_new(session, SSH_SCP_WRITE, dirname(copy));
-  free(copy);
+  /* Unfortunately, we have to make sure the remote directory exists.
+   * In openssh-6.2p2 (and maybe others), if you try to create file
+   * "foo" inside non-existant directory "/bar" will result in the
+   * creation of regular file "/bar" and upload the content there.
+   */
+  if (!__twopence_ssh_check_remote_dir(handle, remote_dirname))
+    return TWOPENCE_SEND_FILE_ERROR;
+
+  scp = ssh_scp_new(session, SSH_SCP_WRITE, remote_dirname);
   if (scp == NULL)
     return TWOPENCE_OPEN_SESSION_ERROR;
   if (ssh_scp_init(scp) != SSH_OK)
@@ -522,17 +549,14 @@ __twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, twopence_file_xfer
   }
 
   // Tell the remote host about the file size
-  copy = strdup(xfer->remote.name);
   if (ssh_scp_push_file
-         (scp, basename(copy), filesize, xfer->remote.mode) != SSH_OK)
+         (scp, remote_basename, filesize, xfer->remote.mode) != SSH_OK)
   {
     status->major = ssh_get_error_code(session);
-    free(copy);
     ssh_scp_close(scp);
     ssh_scp_free(scp);
     return TWOPENCE_SEND_FILE_ERROR;
   }
-  free(copy);
 
   // Send the file
   rc = __twopence_ssh_send_file(handle, xfer->local_stream, scp, filesize, &status->major);
@@ -792,6 +816,7 @@ twopence_ssh_inject_file(struct twopence_target *opaque_handle,
 		twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
   struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
+  char *dirname, *basename;
   long filesize;
   int rc;
 
@@ -799,6 +824,8 @@ twopence_ssh_inject_file(struct twopence_target *opaque_handle,
   if (__twopence_ssh_connect_ssh(handle, xfer->user) < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
+  dirname = ssh_dirname(xfer->remote.name);
+  basename = ssh_basename(xfer->remote.name);
 
   /* Unfortunately, the SCP protocol requires the size of the file to be
    * transmitted :-(
@@ -817,10 +844,10 @@ twopence_ssh_inject_file(struct twopence_target *opaque_handle,
 
     tmp_xfer.local_stream = NULL;
     twopence_iostream_wrap_buffer(bp, &tmp_xfer.local_stream);
-    rc = __twopence_ssh_inject_ssh(handle, &tmp_xfer, status);
+    rc = __twopence_ssh_inject_ssh(handle, &tmp_xfer, dirname, basename, status);
     twopence_iostream_free(tmp_xfer.local_stream);
   } else {
-    rc = __twopence_ssh_inject_ssh(handle, xfer, status);
+    rc = __twopence_ssh_inject_ssh(handle, xfer,dirname, basename,  status);
   }
 
   if (rc == 0 && (status->major != 0 || status->major != 0))
@@ -828,6 +855,10 @@ twopence_ssh_inject_file(struct twopence_target *opaque_handle,
 
   // Disconnect from remote host
   __twopence_ssh_disconnect_ssh(handle);
+
+  /* Clean up */
+  free(basename);
+  free(dirname);
 
   return rc;
 }
