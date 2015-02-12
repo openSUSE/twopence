@@ -56,14 +56,19 @@ typedef struct {
 	long		timeout;
 	char *		local_filename;
 	PyObject *	buffer;
+
+	twopence_buf_t	databuf;
 } twopence_Transfer;
 
 typedef struct {
 	PyObject_HEAD
 
 	int		remoteStatus;
+	/* for cmd operations */
 	PyObject *	stdout;
 	PyObject *	stderr;
+	/* for xfer operations */
+	PyObject *	buffer;
 } twopence_Status;
 
 

@@ -59,7 +59,7 @@ def testCaseFail(msg):
 
 def testCaseCheckStatus(status, expectExitCode = 0):
 	print # command may not have printed a newline
-	print "Command exited with status %d" % status.code
+	print "Transaction finished; status %d" % status.code
 	if status.code != expectExitCode:
 		testCaseFail("command exited with status %d, expected %d" % (status.code, expectExitCode));
 		return False
@@ -356,32 +356,72 @@ target.run("rm -f /tmp/injected");
 os.remove("etc_hosts")
 testCaseReport()
 
-testCaseBegin("verify that sendfile assigns the requested permissions")
+
+##################################################################
+# This file mode stuff is not really accurate, at least
+# with ssh. The sshd daemon's umask will modify the file bits anyway;
+# plus the permissions of an existing file to not get updated anyway.
+# We would have to chmod the file explicitly in the client code for
+# this to work as expected.
+##################################################################
+# testCaseBegin("verify that sendfile assigns the requested permissions")
+# try:
+# 	xfer = twopence.Transfer("/tmp/injected", localfile = "_etc_hosts");
+# 	cmd = twopence.Command("stat -c 0%a /tmp/injected")
+# 	cmd.suppressOutput();
+# 
+# 	for xfer.permissions in (0400, 0111, 0666, 0421):
+# 		print "creating file with mode 0%o" % xfer.permissions
+# 		status = target.sendfile(xfer);
+# 		if not testCaseCheckStatusQuiet(status):
+# 			break
+# 
+# 		cmd.stdout = bytearray();
+# 		status = target.run(cmd)
+# 		if not testCaseCheckStatusQuiet(status):
+# 			break
+# 
+# 		expect = "0%03o" % xfer.permissions
+# 		mode = str(status.stdout).strip()
+# 		if mode == expect:
+# 			print "Good, file mode is set to %s" % mode
+# 		else:
+# 			testCaseFail("File mode should be %s, but is %s" % (expect, mode));
+# 			break
+# 
+# 		target.run("rm -f /tmp/injected");
+# except:
+# 	testCaseException()
+# target.run("rm -f /tmp/injected");
+# testCaseReport()
+
+buffer = bytearray()
+testCaseBegin("receive file to a buffer");
 try:
-	xfer = twopence.Transfer("/tmp/injected", localfile = "/etc/hosts");
-	cmd = twopence.Command("stat -c 0%a /tmp/injected")
-	cmd.suppressOutput();
-
-	for xfer.permissions in (0400, 0111, 0666, 0421):
-		print "creating file with mode 0%o" % xfer.permissions
-		status = target.sendfile(xfer);
-		if not testCaseCheckStatusQuiet(status):
-			break
-
-		cmd.stdout = bytearray();
-		status = target.run(cmd)
-		if not testCaseCheckStatusQuiet(status):
-			break
-
-		expect = "0%03o" % xfer.permissions
-		mode = str(status.stdout).strip()
-		if mode == expect:
-			print "Good, file mode is set to %s" % mode
+	print "Downloading /etc/hosts to a python buffer"
+	xfer = twopence.Transfer("/etc/hosts");
+	status = target.recvfile(xfer);
+	if testCaseCheckStatus(status):
+		if len(status.buffer) == 0:
+			testCaseFail("Downloaded buffer is empty");
 		else:
-			testCaseFail("File mode should be %s, but is %s" % (expect, mode));
-			break
+			print "Good, we received some data"
+			buffer = status.buffer;
+except:
+	testCaseException()
+testCaseReport()
 
-		target.run("rm -f /tmp/injected");
+testCaseBegin("send a file from a buffer");
+try:
+	print "Uploading buffer to /tmp/injected"
+	xfer = twopence.Transfer("/tmp/injected", data = buffer);
+	status = target.sendfile(xfer);
+	if testCaseCheckStatus(status):
+		print "/tmp/injected should now contain the same data as /etc/hosts"
+		if not target.run("cmp /etc/hosts /tmp/injected"):
+			testCaseFail("Uploaded data does not match original file");
+		else:
+			print "Great, our uploaded data agrees with the original file";
 except:
 	testCaseException()
 target.run("rm -f /tmp/injected");

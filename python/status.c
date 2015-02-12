@@ -77,6 +77,7 @@ Status_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 	self->remoteStatus = 0;
 	self->stdout = NULL;
 	self->stderr = NULL;
+	self->buffer = NULL;
 
 	return (PyObject *)self;
 }
@@ -105,6 +106,7 @@ Status_init(twopence_Status *self, PyObject *args, PyObject *kwds)
 	self->remoteStatus = exitval;
 	self->stdout = NULL;
 	self->stderr = NULL;
+	self->buffer = NULL;
 
 	if (stdoutObject) {
 		Py_INCREF(stdoutObject);
@@ -126,6 +128,7 @@ Status_dealloc(twopence_Status *self)
 {
 	drop_object(&self->stdout);
 	drop_object(&self->stderr);
+	drop_object(&self->buffer);
 }
 
 int
@@ -135,23 +138,8 @@ Status_Check(PyObject *self)
 }
 
 static PyObject *
-Status_stdout(twopence_Status *self)
+Status_object_attr(twopence_Status *self, PyObject *result)
 {
-	PyObject *result;
-
-	result = self->stdout;
-	if (result == NULL)
-		result = Py_None;
-	Py_INCREF(result);
-	return result;
-}
-
-static PyObject *
-Status_stderr(twopence_Status *self)
-{
-	PyObject *result;
-
-	result = self->stderr;
 	if (result == NULL)
 		result = Py_None;
 	Py_INCREF(result);
@@ -186,9 +174,11 @@ static PyObject *
 Status_getattr(twopence_Status *self, char *name)
 {
 	if (!strcmp(name, "stdout"))
-		return Status_stdout(self);
+		return Status_object_attr(self, self->stdout);
 	if (!strcmp(name, "stderr"))
-		return Status_stderr(self);
+		return Status_object_attr(self, self->stderr);
+	if (!strcmp(name, "buffer"))
+		return Status_object_attr(self, self->buffer);
 	if (!strcmp(name, "code"))
 		return PyInt_FromLong(self->remoteStatus);
 	if (!strcmp(name, "message"))

@@ -482,6 +482,18 @@ Target_recvfile(PyObject *self, PyObject *args, PyObject *kwds)
 
 	statusObject = (twopence_Status *) twopence_callType(&twopence_StatusType, NULL, NULL);
 	statusObject->remoteStatus = status.major ?: status.minor;
+
+	/* If we didn't write to a local file, we sent our data to self->databuf.
+	 * copy that back to the data buffer, and return it in the status object */
+	if (statusObject->remoteStatus == 0 && xferObject->local_filename == NULL) {
+		if (xferObject->buffer && PyByteArray_Check(xferObject->buffer)) {
+			statusObject->buffer = xferObject->buffer;
+			Py_INCREF(xferObject->buffer);
+		} else {
+			statusObject->buffer = twopence_callType(&PyByteArray_Type, NULL, NULL);
+		}
+		twopence_AppendBuffer(statusObject->buffer, &xferObject->databuf);
+	}
 	result = (PyObject *) statusObject;
 
 out:

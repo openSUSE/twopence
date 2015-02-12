@@ -96,6 +96,8 @@ Transfer_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 	self->timeout = 0L;
 	self->buffer = NULL;
 
+	twopence_buf_init(&self->databuf);
+
 	return (PyObject *)self;
 }
 
@@ -127,11 +129,16 @@ Transfer_init(twopence_Transfer *self, PyObject *args, PyObject *kwds)
 		return -1;
 
 	self->remote_filename = strdup(remotefile);
-	self->local_filename = strdup(localfile);
+	self->local_filename = localfile? strdup(localfile) : NULL;
 	self->user = user? strdup(user) : NULL;
 	self->permissions = permissions;
 	self->timeout = timeout;
-	self->buffer = NULL;
+	self->buffer = bufferObject;
+	if (bufferObject) {
+		Py_INCREF(bufferObject);
+	}
+
+	twopence_buf_init(&self->databuf);
 
 	return 0;
 }
@@ -142,6 +149,7 @@ Transfer_init(twopence_Transfer *self, PyObject *args, PyObject *kwds)
 static void
 Transfer_dealloc(twopence_Transfer *self)
 {
+	twopence_buf_destroy(&self->databuf);
 	drop_string(&self->remote_filename);
 	drop_string(&self->local_filename);
 	drop_string(&self->user);
@@ -170,11 +178,21 @@ Transfer_build_send(twopence_Transfer *self, twopence_file_xfer_t *xfer)
 		rv = twopence_iostream_open_file(self->local_filename, &xfer->local_stream);
 		if (rv < 0)
 			return -1;
-	} else if (self->buffer != NULL) {
-		/* TBD: implement an iostream type that can read from a python buffer */
-		return -1;
+	} else if (self->buffer != NULL && PyByteArray_Check(self->buffer)) {
+		unsigned int count;
+
+		twopence_buf_destroy(&self->databuf);
+
+		count = PyByteArray_Size(self->buffer);
+		twopence_buf_ensure_tailroom(&self->databuf, count);
+		twopence_buf_append(&self->databuf, PyByteArray_AsString(self->buffer), count);
+		if (twopence_iostream_wrap_buffer(&self->databuf, false, &xfer->local_stream) < 0) {
+			PyErr_SetString(PyExc_TypeError, "Cannot convert xfer buffer");
+			return -1;
+		}
 	} else {
 		/* We don't know what to send */
+		PyErr_SetString(PyExc_TypeError, "Transfer object specifies neither localfile nor buffer");
 		return -1;
 	}
 
@@ -199,8 +217,8 @@ Transfer_build_recv(twopence_Transfer *self, twopence_file_xfer_t *xfer)
 		if (rv < 0)
 			return -1;
 	} else {
-		/* TBD: implement an iostream type that can write to a python buffer */
-		return -1;
+		if (twopence_iostream_wrap_buffer(&self->databuf, true, &xfer->local_stream) < 0)
+			return -1;
 	}
 
 	return 0;
