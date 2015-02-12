@@ -496,22 +496,47 @@ __twopence_ssh_command_ssh
   return rc;
 }
 
+static bool
+__twopence_ssh_check_remote_dir(struct twopence_ssh_target *handle, const char *remote_dirname)
+{
+  ssh_session session = handle->session;
+  ssh_scp scp = NULL;
+  bool exists = false;
+
+  scp = ssh_scp_new(session, SSH_SCP_READ|SSH_SCP_RECURSIVE, remote_dirname);
+  if (scp != NULL
+   && ssh_scp_init(scp) == SSH_OK
+   && ssh_scp_pull_request(scp) == SSH_SCP_REQUEST_NEWDIR)
+    exists = true;
+
+  if (scp) {
+    ssh_scp_close(scp);
+    ssh_scp_free(scp);
+  }
+
+  return exists;
+}
+
 // Inject a file into the remote host through SSH
 //
 // Returns 0 if everything went fine
 static int
-__twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, int file_fd, const char *remote_filename, int *remote_rc)
+__twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, int file_fd, const char *remote_dirname, const char *remote_basename, int *remote_rc)
 {
   ssh_session session = handle->session;
-  char *copy;
   ssh_scp scp;
   struct stat filestats;
   int rc;
 
-  // Create and initialize a SCP session
-  copy = strdup(remote_filename);
-  scp = ssh_scp_new(session, SSH_SCP_WRITE, dirname(copy));
-  free(copy);
+  /* Unfortunately, we have to make sure the remote directory exists.
+   * In openssh-6.2p2 (and maybe others), if you try to create file
+   * "foo" inside non-existant directory "/bar" will result in the
+   * creation of regular file "/bar" and upload the content there.
+   */
+  if (!__twopence_ssh_check_remote_dir(handle, remote_dirname))
+    return TWOPENCE_SEND_FILE_ERROR;
+
+  scp = ssh_scp_new(session, SSH_SCP_WRITE, remote_dirname);
   if (scp == NULL)
     return TWOPENCE_OPEN_SESSION_ERROR;
   if (ssh_scp_init(scp) != SSH_OK)
@@ -522,17 +547,15 @@ __twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, int file_fd, const
 
   // Tell the remote host about the file size
   fstat(file_fd, &filestats);
-  copy = strdup(remote_filename);
+
   if (ssh_scp_push_file
-         (scp, basename(copy), filestats.st_size, 00660) != SSH_OK)
+         (scp, remote_basename, filestats.st_size, 00660) != SSH_OK)
   {
     *remote_rc = ssh_get_error_code(session);
-    free(copy);
     ssh_scp_close(scp);
     ssh_scp_free(scp);
     return TWOPENCE_SEND_FILE_ERROR;
   }
-  free(copy);
 
   // Send the file
   rc = __twopence_ssh_send_file(handle, file_fd, scp, filestats.st_size, remote_rc);
@@ -794,6 +817,7 @@ twopence_ssh_inject_file(struct twopence_target *opaque_handle,
 		int *remote_rc, bool dots)
 {
   struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
+  char *dirname, *basename;
   int fd, rc;
 
   // 'remote_rc' defaults to 0
@@ -813,16 +837,22 @@ twopence_ssh_inject_file(struct twopence_target *opaque_handle,
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
 
+  dirname = ssh_dirname(remote_filename);
+  basename = ssh_basename(remote_filename);
+
   // Inject the file
-  rc = __twopence_ssh_inject_ssh
-         (handle, fd, remote_filename, remote_rc);
+  rc = __twopence_ssh_inject_ssh(handle, fd,
+		  dirname, basename,
+		  remote_rc);
   if (rc == 0 && *remote_rc != 0)
     rc = TWOPENCE_REMOTE_FILE_ERROR;
 
   // Disconnect from remote host
   __twopence_ssh_disconnect_ssh(handle);
 
-  // Close the file
+  /* Clean up */
+  free(basename);
+  free(dirname);
   close(fd);
 
   return rc;
