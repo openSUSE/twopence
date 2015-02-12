@@ -101,11 +101,12 @@ __twopence_ssh_sleep()
 static int
 __twopence_ssh_channel_eof(struct twopence_ssh_target *handle)
 {
-  int rc;
+  int rc = SSH_OK;
 
   if (handle->channel == NULL || handle->eof_sent)
     return SSH_OK;
-  rc = ssh_channel_write(handle->channel, "\004", 1);
+  if (handle->use_tty)
+    rc = ssh_channel_write(handle->channel, "\004", 1);
   if (rc == SSH_OK)
     rc = ssh_channel_send_eof(handle->channel);
   if (rc == SSH_OK)
