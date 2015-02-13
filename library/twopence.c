@@ -1008,10 +1008,27 @@ twopence_substream_buffer_size(twopence_substream_t *src)
   return twopence_buf_count(bp);
 }
 
+int
+twopence_substream_buffer_poll(twopence_substream_t *src, struct pollfd *pfd, int mask)
+{
+  /* Returning a negative value means "error", returning 0 means "we don't support
+   * polling, so please try to read/write immediately */
+  return 0;
+}
+
+int
+twopence_substream_buffer_set_blocking(twopence_substream_t *src, bool blocking)
+{
+  /* always succeeds */
+  return 0;
+}
+
 static twopence_io_ops_t twopence_buffer_io = {
-	.read	= twopence_substream_buffer_read,
-	.write	= twopence_substream_buffer_write,
-	.filesize = twopence_substream_buffer_size,
+	.read		= twopence_substream_buffer_read,
+	.write		= twopence_substream_buffer_write,
+	.set_blocking	= twopence_substream_buffer_set_blocking,
+	.poll		= twopence_substream_buffer_poll,
+	.filesize	= twopence_substream_buffer_size,
 };
 
 twopence_substream_t *

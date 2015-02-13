@@ -253,13 +253,23 @@ __twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, int link_fd, t
   while (true) {
     struct pollfd pfd[2];
     int nfds = 0, n;
+    int count;
 
     pfd[nfds].fd = link_fd;
     pfd[nfds].events = POLLIN;
     nfds++;
 
-    if (stdin_stream) {
+    if (stdin_stream && !twopence_iostream_eof(stdin_stream)) {
       n = twopence_iostream_poll(stdin_stream, &pfd[nfds], POLLIN);
+      if (n == 0) {
+	/* A zero return code indicates the stream does not support polling,
+	 * which is the case of a buffer for instance.
+	 * Try to read from it directly.
+	 */
+        count = twopence_iostream_read(stdin_stream, buffer + 4, size - 4);
+	if (count >= 0)
+	  goto process_stdin;
+      }
       if (n > 0)
         nfds++;
     }
@@ -282,8 +292,6 @@ __twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, int link_fd, t
     }
 
     if (nfds > 1 && (pfd[1].revents & (POLLIN|POLLHUP))) {
-      int count;
-
       count = twopence_iostream_read(stdin_stream, buffer + 4, size - 4);
       if (count < 0) {
 	if (errno == EINTR)
@@ -291,6 +299,7 @@ __twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, int link_fd, t
 	return count;
       }
 
+process_stdin:
       if (count == 0) {
         buffer[0] = 'E'; /* EOF on standard input */
       } else {
@@ -348,6 +357,7 @@ _twopence_read_results(struct twopence_pipe_target *handle, int link_fd, twopenc
     switch (buffer[0]) {
       case 'E':                        // End of file on stdin
 	twopence_iostream_destroy(stream);
+	stream = NULL;
 	/* fallthru */
       case '0':                        // Data on stdin
         if (state != 0)

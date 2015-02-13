@@ -319,6 +319,44 @@ except:
 	testCaseException()
 testCaseReport()
 
+
+testCaseBegin("command='/usr/bin/wc' with stdin connected to a buffer")
+try:
+	cmd = twopence.Command("wc", stdin = bytearray("aa\nbb\ncc\n"))
+	status = target.run(cmd)
+	if testCaseCheckStatus(status):
+		word = str(status.stdout).split()[0]
+		if int(word) != 3:
+			testCaseFail("command returned wrong number of lines (got %s, expected 3)" % word)
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("command='/usr/bin/wc' with stdin connected to the output of a local command")
+try:
+	import subprocess
+
+	print "Running local command 'cat /etc/services'"
+	p = subprocess.Popen("cat /etc/services", shell=True, stdout=subprocess.PIPE)
+	if not p:
+		testCaseFail("unable to open subprocess")
+	else:
+		print "Running remote command 'wc' with stdin connected to local stdout"
+		cmd = twopence.Command("wc", stdin = p.stdout);
+		status = target.run(cmd)
+		if testCaseCheckStatus(status):
+			remoteOut = str(status.stdout).split()
+			localOut = str(os.popen("wc </etc/services").read()).split()
+			if localOut != remoteOut:
+				testCaseFail("output differs")
+				print "local:  ", localOut
+				print "remote: ", remoteOut
+			else:
+				print "Remote output matches output of running wc locally"
+except:
+	testCaseException()
+testCaseReport()
+
 testCaseBegin("Verify twopence.Transfer attributes")
 try:
 	xfer = twopence.Transfer("/remote/filename", localfile = "/local/filename", permissions = 0421);
@@ -429,10 +467,5 @@ except:
 target.run("rm -f /tmp/injected");
 testCaseReport()
 
-
-print "command='cat' with stdin connected to the result of 'ls'"
-# TODO: local command piped to remote command
-print "(note: test to be written)"
-print
 
 testSuiteExit()

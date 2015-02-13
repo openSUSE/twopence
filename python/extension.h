@@ -44,6 +44,7 @@ typedef struct {
 	int		suppressOutput;
 	PyObject *	stdout;
 	PyObject *	stderr;
+	PyObject *	stdin;
 	bool		useTty;
 } twopence_Command;
 
@@ -123,7 +124,6 @@ drop_object(PyObject **var)
 {
 	assign_object(var, NULL);
 }
-
 
 #endif /* TWOPENCE_PYTHON_EXT_H */
 
