@@ -9,4 +9,6 @@ shell/extract
 shell/inject
 shell/twopence
 server/twopence_test_server
+tests/logfile.*
+tests/summary
 core
