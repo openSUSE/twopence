@@ -1,0 +1,85 @@
+#!/bin/bash
+#
+# Run a test script against a virtio target.
+#
+
+# The account name to use for the test user
+TESTUSER=testuser
+
+
+myname=`readlink -f $0`
+TOPDIR=${myname%/tests/*}
+
+PLUGIN=$1
+SCRIPT=$2
+
+if [ -z "$SCRIPT" ]; then
+	echo "$0: you have to specify a test script as argument" >&2
+	exit 1;
+fi
+
+if [ ! -x "$SCRIPT" ]; then
+	echo "$0: test scrpt \"$SCRIPT\" does not exist or is not executable" >&2
+	exit 1
+fi
+
+export LD_LIBRARY_PATH=$TOPDIR/library
+export PYTHONPATH=$TOPDIR/python
+
+
+echo "******************************************************************"
+echo "*** TEST PREPARATION ***"
+
+if ! id $TESTUSER >/dev/null 2>&1; then
+	echo "*** Creating user account $TESTUSER ***"
+	useradd -g users $TESTUSER -d /home/$TESTUSER
+	install -o $TESTUSER -g users -d /home/$TESTUSER
+fi
+
+prep_script=./prep-$PLUGIN
+if test -x $prep_script; then
+	echo "*** Running prep script ***"
+	if ! $prep_script $TESTUSER; then
+		echo "Unable to set this host up for $PLUGIN testing" >&2
+		exit 1
+	fi
+fi
+
+case $PLUGIN in
+virtio)
+	echo "*** Start server ****"
+	../server/twopence_test_server --daemon --port-unix /tmp/twopence.sock
+	TARGET="virtio:/tmp/twopence.sock";;
+
+ssh)
+	TARGET=ssh:localhost;;
+
+*)
+	echo "*** Don't know how to run test against plugin $PLUGIN ***" >&2
+	exit 1;;
+esac
+
+echo "*** Running $SCRIPT $TARGET ***"
+echo "******************************************************************"
+$SCRIPT $TARGET
+status=$?
+
+echo "******************************************************************"
+echo "*** TEST TEAR-DOWN ***"
+case $PLUGIN in
+virtio)
+	if ! killall -TERM twopence_test_server; then
+		echo "*** Unable to kill server; did it crash?" >&2
+		status=1
+	fi;;
+esac
+
+echo "*** Exit status $status ***"
+echo "******************************************************************"
+
+if [ $status -ne 0 ]; then
+	echo "Test script failed (status=$status)" >&2
+	echo "Server log file can be found in server.log" >&2
+fi
+
+exit $status

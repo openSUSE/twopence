@@ -42,6 +42,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <stdbool.h>
 #include <stdarg.h>
 #include <string.h>
+#include <syslog.h>
 
 #include "server.h"
 
@@ -55,6 +56,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 static void		service_connection(int);
 static void		server_daemonize(void);
 
+FILE *			server_log_file = NULL;
 unsigned int		server_tracing = 0;
 
 
@@ -217,6 +219,9 @@ int main(int argc, char *argv[])
 
   // Welcome message, check arguments
   printf("Twopence test server version 0.3.0\n");
+
+  /* Initially, debug logging goes to stderr */
+  server_log_file = stderr;
 
   while ((c = getopt_long(argc, argv, "DdPS:U:", long_opts, NULL)) != -1) {
     switch (c) {
@@ -384,5 +389,34 @@ server_daemonize(void)
   if (daemon(0, 0) < 0) {
     perror("test_server: unable to daemonize");
     exit(TWOPENCE_SERVER_FORK_ERROR);
+  }
+
+  server_log_file = NULL;
+}
+
+void
+twopence_trace(const char *fmt, ...)
+{
+  va_list ap;
+
+  va_start(ap, fmt);
+  if (server_log_file) {
+    vfprintf(server_log_file, fmt, ap);
+  } else {
+    vsyslog(LOG_DEBUG, fmt, ap);
+  }
+}
+
+void
+twopence_log_error(const char *fmt, ...)
+{
+  va_list ap;
+
+  va_start(ap, fmt);
+  if (server_log_file) {
+    fprintf(server_log_file, "Error: ");
+    vfprintf(server_log_file, fmt, ap);
+  } else {
+    vsyslog(LOG_ERR, fmt, ap);
   }
 }
