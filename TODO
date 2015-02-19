@@ -69,6 +69,9 @@ FUNCTIONALITY
      because of a timeout or another problem
 
 
+TESTING
+   o Document the tests we're doing in tests/
+
 FUTURE DIRECTIONS
    o Twopence could be extended by writing new plugins,
      for example for running tests in Linux containers or chroot jails

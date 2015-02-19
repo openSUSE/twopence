@@ -20,6 +20,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 */
 
 #include <libssh/libssh.h>
+#include <libssh/callbacks.h>
 
 #include <sys/stat.h>
 #include <time.h>
@@ -49,7 +50,21 @@ struct twopence_ssh_target
   bool use_tty;
   bool eof_sent;
   bool interrupted;
+  int exit_signal;
+
+  /* Right now, we need the callbacks for exactly one reason -
+   * to catch the exit signal of the remote process.
+   * When a command dies from a signal, libssh will always report
+   * an exit code of -1 (SSH_ERROR), and the only way to catch what
+   * really happens is by hooking up this callback.
+   */
+  struct ssh_channel_callbacks_struct callbacks;
 };
+
+/* Note to self: if you need to find out what libssh is doing,
+ * consider enabling tracing:
+ *  ssh_set_log_level(SSH_LOG_TRACE);
+ */
 
 extern const struct twopence_plugin twopence_ssh_ops;
 
@@ -123,6 +138,75 @@ __twopence_ssh_close_channel(struct twopence_ssh_target *handle)
   ssh_channel_close(handle->channel);
   ssh_channel_free(handle->channel);
   handle->channel = NULL;
+}
+
+static void
+__twopence_ssh_exit_signal_callback(ssh_session session, ssh_channel channel, const char *signal, int core, const char *errmsg, const char *lang, void *userdata)
+{
+  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) userdata;
+  static const char *signames[NSIG] = {
+	[SIGHUP] = "HUP",
+	[SIGINT] = "INT",
+	[SIGQUIT] = "QUIT",
+	[SIGILL] = "ILL",
+	[SIGTRAP] = "TRAP",
+	[SIGABRT] = "ABRT",
+	[SIGIOT] = "IOT",
+	[SIGBUS] = "BUS",
+	[SIGFPE] = "FPE",
+	[SIGKILL] = "KILL",
+	[SIGUSR1] = "USR1",
+	[SIGSEGV] = "SEGV",
+	[SIGUSR2] = "USR2",
+	[SIGPIPE] = "PIPE",
+	[SIGALRM] = "ALRM",
+	[SIGTERM] = "TERM",
+	[SIGSTKFLT] = "STKFLT",
+	[SIGCHLD] = "CHLD",
+	[SIGCONT] = "CONT",
+	[SIGSTOP] = "STOP",
+	[SIGTSTP] = "TSTP",
+	[SIGTTIN] = "TTIN",
+	[SIGTTOU] = "TTOU",
+	[SIGURG] = "URG",
+	[SIGXCPU] = "XCPU",
+	[SIGXFSZ] = "XFSZ",
+	[SIGVTALRM] = "VTALRM",
+	[SIGPROF] = "PROF",
+	[SIGWINCH] = "WINCH",
+	[SIGIO] = "IO",
+	[SIGPWR] = "PWR",
+	[SIGSYS] = "SYS",
+  };
+  int signo;
+
+  for (signo = 0; signo < NSIG; ++signo) {
+    const char *name = signames[signo];
+
+    if (name && !strcmp(name, signal)) {
+      handle->exit_signal = signo;
+      return;
+    }
+  }
+
+  handle->exit_signal = -1;
+}
+
+static void
+__twopence_ssh_init_callbacks(struct twopence_ssh_target *handle)
+{
+  struct ssh_channel_callbacks_struct *cb = &handle->callbacks;
+
+  if (cb->size == 0) {
+    cb->channel_exit_signal_function = __twopence_ssh_exit_signal_callback;
+    ssh_callbacks_init(cb);
+  }
+
+  if (handle->channel == NULL)
+    return;
+
+  cb->userdata = handle;
+  ssh_set_channel_callbacks(handle->channel, cb);
 }
 
 ///////////////////////////// Middle layer //////////////////////////////////////
@@ -218,7 +302,7 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, long timeout, ss
     // If we have received a SIGINT, exit and close the channel without
     // further delay.
     if (handle->interrupted) {
-      printf("interrupt: break out of read loop\n");
+      fprintf(stderr, "interrupt: break out of read loop\n");
       return -6;
     }
 
@@ -425,6 +509,9 @@ __twopence_ssh_command_ssh
   handle->eof_sent = false;
   handle->use_tty = false;
   handle->interrupted = false;
+  handle->exit_signal = 0;
+
+  __twopence_ssh_init_callbacks(handle);
 
   // Request that the command be run inside a tty
   if (cmd->request_tty)
@@ -457,7 +544,14 @@ __twopence_ssh_command_ssh
   switch (rc)
   {
     case 0:
-      status_ret->minor = ssh_channel_get_exit_status(channel);
+      if (handle->exit_signal) {
+	// mimic the behavior of the test server for now.
+	// in the long run, better reporting would be great.
+	status_ret->major = EFAULT;
+	status_ret->minor = handle->exit_signal;
+      } else {
+        status_ret->minor = ssh_channel_get_exit_status(channel);
+      }
       break;
 
     case -1:
