@@ -17,10 +17,6 @@ BUGS
 
 
 REFACTORING
-   o plugins:
-     get rid of twopence_init, replaced by twopence_init_new
-     (just a matter of comments?)
-
    o in ssh.c, replace
        ssh_channel_read_nonblocking() + nanosleep()
      with
@@ -28,7 +24,10 @@ REFACTORING
 
    o not sure there is much point in having two concurrent APIs to do the same:
      refactor shell and ruby wrappers to use directly twopence_run_test()?
+     [DONE for shell/command.c]
 
+   o don't install public header files in /usr/include directly, but
+     move them into /usr/include/twopence
 
 FUNCTIONALITY
    o write help pages

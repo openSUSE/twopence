@@ -825,8 +825,8 @@ __twopence_ssh_init(const char *hostname, unsigned int port)
 // This function expects just the part of the target spec following
 // the "ssh:" plugin type.
 //////////////////////////////////////////////////////////////////
-struct twopence_target *
-twopence_init_new(const char *arg)
+static struct twopence_target *
+twopence_ssh_init(const char *arg)
 {
   char *copy_spec, *s, *hostname;
   struct twopence_target *target = NULL;
@@ -1019,7 +1019,7 @@ twopence_ssh_end(struct twopence_target *opaque_handle)
 const struct twopence_plugin twopence_ssh_ops = {
 	.name		= "ssh",
 
-	.init = twopence_init_new,
+	.init = twopence_ssh_init,
 	.run_test = twopence_ssh_run_test,
 	.inject_file = twopence_ssh_inject_file,
 	.extract_file = twopence_ssh_extract_file,
