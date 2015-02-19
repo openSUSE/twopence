@@ -320,8 +320,8 @@ twopence_command --timeout 10 $TARGET "sleep 11"
 test_case_check_status $? 8
 t1=`date +%s`
 let elapsed=$t1-$t0
-if [ $elapsed -lt 10 -o $elapsed -gt 11 ]; then
-	test_case_fail "test case took $elapsed seconds to complete (expected to be between 10 and 11 secs)"
+if [ $elapsed -lt 10 -o $elapsed -gt 12 ]; then
+	test_case_fail "test case took $elapsed seconds to complete (expected to be between 10 and 12 secs)"
 fi
 test_case_report
 
@@ -331,8 +331,8 @@ twopence_command --timeout 10 $TARGET "sleep 9"
 test_case_check_status $?
 t1=`date +%s`
 let elapsed=$t1-$t0
-if [ $elapsed -lt 9 -o $elapsed -gt 10 ]; then
-	test_case_fail "test case took $elapsed seconds to complete (expected to be between 9 and 10 secs)"
+if [ $elapsed -lt 9 -o $elapsed -gt 11 ]; then
+	test_case_fail "test case took $elapsed seconds to complete (expected to be between 9 and 11 secs)"
 fi
 test_case_report
 
