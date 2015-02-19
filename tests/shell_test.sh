@@ -195,8 +195,11 @@ fi
 test_case_report
 rm -f stdout.txt stderr.txt
 
-test_case_begin "command 'find /dev -type s' run as user '$TESTUSER'"
-twopence_command -u $TESTUSER -1 output.txt -2 errors.txt $TARGET 'find /dev -type s'
+##################################################################
+# Do a find(1) in a directory that we know contains subdirectories
+# not accessible to the test user
+test_case_begin "command 'find /etc -type s' run as user '$TESTUSER'"
+twopence_command -u $TESTUSER -1 output.txt -2 errors.txt $TARGET 'find /etc -type s'
 test_case_check_status $? 9
 echo "output was:"
 cat output.txt
