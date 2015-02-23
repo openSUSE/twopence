@@ -76,6 +76,11 @@ function test_case_fail {
 	overall_status=1
 }
 
+function test_case_warn {
+
+	echo "### WARN: $*" >&2
+}
+
 function test_case_skip {
 
 	echo "### $*" >&2
@@ -190,8 +195,11 @@ fi
 test_case_report
 rm -f stdout.txt stderr.txt
 
-test_case_begin "command 'find /dev -type s' run as user '$TESTUSER'"
-twopence_command -u $TESTUSER -1 output.txt -2 errors.txt $TARGET 'find /dev -type s'
+##################################################################
+# Do a find(1) in a directory that we know contains subdirectories
+# not accessible to the test user
+test_case_begin "command 'find /etc -type s' run as user '$TESTUSER'"
+twopence_command -u $TESTUSER -1 output.txt -2 errors.txt $TARGET 'find /etc -type s'
 test_case_check_status $? 9
 echo "output was:"
 cat output.txt
@@ -314,25 +322,41 @@ ssh:*)	test_case_skip "Extracting /proc files currently does not work with ssh";
 esac
 test_case_report
 
+# Run a command that takes longer than the timeout of 10 seconds.
+# This should exit with a timeout error.
+# As a bonus, the total time spent executing this should not be
+# less than the timeout, and shouldn't exceed the expected timeout
+# by too much. The latter cannot be guaranteed, especially if we should
+# ever run this as part of the build validation in OBS, so we make that
+# check a warning only.
+#
 test_case_begin "test timeout of commands"
 t0=`date +%s`
 twopence_command --timeout 10 $TARGET "sleep 11"
 test_case_check_status $? 8
 t1=`date +%s`
 let elapsed=$t1-$t0
-if [ $elapsed -lt 10 -o $elapsed -gt 11 ]; then
-	test_case_fail "test case took $elapsed seconds to complete (expected to be between 10 and 11 secs)"
+if [ $elapsed -lt 10 ]; then
+	test_case_fail "test case took $elapsed seconds to complete (should be at least 10)"
+elif [ $elapsed -gt 12 ]; then
+	test_case_warn "test case took $elapsed seconds to complete (should be close to 10)"
 fi
 test_case_report
 
+# Run a command that takes almost as long as the timeout of 10 seconds.
+# This should exit normally and not time out.
+# The total time spent executing the command is verified like above.
+#
 test_case_begin "test timeout of commands #2"
 t0=`date +%s`
 twopence_command --timeout 10 $TARGET "sleep 9"
 test_case_check_status $?
 t1=`date +%s`
 let elapsed=$t1-$t0
-if [ $elapsed -lt 9 -o $elapsed -gt 10 ]; then
-	test_case_fail "test case took $elapsed seconds to complete (expected to be between 9 and 10 secs)"
+if [ $elapsed -lt 9 ]; then
+	test_case_fail "test case took $elapsed seconds to complete (should be at least 9)"
+elif [ $elapsed -gt 11 ]; then
+	test_case_warn "test case took $elapsed seconds to complete (should be close to 9)"
 fi
 test_case_report
 
@@ -348,7 +372,7 @@ test_case_check_status $? 9
 test_case_report
 
 cat<<EOF
-------------------------------------------------------------------
+### SUMMARY $num_tests $num_skipped $num_failed 0
 Total tests run: $num_tests
 Succeeded:       $num_succeeded
 Skipped:         $num_skipped

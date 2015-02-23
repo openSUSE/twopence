@@ -33,6 +33,8 @@ static PyObject *	Target_run(PyObject *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_property(twopence_Target *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_inject(PyObject *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_extract(PyObject *self, PyObject *args, PyObject *kwds);
+static PyObject *	Target_sendfile(PyObject *self, PyObject *args, PyObject *kwds);
+static PyObject *	Target_recvfile(PyObject *self, PyObject *args, PyObject *kwds);
 
 /*
  * Define the python bindings of class "Target"
@@ -58,6 +60,12 @@ static PyMethodDef twopence_targetMethods[] = {
       },
       {	"extract", (PyCFunction) Target_extract, METH_VARARGS | METH_KEYWORDS,
 	"Extract a file from the SUT"
+      },
+      {	"sendfile", (PyCFunction) Target_sendfile, METH_VARARGS | METH_KEYWORDS,
+	"Transfer a file from the local node to the SUT"
+      },
+      {	"recvfile", (PyCFunction) Target_recvfile, METH_VARARGS | METH_KEYWORDS,
+	"Transfer a file from the SUT to the local node"
       },
 
       {	NULL }
@@ -204,12 +212,14 @@ Target_property(twopence_Target *self, PyObject *args, PyObject *kwds)
  * Support this here.
  */
 int
-twopence_AppendBuffer(PyObject *buffer, const twopence_buffer_t *buf)
+twopence_AppendBuffer(PyObject *buffer, const twopence_buf_t *buf)
 {
+	unsigned int count;
 	int rv = 0;
 
-	if (buffer != NULL && buffer != Py_None && buf->head != NULL) {
-		PyObject *temp = PyString_FromString(buf->head);
+	count = twopence_buf_count(buf);
+	if (buffer != NULL && buffer != Py_None && count != 0) {
+		PyObject *temp = PyString_FromStringAndSize(twopence_buf_head(buf), count);
 
 		if (PySequence_InPlaceConcat(buffer, temp) == NULL)
 			rv = -1;
@@ -367,3 +377,131 @@ Target_extract(PyObject *self, PyObject *args, PyObject *kwds)
 	Py_INCREF(Py_None);
 	return Py_None;
 }
+
+/*
+ * Common functionality for sendfile/recvfile
+ */
+static PyObject *
+Taget_send_recv_common(PyObject *args, PyObject *kwds)
+{
+	PyObject *xferObject = NULL;
+
+	if (PySequence_Check(args)
+	 && PySequence_Fast_GET_SIZE(args) == 1) {
+		/* Single argument can be an object of type Command or a string */
+		PyObject *object = PySequence_Fast_GET_ITEM(args, 0);
+
+		if (Transfer_Check(object)) {
+			xferObject = object;
+			Py_INCREF(xferObject);
+		}
+	}
+
+	if (xferObject == NULL)
+		xferObject = twopence_callType(&twopence_TransferType, args, kwds);
+
+	return xferObject;
+}
+
+/*
+ * transfer a file to the SUT
+ */
+static PyObject *
+Target_sendfile(PyObject *self, PyObject *args, PyObject *kwds)
+{
+	struct twopence_target *handle;
+	twopence_Transfer *xferObject = NULL;
+	twopence_Status *statusObject;
+	twopence_file_xfer_t xfer;
+	twopence_status_t status;
+	PyObject *result = NULL;
+	int rc;
+
+	twopence_file_xfer_init(&xfer);
+
+	xferObject = (twopence_Transfer *) Taget_send_recv_common(args, kwds);
+	if (xferObject == NULL)
+		goto out;
+
+	if (Transfer_build_send(xferObject, &xfer) < 0)
+		goto out;
+
+	if ((handle = Target_handle(self)) == NULL)
+		return NULL;
+
+	rc = twopence_send_file(handle, &xfer, &status);
+	if (rc < 0) {
+		twopence_Exception("sendfile", rc);
+		goto out;
+	}
+
+	statusObject = (twopence_Status *) twopence_callType(&twopence_StatusType, NULL, NULL);
+	statusObject->remoteStatus = status.major ?: status.minor;
+	result = (PyObject *) statusObject;
+
+out:
+	if (xferObject) {
+		Py_DECREF(xferObject);
+	}
+
+	twopence_file_xfer_destroy(&xfer);
+	return result;
+}
+
+/*
+ * transfer a file to the SUT
+ */
+static PyObject *
+Target_recvfile(PyObject *self, PyObject *args, PyObject *kwds)
+{
+	struct twopence_target *handle;
+	twopence_Transfer *xferObject = NULL;
+	twopence_Status *statusObject;
+	twopence_file_xfer_t xfer;
+	twopence_status_t status;
+	PyObject *result = NULL;
+	int rc;
+
+	twopence_file_xfer_init(&xfer);
+
+	xferObject = (twopence_Transfer *) Taget_send_recv_common(args, kwds);
+	if (xferObject == NULL)
+		goto out;
+
+	if (Transfer_build_recv(xferObject, &xfer) < 0)
+		goto out;
+
+	if ((handle = Target_handle(self)) == NULL)
+		return NULL;
+
+	rc = twopence_recv_file(handle, &xfer, &status);
+	if (rc < 0) {
+		twopence_Exception("recvfile", rc);
+		goto out;
+	}
+
+	statusObject = (twopence_Status *) twopence_callType(&twopence_StatusType, NULL, NULL);
+	statusObject->remoteStatus = status.major ?: status.minor;
+
+	/* If we didn't write to a local file, we sent our data to self->databuf.
+	 * copy that back to the data buffer, and return it in the status object */
+	if (statusObject->remoteStatus == 0 && xferObject->local_filename == NULL) {
+		if (xferObject->buffer && PyByteArray_Check(xferObject->buffer)) {
+			statusObject->buffer = xferObject->buffer;
+			Py_INCREF(xferObject->buffer);
+		} else {
+			statusObject->buffer = twopence_callType(&PyByteArray_Type, NULL, NULL);
+		}
+		twopence_AppendBuffer(statusObject->buffer, &xferObject->databuf);
+	}
+	result = (PyObject *) statusObject;
+
+out:
+	if (xferObject) {
+		Py_DECREF(xferObject);
+	}
+
+	twopence_file_xfer_destroy(&xfer);
+	return result;
+}
+

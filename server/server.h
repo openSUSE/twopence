@@ -25,7 +25,6 @@
 #include "twopence.h"
 
 typedef struct socket socket_t;
-typedef struct buffer buffer_t;
 typedef struct packet packet_t;
 typedef struct queue queue_t;
 
@@ -73,38 +72,7 @@ struct header {
 #define PROTO_HDR_TYPE_TIMEOUT	'T'
 
 
-struct buffer {
-	char *		base;
-	unsigned int	head;
-	unsigned int	tail;
-	unsigned int	size;
-};
-
-extern void		buffer_init(buffer_t *bp);
-extern void		buffer_init_static(buffer_t *bp, void *data, size_t len);
-extern void		buffer_destroy(buffer_t *bp);
-extern buffer_t *	buffer_new(size_t max_size);
-extern buffer_t *	buffer_clone(buffer_t *bp);
-extern void		buffer_free(buffer_t *bp);
-extern const void *	buffer_head(const buffer_t *bp);
-extern void *		buffer_tail(const buffer_t *bp);
-extern unsigned int	buffer_tailroom(const buffer_t *bp);
-extern unsigned int	buffer_tailroom_max(const buffer_t *bp);
-extern unsigned int	buffer_count(const buffer_t *bp);
-extern void *		buffer_pull(buffer_t *bp, unsigned int len);
-extern bool		buffer_push(buffer_t *bp, void *data, unsigned int len);
-extern bool		buffer_resize(buffer_t *bp, unsigned int want_size);
-extern void		buffer_reserve_head(buffer_t *bp, unsigned int len);
-extern void *		buffer_reserve_tail(buffer_t *bp, unsigned int len);
-extern void		buffer_advance_tail(buffer_t *bp, unsigned int len);
-extern void		buffer_advance_head(buffer_t *bp, unsigned int len);
-extern void		buffer_truncate(buffer_t *bp, unsigned int len);
-extern bool		buffer_append(buffer_t *bp, const void *data, unsigned int len);
-extern bool		buffer_puts(buffer_t *bp, const char *s);
-extern void		buffer_reset(buffer_t *bp);
-extern void		buffer_compact(buffer_t *bp);
-
-extern packet_t *	packet_new(buffer_t *bp);
+extern packet_t *	packet_new(twopence_buf_t *bp);
 extern void		packet_free(packet_t *pkt);
 extern void		queue_init(queue_t *queue);
 extern void		queue_destroy(queue_t *queue);
@@ -118,11 +86,11 @@ extern socket_t *	socket_new(int fd);
 extern socket_t *	socket_new_flags(int fd, int oflags);
 extern void		socket_free(socket_t *sock);
 extern int		socket_id(const socket_t *sock);
-extern int		socket_recv_buffer(socket_t *sock, buffer_t *bp);
-extern int		socket_write(socket_t *sock, buffer_t *bp, unsigned int count);
-extern int		socket_send_buffer(socket_t *sock, buffer_t *bp);
-extern void		socket_queue_xmit(socket_t *sock, buffer_t *bp);
-extern void		socket_send_or_queue(socket_t *sock, buffer_t *bp);
+extern int		socket_recv_buffer(socket_t *sock, twopence_buf_t *bp);
+extern int		socket_write(socket_t *sock, twopence_buf_t *bp, unsigned int count);
+extern int		socket_send_buffer(socket_t *sock, twopence_buf_t *bp);
+extern void		socket_queue_xmit(socket_t *sock, twopence_buf_t *bp);
+extern void		socket_send_or_queue(socket_t *sock, twopence_buf_t *bp);
 extern int		socket_send_queued(socket_t *sock);
 extern unsigned int	socket_xmit_queue_bytes(socket_t *sock);
 extern bool		socket_xmit_queue_allowed(const socket_t *sock);
@@ -134,23 +102,23 @@ extern bool		socket_is_dead(socket_t *sock);
 extern void		socket_prepare_poll(socket_t *);
 extern bool		socket_fill_poll(socket_t *sock, struct pollfd *pfd);
 extern int		socket_doio(socket_t *sock);
-extern buffer_t *	socket_post_recvbuf_if_needed(socket_t *sock, unsigned int size);
-extern void		socket_post_recvbuf(socket_t *sock, buffer_t *bp);
-extern buffer_t *	socket_take_recvbuf(socket_t *);
-extern buffer_t *	socket_get_recvbuf(socket_t *);
+extern twopence_buf_t *	socket_post_recvbuf_if_needed(socket_t *sock, unsigned int size);
+extern void		socket_post_recvbuf(socket_t *sock, twopence_buf_t *bp);
+extern twopence_buf_t *	socket_take_recvbuf(socket_t *);
+extern twopence_buf_t *	socket_get_recvbuf(socket_t *);
 
 
-extern void		protocol_build_header(buffer_t *bp, unsigned char type);
-extern void		protocol_push_header(buffer_t *bp, unsigned char type);
-extern buffer_t *	protocol_command_buffer_new();
-extern buffer_t *	protocol_build_eof_packet(void);
-extern buffer_t *	protocol_build_uint_packet(unsigned char type, unsigned int value);
-extern buffer_t *	protocol_recv_buffer_new(void);
-extern bool		protocol_buffer_complete(const buffer_t *bp);
-extern const header_t *	protocol_dissect(buffer_t *bp, buffer_t *payload);
-extern bool		protocol_dissect_string(buffer_t *bp, char *stringbuf, unsigned int size);
-extern bool		protocol_dissect_string_delim(buffer_t *bp, char *stringbuf, unsigned int size, char delimiter);
-extern bool		protocol_dissect_uint(buffer_t *bp, unsigned int *retval);
+extern void		protocol_build_header(twopence_buf_t *bp, unsigned char type);
+extern void		protocol_push_header(twopence_buf_t *bp, unsigned char type);
+extern twopence_buf_t *	protocol_command_buffer_new();
+extern twopence_buf_t *	protocol_build_eof_packet(void);
+extern twopence_buf_t *	protocol_build_uint_packet(unsigned char type, unsigned int value);
+extern twopence_buf_t *	protocol_recv_buffer_new(void);
+extern bool		protocol_buffer_complete(const twopence_buf_t *bp);
+extern const header_t *	protocol_dissect(twopence_buf_t *bp, twopence_buf_t *payload);
+extern bool		protocol_dissect_string(twopence_buf_t *bp, char *stringbuf, unsigned int size);
+extern bool		protocol_dissect_string_delim(twopence_buf_t *bp, char *stringbuf, unsigned int size, char delimiter);
+extern bool		protocol_dissect_uint(twopence_buf_t *bp, unsigned int *retval);
 
 #define TRANSACTION_MAX_SOURCES	4
 struct transaction {
@@ -162,13 +130,12 @@ struct transaction {
 	bool			done;
 
 	bool			(*send)(transaction_t *);
-	bool			(*recv)(transaction_t *, const header_t *hdr, buffer_t *);
+	bool			(*recv)(transaction_t *, const header_t *hdr, twopence_buf_t *);
 
 	socket_t *		client_sock;
 
 	pid_t			pid;
 	int			status;
-	unsigned int		byte_count;
 
 	socket_t *		local_sink;
 
@@ -185,10 +152,10 @@ extern socket_t *	transaction_attach_local_source(transaction_t *trans, int fd);
 extern void		transaction_close_source(transaction_t *trans, unsigned int i);
 extern int		transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max);
 extern void		transaction_doio(transaction_t *trans);
-extern inline void	transaction_send_client(transaction_t *trans, buffer_t *bp);
+extern inline void	transaction_send_client(transaction_t *trans, twopence_buf_t *bp);
 extern void		transaction_send_status(transaction_t *trans, twopence_status_t *st);
-extern void		transaction_queue_stdin(transaction_t *trans, buffer_t *bp);
-extern bool		transaction_write_data(transaction_t *trans, buffer_t *payload);
+extern void		transaction_queue_stdin(transaction_t *trans, twopence_buf_t *bp);
+extern bool		transaction_write_data(transaction_t *trans, twopence_buf_t *payload);
 extern bool		transaction_write_eof(transaction_t *trans);
 extern int		transaction_process(transaction_t *trans);
 extern void		transaction_fail(transaction_t *, int);
@@ -200,7 +167,7 @@ extern void		transaction_send_timeout(transaction_t *trans);
 extern connection_t *	connection_new(semantics_t *semantics, socket_t *client_sock);
 extern void		connection_free(connection_t *conn);
 extern unsigned int	connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max);
-extern bool		connection_process_packet(connection_t *conn, buffer_t *bp);
+extern bool		connection_process_packet(connection_t *conn, twopence_buf_t *bp);
 extern bool		connection_process(connection_t *conn);
 
 extern connection_pool_t *connection_pool_new(void);

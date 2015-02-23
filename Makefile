@@ -9,6 +9,7 @@ SUBDIRS = \
 	ruby \
 	python \
 	shell \
+	tests \
 	examples
 
 all clean install::
@@ -21,4 +22,4 @@ install::
 	cp add_virtio_channel.sh $(DESTDIR)/usr/lib/twopence-0/
 
 tests: server shell
-	make -C tests
+	make -C tests $@

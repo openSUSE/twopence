@@ -9,7 +9,7 @@ all: twopence-0.3.0.gem
 
 twopence-0.3.0.gem: twopence.gemspec Rakefile ext/twopence/extconf.rb \
                     ext/twopence/glue.c ext/twopence/target.h ext/twopence/target.c \
-                    ../library/twopence.h
+                    ../library/twopence.h ../library/buffer.h
 	gem build twopence.gemspec
 
 install: twopence-0.3.0.gem
@@ -21,6 +21,7 @@ install: twopence-0.3.0.gem
 
 clean:
 	rm -f ext/library/twopence.h
+	rm -f ext/library/buffer.h
 	rm -f ruby/ext/twopence/Makefile
 	rm -f ruby/ext/twopence/mkmf.log
 	rm -f twopence-0.3.0.gem

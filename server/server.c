@@ -145,7 +145,7 @@ server_change_hats_permanently(const struct passwd *user, int *status)
 }
 
 int
-server_open_file_as(const char *username, const char *filename, int oflags, int *status)
+server_open_file_as(const char *username, const char *filename, unsigned int filemode, int oflags, int *status)
 {
 	struct stat stb;
 	struct saved_ids saved_ids;
@@ -173,13 +173,13 @@ server_open_file_as(const char *username, const char *filename, int oflags, int 
 
 	/* We may want to have the client specify the file mode as well */
 	if (!strcmp(username, "root")) {
-		fd = open(filename, oflags, 0660);
+		fd = open(filename, oflags, filemode);
 		if (fd < 0)
 			*status = errno;
 	} else {
 		if (!server_change_hats_temporarily(user, &saved_ids, status))
 			return -1;
-		fd = open(filename, oflags, 0660);
+		fd = open(filename, oflags, filemode);
 		if (fd < 0)
 			*status = errno;
 
@@ -198,6 +198,12 @@ server_open_file_as(const char *username, const char *filename, int oflags, int 
 	if (!S_ISREG(stb.st_mode)) {
 		twopence_log_error("%s: not a regular file\n", filename);
 		*status = EISDIR;
+		close(fd);
+		return -1;
+	}
+	if (oflags != O_RDONLY && fchmod(fd, filemode) < 0) {
+		*status = errno;
+		twopence_log_error("failed to change file mode \"%s\" to 0%o: %m", filename, filemode);
 		close(fd);
 		return -1;
 	}
@@ -439,13 +445,20 @@ failed:
 }
 
 bool
-server_inject_file_recv(transaction_t *trans, const header_t *hdr, buffer_t *payload)
+server_inject_file_recv(transaction_t *trans, const header_t *hdr, twopence_buf_t *payload)
 {
 	switch (hdr->type) {
 	case PROTO_HDR_TYPE_DATA:
+		TRACE("inject: received %u bytes of data\n", twopence_buf_count(payload));
 		transaction_write_data(trans, payload);
-		if (trans->byte_count == 0)
-			trans->done = true;
+		/* FIXME: how do we propagate write errors to the client? */
+		break;
+
+	case PROTO_HDR_TYPE_EOF:
+		TRACE("inject: received EOF\n");
+		transaction_send_minor(trans, 0);
+		socket_shutdown_write(trans->local_sink);
+		trans->done = true;
 		break;
 
 	default:
@@ -457,12 +470,12 @@ server_inject_file_recv(transaction_t *trans, const header_t *hdr, buffer_t *pay
 }
 
 bool
-server_inject_file(transaction_t *trans, const char *username, const char *filename, size_t filesize)
+server_inject_file(transaction_t *trans, const char *username, const char *filename, size_t filemode)
 {
 	int status;
 	int fd;
 
-	if ((fd = server_open_file_as(username, filename, O_WRONLY|O_CREAT|O_TRUNC, &status)) < 0) {
+	if ((fd = server_open_file_as(username, filename, filemode, O_WRONLY|O_CREAT|O_TRUNC, &status)) < 0) {
 		transaction_fail(trans, status);
 		return false;
 	}
@@ -477,19 +490,14 @@ server_inject_file(transaction_t *trans, const char *username, const char *filen
 	 * this will start the actual transfer */
 	transaction_send_major(trans, 0);
 
-	trans->byte_count = filesize;
+	/* Ignore the file size - we're no longer interested in it */
 	trans->recv = server_inject_file_recv;
 
-	if (trans->byte_count == 0) {
-		transaction_send_minor(trans, 0);
-		socket_shutdown_write(trans->local_sink);
-		trans->done = true;
-	}
 	return true;
 }
 
 bool
-server_extract_file_recv(transaction_t *trans, const header_t *hdr, buffer_t *payload)
+server_extract_file_recv(transaction_t *trans, const header_t *hdr, twopence_buf_t *payload)
 {
 	switch (hdr->type) {
 	default:
@@ -504,7 +512,7 @@ bool
 server_extract_file_send(transaction_t *trans)
 {
 	socket_t *sock;
-	buffer_t *bp;
+	twopence_buf_t *bp;
 
 	TRACE("%s()\n", __func__);
 	if (trans->num_local_sources == 0)
@@ -534,7 +542,7 @@ server_extract_file(transaction_t *trans, const char *username, const char *file
 	int status;
 	int fd;
 
-	if ((fd = server_open_file_as(username, filename, O_RDONLY, &status)) < 0) {
+	if ((fd = server_open_file_as(username, filename, 0600, O_RDONLY, &status)) < 0) {
 		transaction_fail(trans, status);
 		return false;
 	}
@@ -563,14 +571,14 @@ server_run_command_send(transaction_t *trans)
 
 	pending_output = false;
 	for (i = 0; i < trans->num_local_sources; ++i) {
-		buffer_t *bp;
+		twopence_buf_t *bp;
 
 		if (!(sock = trans->local_source[i]))
 			continue;
 
 		bp = socket_take_recvbuf(sock);
 		if (bp != NULL) {
-			TRACE("read %u bytes from command fd %d\n", buffer_count(bp), i + 1);
+			TRACE("read %u bytes from command fd %d\n", twopence_buf_count(bp), i + 1);
 			protocol_push_header(bp, PROTO_HDR_TYPE_STDOUT + i);
 
 			socket_queue_xmit(trans->client_sock, bp);
@@ -616,12 +624,12 @@ server_run_command_send(transaction_t *trans)
 }
 
 bool
-server_run_command_recv(transaction_t *trans, const header_t *hdr, buffer_t *payload)
+server_run_command_recv(transaction_t *trans, const header_t *hdr, twopence_buf_t *payload)
 {
 	switch (hdr->type) {
 	case PROTO_HDR_TYPE_STDIN:
 		/* queue the buffer for output to the local command */
-		transaction_queue_stdin(trans, buffer_clone(payload));
+		transaction_queue_stdin(trans, twopence_buf_clone(payload));
 		break;
 
 	case PROTO_HDR_TYPE_EOF:

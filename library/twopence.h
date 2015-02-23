@@ -22,6 +22,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define TWOPENCE_H
 
 #include <stdbool.h>
+#include "buffer.h"
 
 struct pollfd;
 
@@ -71,6 +72,8 @@ typedef struct twopence_status {
 
 /* Forward decls for the plugin functions */
 struct twopence_command;
+typedef struct twopence_iostream twopence_iostream_t;
+typedef struct twopence_file_xfer twopence_file_xfer_t;
 
 struct twopence_plugin {
 	const char *		name;
@@ -78,8 +81,8 @@ struct twopence_plugin {
 	struct twopence_target *(*init)(const char *);
 	int			(*run_test)(struct twopence_target *, struct twopence_command *, twopence_status_t *);
 
-	int			(*inject_file)(struct twopence_target *, const char *, const char *, const char *, int *, bool);
-	int			(*extract_file)(struct twopence_target *, const char *, const char *, const char *, int *, bool);
+	int			(*inject_file)(struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);
+	int			(*extract_file)(struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);
 	int			(*exit_remote)(struct twopence_target *);
 	int			(*interrupt_command)(struct twopence_target *);
 	void			(*end)(struct twopence_target *);
@@ -111,16 +114,8 @@ typedef enum {
 	__TWOPENCE_IO_MAX
 } twopence_iofd_t;
 
-typedef struct twopence_buffer twopence_buffer_t;
-struct twopence_buffer {
-	char *		head;
-	char *		tail;
-	char *		end;
-};
-
 typedef struct twopence_substream twopence_substream_t;
 
-typedef struct twopence_iostream twopence_iostream_t;
 
 #define TWOPENCE_IOSTREAM_MAX_SUBSTREAMS	4
 struct twopence_iostream {
@@ -137,12 +132,16 @@ struct twopence_io_ops {
 	int			(*read)(twopence_substream_t *, void *, size_t);
 	int			(*set_blocking)(twopence_substream_t *, bool);
 	int			(*poll)(twopence_substream_t *, struct pollfd *, int);
+	long			(*filesize)(twopence_substream_t *);
 };
 
 struct twopence_substream {
 	const twopence_io_ops_t *ops;
 	union {
-	    void *		data;
+	    struct {
+	        twopence_buf_t *buffer;
+		bool		resizable;
+	    };
 	    struct {
 	        int		fd;
 		bool		close;
@@ -189,7 +188,25 @@ struct twopence_command {
 	 */
 	twopence_iostream_t	iostream[__TWOPENCE_IO_MAX];
 
-	twopence_buffer_t	buffer[__TWOPENCE_IO_MAX];
+	twopence_buf_t	buffer[__TWOPENCE_IO_MAX];
+};
+
+typedef struct twopence_remote_file twopence_remote_file_t;
+struct twopence_remote_file {
+	const char *		name;
+	unsigned int		mode;
+};
+
+struct twopence_file_xfer {
+	twopence_iostream_t *	local_stream;
+	twopence_remote_file_t	remote;
+
+	/* remote user account to use for this transfer.
+	 * If NULL, defaults to root */
+	const char *		user;
+
+	/* if true, print dots for every chunk of data transferred */
+	bool			print_dots;
 };
 
 /*
@@ -274,7 +291,7 @@ extern int		twopence_test_and_drop_results(struct twopence_target *target,
  */
 extern int		twopence_test_and_store_results_together(struct twopence_target *target,
 					const char *username, long timeout, const char *command,
-					twopence_buffer_t *buffer,
+					twopence_buf_t *buffer,
 					twopence_status_t *status);
 
 /*
@@ -295,7 +312,7 @@ extern int		twopence_test_and_store_results_together(struct twopence_target *tar
  */
 extern int		twopence_test_and_store_results_separately(struct twopence_target *target,
 					const char *username, long timeout, const char *command,
-					twopence_buffer_t *stdout_buffer, twopence_buffer_t *stderr_buffer,
+					twopence_buf_t *stdout_buffer, twopence_buf_t *stderr_buffer,
 					twopence_status_t *status);
 
 /*
@@ -316,6 +333,9 @@ extern int		twopence_inject_file(struct twopence_target *target,
 					const char *username, const char *local_path, const char *remote_path,
 					int *remote_rc, bool blabla);
 
+extern int		twopence_send_file(struct twopence_target *target,
+					twopence_file_xfer_t *xfer, twopence_status_t *status);
+
 /*
  * Extract a file from the system under test
  *
@@ -333,6 +353,9 @@ extern int		twopence_inject_file(struct twopence_target *target,
 extern int		twopence_extract_file(struct twopence_target *target,
 					const char *username, const char *remote_path, const char *local_path,
 					int *remote_rc, bool blabla);
+
+extern int		twopence_recv_file(struct twopence_target *target,
+					twopence_file_xfer_t *xfer, twopence_status_t *status);
 
 /*
  * Tell the remote test server to exit
@@ -379,24 +402,31 @@ extern void		twopence_perror(const char *, int rc);
  */
 extern void		twopence_command_init(twopence_command_t *cmd, const char *cmdline);
 extern void		twopence_command_destroy(twopence_command_t *cmd);
-extern twopence_buffer_t *twopence_command_alloc_buffer(twopence_command_t *, twopence_iofd_t, size_t);
+extern twopence_buf_t *twopence_command_alloc_buffer(twopence_command_t *, twopence_iofd_t, size_t);
 extern void		twopence_command_ostreams_reset(twopence_command_t *);
 extern void		twopence_command_ostream_reset(twopence_command_t *, twopence_iofd_t);
-extern void		twopence_command_ostream_capture(twopence_command_t *, twopence_iofd_t, twopence_buffer_t *);
+extern void		twopence_command_ostream_capture(twopence_command_t *, twopence_iofd_t, twopence_buf_t *);
 extern void		twopence_command_iostream_redirect(twopence_command_t *, twopence_iofd_t, int, bool closeit);
+
+/*
+ * Utilitiy functions for the xfer struct
+ */
+extern void		twopence_file_xfer_init(twopence_file_xfer_t *xfer);
+extern void		twopence_file_xfer_destroy(twopence_file_xfer_t *xfer);
 
 /*
  * Output handling functions
  */
-extern void		twopence_buffer_init(twopence_buffer_t *);
-extern void		twopence_buffer_alloc(twopence_buffer_t *, size_t);
-extern void		twopence_buffer_free(twopence_buffer_t *);
-
 extern twopence_iostream_t *twopence_target_stream(struct twopence_target *, twopence_iofd_t);
 extern int		twopence_target_set_blocking(struct twopence_target *, twopence_iofd_t, bool);
 extern int		twopence_target_putc(struct twopence_target *, twopence_iofd_t, char);
 extern int		twopence_target_write(struct twopence_target *, twopence_iofd_t, const char *, size_t);
 
+extern int		twopence_iostream_open_file(const char *filename, twopence_iostream_t **ret);
+extern int		twopence_iostream_create_file(const char *filename, unsigned int permissions, twopence_iostream_t **ret);
+extern int		twopence_iostream_wrap_fd(int fd, bool closeit, twopence_iostream_t **ret);
+extern int		twopence_iostream_wrap_buffer(twopence_buf_t *bp, bool resizable, twopence_iostream_t **ret);
+extern void		twopence_iostream_free(twopence_iostream_t *);
 extern void		twopence_iostream_add_substream(twopence_iostream_t *, twopence_substream_t *);
 extern void		twopence_iostream_destroy(twopence_iostream_t *);
 extern bool		twopence_iostream_eof(const twopence_iostream_t *);
@@ -404,10 +434,12 @@ extern int		twopence_iostream_putc(twopence_iostream_t *, char);
 extern int		twopence_iostream_write(twopence_iostream_t *, const char *, size_t);
 extern int		twopence_iostream_getc(twopence_iostream_t *);
 extern int		twopence_iostream_read(twopence_iostream_t *, char *, size_t);
+extern twopence_buf_t *	twopence_iostream_read_all(twopence_iostream_t *);
 extern int		twopence_iostream_set_blocking(twopence_iostream_t *, bool);
 extern int		twopence_iostream_poll(twopence_iostream_t *, struct pollfd *, int mask);
+extern long		twopence_iostream_filesize(twopence_iostream_t *);
 
-extern twopence_substream_t *twopence_substream_new_buffer(twopence_buffer_t *);
+extern twopence_substream_t *twopence_substream_new_buffer(twopence_buf_t *, bool resizable);
 extern twopence_substream_t *twopence_substream_new_fd(int fd, bool closeit);
 extern void		twopence_substream_close(twopence_substream_t *);
 

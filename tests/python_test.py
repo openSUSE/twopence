@@ -28,6 +28,7 @@ testCaseRunning = False
 testCaseStatus = None
 numFailed = 0
 numErrors = 0
+numSkipped = 0
 numTests = 0
 
 def testCaseError(msg):
@@ -59,8 +60,15 @@ def testCaseFail(msg):
 
 def testCaseCheckStatus(status, expectExitCode = 0):
 	print # command may not have printed a newline
-	print "Command exited with status %d" % status.code
+	print "Transaction finished; status %d" % status.code
 	if status.code != expectExitCode:
+		testCaseFail("command exited with status %d, expected %d" % (status.code, expectExitCode));
+		return False
+	return True
+
+def testCaseCheckStatusQuiet(status, expectExitCode = 0):
+	if status.code != expectExitCode:
+		print # command may not have printed a newline
 		testCaseFail("command exited with status %d, expected %d" % (status.code, expectExitCode));
 		return False
 	return True
@@ -95,6 +103,7 @@ def testSuiteExit():
 		exitStatus = 0
 		result = "SUCCESS"
 
+	print "### SUMMARY %d %d %d %d" % (numTests, numSkipped, numFailed, numErrors)
 	print
 	print "Overall test suite status:", result
 	print " %4d tests run" % numTests
@@ -158,8 +167,6 @@ testCaseReport()
 testCaseBegin("run command kill -9 $$")
 try:
 	status = target.run("bash -c 'kill -9 $$'")
-	# Weird exit status - not sure where this is coming from -- okir
-	# I get 9 in the major, makes more sense indeed -- ebischoff
 	testCaseCheckStatus(status, 9)
 except:
 	testCaseException()
@@ -313,9 +320,152 @@ except:
 testCaseReport()
 
 
-print "command='cat' with stdin connected to the result of 'ls'"
-# TODO: local command piped to remote command
-print "(note: test to be written)"
-print
+testCaseBegin("command='/usr/bin/wc' with stdin connected to a buffer")
+try:
+	cmd = twopence.Command("wc", stdin = bytearray("aa\nbb\ncc\n"))
+	status = target.run(cmd)
+	if testCaseCheckStatus(status):
+		word = str(status.stdout).split()[0]
+		if int(word) != 3:
+			testCaseFail("command returned wrong number of lines (got %s, expected 3)" % word)
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("command='/usr/bin/wc' with stdin connected to the output of a local command")
+try:
+	import subprocess
+
+	print "Running local command 'cat /etc/services'"
+	p = subprocess.Popen("cat /etc/services", shell=True, stdout=subprocess.PIPE)
+	if not p:
+		testCaseFail("unable to open subprocess")
+	else:
+		print "Running remote command 'wc' with stdin connected to local stdout"
+		cmd = twopence.Command("wc", stdin = p.stdout);
+		status = target.run(cmd)
+		if testCaseCheckStatus(status):
+			remoteOut = str(status.stdout).split()
+			localOut = str(os.popen("wc </etc/services").read()).split()
+			if localOut != remoteOut:
+				testCaseFail("output differs")
+				print "local:  ", localOut
+				print "remote: ", remoteOut
+			else:
+				print "Remote output matches output of running wc locally"
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("Verify twopence.Transfer attributes")
+try:
+	xfer = twopence.Transfer("/remote/filename", localfile = "/local/filename", permissions = 0421);
+	if xfer.remotefile != "/remote/filename":
+		testCaseFail("xfer.remotefile attribute invalid")
+	if xfer.localfile != "/local/filename":
+		testCaseFail("xfer.localfile attribute invalid")
+	if xfer.permissions != 0421:
+		testCaseFail("xfer.permissions attribute invalid")
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("sendfile '/etc/hosts' => '/tmp/injected'")
+try:
+	xfer = twopence.Transfer("/tmp/injected", localfile = "/etc/hosts");
+	status = target.sendfile(xfer);
+	testCaseCheckStatus(status)
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("downloading file again using recvfile")
+try:
+	xfer = twopence.Transfer("/tmp/injected", localfile = "etc_hosts");
+	status = target.recvfile(xfer);
+	if testCaseCheckStatus(status):
+		rc = os.system("cmp /etc/hosts etc_hosts")
+		if rc == 0:
+			print "Good, /etc/hosts and downloaded file match"
+		else:
+			testCaseFail("Original /etc/hosts and downloaded file differ");
+			rc = os.system("diff -u /etc/hosts etc_hosts")
+except:
+	testCaseException()
+target.run("rm -f /tmp/injected");
+os.remove("etc_hosts")
+testCaseReport()
+
+
+##################################################################
+# This file mode stuff is not really accurate, at least
+# with ssh. The sshd daemon's umask will modify the file bits anyway;
+# plus the permissions of an existing file to not get updated anyway.
+# We would have to chmod the file explicitly in the client code for
+# this to work as expected.
+##################################################################
+# testCaseBegin("verify that sendfile assigns the requested permissions")
+# try:
+# 	xfer = twopence.Transfer("/tmp/injected", localfile = "_etc_hosts");
+# 	cmd = twopence.Command("stat -c 0%a /tmp/injected")
+# 	cmd.suppressOutput();
+# 
+# 	for xfer.permissions in (0400, 0111, 0666, 0421):
+# 		print "creating file with mode 0%o" % xfer.permissions
+# 		status = target.sendfile(xfer);
+# 		if not testCaseCheckStatusQuiet(status):
+# 			break
+# 
+# 		cmd.stdout = bytearray();
+# 		status = target.run(cmd)
+# 		if not testCaseCheckStatusQuiet(status):
+# 			break
+# 
+# 		expect = "0%03o" % xfer.permissions
+# 		mode = str(status.stdout).strip()
+# 		if mode == expect:
+# 			print "Good, file mode is set to %s" % mode
+# 		else:
+# 			testCaseFail("File mode should be %s, but is %s" % (expect, mode));
+# 			break
+# 
+# 		target.run("rm -f /tmp/injected");
+# except:
+# 	testCaseException()
+# target.run("rm -f /tmp/injected");
+# testCaseReport()
+
+buffer = bytearray()
+testCaseBegin("receive file to a buffer");
+try:
+	print "Downloading /etc/hosts to a python buffer"
+	xfer = twopence.Transfer("/etc/hosts");
+	status = target.recvfile(xfer);
+	if testCaseCheckStatus(status):
+		if len(status.buffer) == 0:
+			testCaseFail("Downloaded buffer is empty");
+		else:
+			print "Good, we received some data"
+			buffer = status.buffer;
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("send a file from a buffer");
+try:
+	print "Uploading buffer to /tmp/injected"
+	xfer = twopence.Transfer("/tmp/injected", data = buffer);
+	status = target.sendfile(xfer);
+	if testCaseCheckStatus(status):
+		print "/tmp/injected should now contain the same data as /etc/hosts"
+		if not target.run("cmp /etc/hosts /tmp/injected"):
+			testCaseFail("Uploaded data does not match original file");
+		else:
+			print "Great, our uploaded data agrees with the original file";
+except:
+	testCaseException()
+target.run("rm -f /tmp/injected");
+testCaseReport()
+
 
 testSuiteExit()

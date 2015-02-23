@@ -15,11 +15,12 @@ OBJS	= main.o \
 	  socket.o
 
 CFLAGS	= -D_GNU_SOURCE -I../library $(CCOPT)
+LIBS	= -L../library -ltwopence
 
 all: $(SERVER)
 
 $(SERVER): $(OBJS)
-	$(CC) $(OBJS) -o $@
+	$(CC) $(OBJS) -o $@ $(LIBS)
 
 install: $(SERVER)
 	mkdir -p $(DESTDIR)$(BINDIR)

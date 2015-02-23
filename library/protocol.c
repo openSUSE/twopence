@@ -151,6 +151,8 @@ __twopence_pipe_recvbuf(struct twopence_pipe_target *handle, int link_fd, char *
 {
   size_t received = 0;
 
+  memset(buffer, 0, size);
+
   while (received < size) {
     int n, rc;
 
@@ -251,13 +253,23 @@ __twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, int link_fd, t
   while (true) {
     struct pollfd pfd[2];
     int nfds = 0, n;
+    int count;
 
     pfd[nfds].fd = link_fd;
     pfd[nfds].events = POLLIN;
     nfds++;
 
-    if (stdin_stream) {
+    if (stdin_stream && !twopence_iostream_eof(stdin_stream)) {
       n = twopence_iostream_poll(stdin_stream, &pfd[nfds], POLLIN);
+      if (n == 0) {
+	/* A zero return code indicates the stream does not support polling,
+	 * which is the case of a buffer for instance.
+	 * Try to read from it directly.
+	 */
+        count = twopence_iostream_read(stdin_stream, buffer + 4, size - 4);
+	if (count >= 0)
+	  goto process_stdin;
+      }
       if (n > 0)
         nfds++;
     }
@@ -280,8 +292,6 @@ __twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, int link_fd, t
     }
 
     if (nfds > 1 && (pfd[1].revents & (POLLIN|POLLHUP))) {
-      int count;
-
       count = twopence_iostream_read(stdin_stream, buffer + 4, size - 4);
       if (count < 0) {
 	if (errno == EINTR)
@@ -289,6 +299,7 @@ __twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, int link_fd, t
 	return count;
       }
 
+process_stdin:
       if (count == 0) {
         buffer[0] = 'E'; /* EOF on standard input */
       } else {
@@ -346,6 +357,7 @@ _twopence_read_results(struct twopence_pipe_target *handle, int link_fd, twopenc
     switch (buffer[0]) {
       case 'E':                        // End of file on stdin
 	twopence_iostream_destroy(stream);
+	stream = NULL;
 	/* fallthru */
       case '0':                        // Data on stdin
         if (state != 0)
@@ -439,48 +451,78 @@ _twopence_read_minor(struct twopence_pipe_target *handle, int link_fd, int *mino
   return 0;
 }
 
+// Send a file in chunks to the link; iostream version
+//
+// Returns 0 if everything went fine, or a negative error code if failed
+int _twopence_send_file_iostream
+  (struct twopence_pipe_target *handle, twopence_iostream_t *file_stream, int link_fd)
+{
+  char buffer[BUFFER_SIZE];
+  int received, rv = 0;
+  int total = 0;
+
+  buffer[1] = '\0';
+
+  do {
+    received = twopence_iostream_read(file_stream, buffer + 4, BUFFER_SIZE - 4);
+    if (received < 0) {
+      if (errno == EINTR)
+	continue;
+      goto local_file_error;
+    }
+    if (received == 0) {
+      // Send an EOF packet to the remote host
+      buffer[0] = 'E';
+    } else {
+      // Send data to the remote host, together with 4 bytes of header
+      buffer[0] = 'd';
+    }
+    store_length(received + 4, buffer);
+
+    if (!__twopence_pipe_sendbuf(handle, link_fd, buffer, received + 4))
+      goto send_file_error;
+
+    __twopence_pipe_output(handle, '.');     // Progression dots
+    total += received;
+  } while (received != 0);
+
+out:
+  if (total)
+    __twopence_pipe_output(handle, '\n');
+  return rv;
+
+local_file_error:
+  rv = TWOPENCE_LOCAL_FILE_ERROR;
+  goto out;
+
+send_file_error:
+  rv = TWOPENCE_SEND_FILE_ERROR;
+  goto out;
+}
+
 // Send a file in chunks to the link
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int _twopence_send_file
-  (struct twopence_pipe_target *handle, int file_fd, int link_fd, int remaining)
+  (struct twopence_pipe_target *handle, int file_fd, int link_fd)
 {
-  char buffer[BUFFER_SIZE];
-  int size, received;
+  twopence_iostream_t *file_stream;
+  int rc;
 
-  while (remaining > 0)
-  {
-    size =                             // Read at most BUFFER_SIZE - 4 bytes from the file
-           remaining < BUFFER_SIZE - 4?
-           remaining:
-           BUFFER_SIZE - 4;
-    received = read(file_fd, buffer + 4, size);
-    if (received != size)
-    {
-      __twopence_pipe_output(handle, '\n');
-      return TWOPENCE_LOCAL_FILE_ERROR;
-    }
+  rc = twopence_iostream_wrap_fd(file_fd, false, &file_stream);
+  if (rc < 0)
+    return TWOPENCE_LOCAL_FILE_ERROR;
 
-    buffer[0] = 'd';                   // Send them to the remote host, together with 4 bytes of header
-    store_length(received + 4, buffer);
-    if (!__twopence_pipe_sendbuf(handle, link_fd, buffer, received + 4))
-    {
-      __twopence_pipe_output(handle, '\n');
-      return TWOPENCE_SEND_FILE_ERROR;
-    }
-
-    __twopence_pipe_output(handle, '.');     // Progression dots
-    remaining -= received;             // One chunk less to send
-  }
-  __twopence_pipe_output(handle, '\n');
-  return 0;
+  rc = _twopence_send_file_iostream(handle, file_stream, link_fd);
+  twopence_iostream_free(file_stream);
+  return rc;
 }
 
 // Receive a file in chunks from the link and write it to a file
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int _twopence_receive_file
-  (struct twopence_pipe_target *handle, int file_fd, int link_fd, int *remote_rc)
+  (struct twopence_pipe_target *handle, twopence_iostream_t *local_stream, int link_fd, int *remote_rc)
 {
   char buffer[BUFFER_SIZE];
   int rc, received, written, rv = 0;
@@ -505,7 +547,7 @@ int _twopence_receive_file
 
     case 'd':
       /* Write data to the file */
-      written = write(file_fd, buffer + 4, received);
+      written = twopence_iostream_write(local_stream, buffer + 4, received);
       if (written != received)
         goto local_file_error;
       __twopence_pipe_output(handle, '.');   // Progression dots
@@ -602,26 +644,21 @@ __twopence_pipe_command
 // Inject a file into the remote host
 //
 // Returns 0 if everything went fine
-int _twopence_inject_virtio_serial
-  (struct twopence_pipe_target *handle, const char *username, int file_fd, const char *remote_filename, int *remote_rc)
+int __twopence_pipe_inject_file
+  (struct twopence_pipe_target *handle, twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
   char command[COMMAND_BUFFER_SIZE];
   int n;
   int link_fd;
   int sent, rc;
-  struct stat filestats;
-
-  // By default, no remote error
-  *remote_rc = 0;
 
   // Check that the username is valid
-  if (_twopence_invalid_username(username))
+  if (_twopence_invalid_username(xfer->user))
     return TWOPENCE_PARAMETER_ERROR;
 
   // Prepare command to send to the remote host
-  fstat(file_fd, &filestats);
   n = snprintf(command, COMMAND_BUFFER_SIZE,
-               "i...%s %ld %s", username, (long) filestats.st_size, remote_filename);
+               "i...%s %d %s", xfer->user, xfer->remote.mode, xfer->remote.name);
   if (n < 0 || n >= COMMAND_BUFFER_SIZE)
     return TWOPENCE_PARAMETER_ERROR;
   store_length(n + 1, command);
@@ -640,21 +677,21 @@ int _twopence_inject_virtio_serial
 
   // Read first return code before we start transferring the file
   // This enables to detect a remote problem even before we start the transfer
-  rc = _twopence_read_major(handle, link_fd, remote_rc);
-  if (*remote_rc != 0)
-  {
+  rc = _twopence_read_major(handle, link_fd, &status->major);
+  if (rc < 0)
+    return rc;
+  if (status->major != 0)
     return TWOPENCE_SEND_FILE_ERROR;
-  }
 
   // Send the file
-  rc = _twopence_send_file(handle, file_fd, link_fd, filestats.st_size);
+  rc = _twopence_send_file_iostream(handle, xfer->local_stream, link_fd);
   if (rc < 0)
   {
     return TWOPENCE_SEND_FILE_ERROR;
   }
 
   // Read second return code from remote
-  rc = _twopence_read_minor(handle, link_fd, remote_rc);
+  rc = _twopence_read_minor(handle, link_fd, &status->minor);
   if (rc < 0)
   {
     return TWOPENCE_SEND_FILE_ERROR;
@@ -667,23 +704,20 @@ int _twopence_inject_virtio_serial
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 int _twopence_extract_virtio_serial
-  (struct twopence_pipe_target *handle, const char *username, int file_fd, const char *remote_filename, int *remote_rc)
+  (struct twopence_pipe_target *handle, twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
   char command[COMMAND_BUFFER_SIZE];
   int n;
   int link_fd;
   int sent, rc;
 
-  // By default, no remote error
-  *remote_rc = 0;
-
   // Check that the username is valid
-  if (_twopence_invalid_username(username))
+  if (_twopence_invalid_username(xfer->user))
     return TWOPENCE_PARAMETER_ERROR;
 
   // Prepare command to send to the remote host
   n = snprintf(command, COMMAND_BUFFER_SIZE,
-               "e...%s %s", username, remote_filename);
+               "e...%s %s", xfer->user, xfer->remote.name);
   if (n < 0 || n >= COMMAND_BUFFER_SIZE)
     return TWOPENCE_PARAMETER_ERROR;
   store_length(n + 1, command);
@@ -700,7 +734,7 @@ int _twopence_extract_virtio_serial
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
 
-  rc = _twopence_receive_file(handle, file_fd, link_fd, remote_rc);
+  rc = _twopence_receive_file(handle, xfer->local_stream, link_fd, &status->major);
   if (rc < 0)
     return TWOPENCE_RECEIVE_FILE_ERROR;
 
@@ -809,28 +843,15 @@ twopence_pipe_run_test
  */
 int
 twopence_pipe_inject_file(struct twopence_target *opaque_handle,
-		const char *username,
-		const char *local_filename, const char *remote_filename,
-		int *remote_rc, bool dots)
+		twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
-  int fd, rc;
+  int rc;
 
-  // Open the file
-  fd = open(local_filename, O_RDONLY);
-  if (fd == -1)
-    return errno == ENAMETOOLONG?
-           TWOPENCE_PARAMETER_ERROR:
-           TWOPENCE_LOCAL_FILE_ERROR;
-
-  // Inject it
-  rc = _twopence_inject_virtio_serial
-         (handle, username, fd, remote_filename, remote_rc);
-  if (rc == 0 && *remote_rc != 0)
+  rc = __twopence_pipe_inject_file(handle, xfer, status);
+  if (rc == 0 && (status->major != 0 || status->minor != 0))
     rc = TWOPENCE_REMOTE_FILE_ERROR;
 
-  // Close it
-  close(fd);
   return rc;
 }
 
@@ -839,28 +860,16 @@ twopence_pipe_inject_file(struct twopence_target *opaque_handle,
 // Returns 0 if everything went fine
 int
 twopence_pipe_extract_file(struct twopence_target *opaque_handle,
-		const char *username,
-		const char *remote_filename, const char *local_filename,
-		int *remote_rc, bool dots)
+		twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
-  int fd, rc;
-
-  // Open the file, creating it if it does not exist (u=rw,g=rw,o=)
-  fd = creat(local_filename, 00660);
-  if (fd == -1)
-    return errno == ENAMETOOLONG?
-           TWOPENCE_PARAMETER_ERROR:
-           TWOPENCE_LOCAL_FILE_ERROR;
+  int rc;
 
   // Extract it
-  rc = _twopence_extract_virtio_serial
-         (handle, username, fd, remote_filename, remote_rc);
-  if (rc == 0 && *remote_rc != 0)
+  rc = _twopence_extract_virtio_serial(handle, xfer, status);
+  if (rc == 0 && (status->major != 0 || status->minor != 0))
     rc = TWOPENCE_REMOTE_FILE_ERROR;
 
-  // Close it
-  close(fd);
   return rc;
 }
 
