@@ -20,7 +20,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <ruby.h>
 
-#include "twopence.h"
+#include "twopence/twopence.h"
 
 void deallocate_target(void *);
 

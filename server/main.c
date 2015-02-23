@@ -57,7 +57,9 @@ static void		service_connection(int);
 static void		server_daemonize(void);
 
 FILE *			server_log_file = NULL;
-unsigned int		server_tracing = 0;
+unsigned int		server_debug_level = 0;
+bool			server_audit = false;
+unsigned int		server_audit_seq;
 
 
 ////////////////////////////////////// Lower layer ///////////////////////////
@@ -209,6 +211,7 @@ int main(int argc, char *argv[])
     { "port-unix", required_argument, NULL, 'U' },
     { "daemon", no_argument, NULL, 'D' },
     { "debug", no_argument, NULL, 'd' },
+    { "audit", no_argument, NULL, 't' },
     { NULL }
   };
   int opt_oneshot = 0;
@@ -230,7 +233,7 @@ int main(int argc, char *argv[])
       break;
 
     case 'd':
-      server_tracing++;
+      server_debug_level++;
       break;
 
     case 'D':
@@ -257,6 +260,10 @@ int main(int argc, char *argv[])
       opt_port_path = optarg;
       break;
 
+    case 't':
+      server_audit = true;
+      break;
+
     case 'U':
       if (opt_port_type) {
         fprintf(stderr, "Conflicting port types specified on command line\n");
@@ -271,7 +278,7 @@ int main(int argc, char *argv[])
     usage:
 	fprintf(stderr,
 		"Usage:\n"
-		"%s <portspec>\n"
+		"%s [options] <portspec>\n"
 		"Where portspec can be one of the following:\n\n"
 		"no arguments:\n"
 		"    open the default serial port\n"
@@ -284,6 +291,16 @@ int main(int argc, char *argv[])
 		"--port-pty:\n"
 		"    open a pty master, print the pty slave path on stdout, and background the server process\n"
 		"    This is not implemented yet.\n"
+		"\n"
+		"Supported options:\n"
+		"--daemon\n"
+		"    Background the server process and run it as a daemon\n"
+		"--debug, -d\n"
+		"    Increase debugging verbosity\n"
+		"--one-shot\n"
+		"    Service one incoming connection, then exit\n"
+		"--audit\n"
+		"    Print an audit trail of operations to the log\n"
 		"\n"
 		"The default serial port is %s\n"
 		, argv[0], TWOPENCE_SERIAL_PORT_DEFAULT);
