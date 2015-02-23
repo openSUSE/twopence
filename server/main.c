@@ -271,7 +271,7 @@ int main(int argc, char *argv[])
     usage:
 	fprintf(stderr,
 		"Usage:\n"
-		"%s <portspec>\n"
+		"%s [options] <portspec>\n"
 		"Where portspec can be one of the following:\n\n"
 		"no arguments:\n"
 		"    open the default serial port\n"
@@ -284,6 +284,14 @@ int main(int argc, char *argv[])
 		"--port-pty:\n"
 		"    open a pty master, print the pty slave path on stdout, and background the server process\n"
 		"    This is not implemented yet.\n"
+		"\n"
+		"Supported options:\n"
+		"--daemon\n"
+		"    Background the server process and run it as a daemon\n"
+		"--debug, -d\n"
+		"    Increase debugging verbosity\n"
+		"--one-shot\n"
+		"    Service one incoming connection, then exit\n"
 		"\n"
 		"The default serial port is %s\n"
 		, argv[0], TWOPENCE_SERIAL_PORT_DEFAULT);
