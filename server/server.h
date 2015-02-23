@@ -178,13 +178,23 @@ extern void		server_run(socket_t *);
 
 #define __TRACE(level, fmt...) \
 	do { \
-		if (server_tracing >= level) \
+		if (server_debug_level >= level) \
 			twopence_trace(fmt); \
 	} while (0)
 #define TRACE(fmt...)	__TRACE(1, fmt)
 #define TRACE2(fmt...)	__TRACE(2, fmt)
 
-extern unsigned int	server_tracing;
+#define AUDIT(fmt, args...) \
+	do { \
+		if (server_audit) { \
+			twopence_trace("%5u: " fmt, server_audit_seq++, ##args); \
+		} \
+	} while (0)
+
+extern unsigned int	server_debug_level;
+
+extern bool		server_audit;
+extern unsigned int	server_audit_seq;
 
 extern void		twopence_trace(const char *fmt, ...);
 extern void		twopence_log_error(const char *fmt, ...);

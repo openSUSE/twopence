@@ -475,6 +475,7 @@ server_inject_file(transaction_t *trans, const char *username, const char *filen
 	int status;
 	int fd;
 
+	AUDIT("inject \"%s\"; user=%s\n", filename, username);
 	if ((fd = server_open_file_as(username, filename, filemode, O_WRONLY|O_CREAT|O_TRUNC, &status)) < 0) {
 		transaction_fail(trans, status);
 		return false;
@@ -542,6 +543,7 @@ server_extract_file(transaction_t *trans, const char *username, const char *file
 	int status;
 	int fd;
 
+	AUDIT("extract \"%s\"; user=%s\n", filename, username);
 	if ((fd = server_open_file_as(username, filename, 0600, O_RDONLY, &status)) < 0) {
 		transaction_fail(trans, status);
 		return false;
@@ -667,6 +669,7 @@ server_run_command(transaction_t *trans, const char *username, unsigned int time
 	int nattached = 0;
 	pid_t pid;
 
+	AUDIT("run \"%s\"; user=%s timeout=%u\n", cmdline, username, timeout);
 	if ((pid = server_run_command_as(username, timeout, cmdline, command_fds, &status)) < 0) {
 		transaction_fail2(trans, status, 0);
 		return false;
