@@ -27,12 +27,12 @@ void deallocate_target(void *);
 // ************************* Helper method ***********************************
 
 // Get a copy of the contents of twopence buffer, then free it
-VALUE buffer_value(twopence_buffer_t *bp)
+VALUE buffer_value(twopence_buf_t *bp)
 {
   VALUE result;
 
-  result = rb_str_new(bp->head, bp->tail - bp->head);
-  twopence_buffer_free(bp);
+  result = rb_str_new(twopence_buf_head(bp), twopence_buf_count(bp));
+  twopence_buf_destroy(bp);
   return result;
 }
 
@@ -205,7 +205,7 @@ VALUE method_test_and_store_results_together(VALUE self, VALUE ruby_args)
         ruby_user,
         ruby_timeout;
   struct twopence_target *target;
-  twopence_buffer_t stdout_buf;
+  twopence_buf_t stdout_buf;
   twopence_status_t status;
   int rc;
 
@@ -228,7 +228,7 @@ VALUE method_test_and_store_results_together(VALUE self, VALUE ruby_args)
   else ruby_timeout = LONG2NUM(60L);
   Data_Get_Struct(self, struct twopence_target, target);
 
-  twopence_buffer_alloc(&stdout_buf, 65536);
+  twopence_buf_resize(&stdout_buf, 65536);
 
   rc = twopence_test_and_store_results_together(target,
          StringValueCStr(ruby_user), NUM2LONG(ruby_timeout), StringValueCStr(ruby_command),
@@ -262,7 +262,7 @@ VALUE method_test_and_store_results_separately(VALUE self, VALUE ruby_args)
         ruby_user,
         ruby_timeout;
   struct twopence_target *target;
-  twopence_buffer_t stdout_buf, stderr_buf;
+  twopence_buf_t stdout_buf, stderr_buf;
   twopence_status_t status;
   int rc;
 
@@ -285,8 +285,8 @@ VALUE method_test_and_store_results_separately(VALUE self, VALUE ruby_args)
   else ruby_timeout = LONG2NUM(60L);
   Data_Get_Struct(self, struct twopence_target, target);
 
-  twopence_buffer_alloc(&stdout_buf, 65536);
-  twopence_buffer_alloc(&stderr_buf, 65536);
+  twopence_buf_resize(&stdout_buf, 65536);
+  twopence_buf_resize(&stderr_buf, 65536);
 
   rc = twopence_test_and_store_results_separately(target,
          StringValueCStr(ruby_user), NUM2LONG(ruby_timeout), StringValueCStr(ruby_command),

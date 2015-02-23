@@ -48,7 +48,7 @@ fi
 case $PLUGIN in
 virtio)
 	echo "*** Start server ****"
-	../server/twopence_test_server --daemon --port-unix /tmp/twopence.sock
+	../server/twopence_test_server --daemon --port-unix /tmp/twopence.sock $TWOPENCE_SERVER_OPTIONS
 	TARGET="virtio:/tmp/twopence.sock";;
 
 ssh)
@@ -61,7 +61,7 @@ esac
 
 echo "*** Running $SCRIPT $TARGET ***"
 echo "******************************************************************"
-$SCRIPT $TARGET
+$SCRIPT $TARGET 2>&1
 status=$?
 
 echo "******************************************************************"

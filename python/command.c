@@ -103,6 +103,7 @@ Command_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 	self->stdinPath = NULL;
 	self->stdout = NULL;
 	self->stderr = NULL;
+	self->stdin = NULL;
 	self->suppressOutput = 0;
 
 	return (PyObject *)self;
@@ -126,13 +127,15 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 		"stdin",
 		"stdout",
 		"stderr",
+		"suppressOutput",
 		NULL
 	};
 	PyObject *stdinObject = NULL, *stdoutObject = NULL, *stderrObject = NULL;
 	char *command, *user = NULL;
 	long timeout = 0L;
+	int suppressOutput = 0;
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|slOOO", kwlist, &command, &user, &timeout, &stdinObject, &stdoutObject, &stderrObject))
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|slOOOi", kwlist, &command, &user, &timeout, &stdinObject, &stdoutObject, &stderrObject, &suppressOutput))
 		return -1;
 
 	self->command = strdup(command);
@@ -141,7 +144,8 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 	self->stdout = NULL;
 	self->stderr = NULL;
 	self->stdinPath = NULL;
-	self->suppressOutput = 0;
+	self->stdin = NULL;
+	self->suppressOutput = suppressOutput;
 
 	if (stdoutObject == NULL) {
 		stdoutObject = twopence_callType(&PyByteArray_Type, NULL, NULL);
@@ -156,12 +160,18 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 	Py_INCREF(stderrObject);
 	self->stderr = stderrObject;
 
-	if (stdinObject && stdinObject != Py_None) {
+	if (stdinObject == NULL || stdinObject == Py_None) {
+		/* Do not pipe any input to the command */
+	} else
+	if (PyString_Check(stdinObject)) {
 		char *s;
 
 		if ((s = PyString_AsString(stdinObject)) == NULL)
 			return -1;
 		self->stdinPath = strdup(s);
+	} else {
+		Py_INCREF(stdinObject);
+		self->stdin = stdinObject;
 	}
 
 	return 0;
@@ -178,6 +188,7 @@ Command_dealloc(twopence_Command *self)
 	drop_string(&self->stdinPath);
 	drop_object(&self->stdout);
 	drop_object(&self->stderr);
+	drop_object(&self->stdin);
 }
 
 int
@@ -186,10 +197,56 @@ Command_Check(PyObject *self)
 	return PyType_IsSubtype(Py_TYPE(self), &twopence_CommandType);
 }
 
+static bool
+Command_redirect_iostream(twopence_command_t *cmd, twopence_iofd_t dst, PyObject *object, twopence_buf_t **buf_ret)
+{
+	if (object == NULL || PyByteArray_Check(object)) {
+		twopence_buf_t *buffer;
+
+		if (dst == TWOPENCE_STDIN && object == NULL)
+			return true;
+
+		/* Capture command output in a buffer */
+		buffer = twopence_command_alloc_buffer(cmd, dst, 65536);
+		twopence_command_ostream_capture(cmd, dst, buffer);
+		if (dst == TWOPENCE_STDIN) {
+			unsigned int count = PyByteArray_Size(object);
+
+			twopence_buf_ensure_tailroom(buffer, count);
+			twopence_buf_append(buffer, PyByteArray_AsString(object), count);
+		}
+		if (buf_ret)
+			*buf_ret = buffer;
+	} else
+	if (PyFile_Check(object)) {
+		int fd = PyObject_AsFileDescriptor(object);
+
+		if (fd < 0) {
+			/* If this fails, we could also pull the content into a buffer and then send that */
+			PyErr_SetString(PyExc_TypeError, "unable to obtain file handle from File object");
+			return false;
+		}
+
+		/* We dup() the file descriptor so that we no longer have to worry
+		 * about what python does with its File object */
+		twopence_command_iostream_redirect(cmd, dst, dup(fd), true);
+	} else
+	if (object == Py_None) {
+		/* Nothing */
+	} else {
+		/* FIXME: we could check for a string type, and in that case interpret that as
+		 * the name of a file to write to. */
+		PyErr_SetString(PyExc_TypeError, "invalid type in stdio attribute");
+		return false;
+	}
+
+	return true;
+}
+
 int
 Command_build(twopence_Command *self, twopence_command_t *cmd)
 {
-	twopence_buffer_t *buffer = NULL;
+	twopence_buf_t *buffer = NULL;
 
 	twopence_command_init(cmd, self->command);
 
@@ -205,11 +262,8 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 		twopence_command_iostream_redirect(cmd, TWOPENCE_STDOUT, 1, false);
 	}
 
-	if (self->stdout == NULL || PyByteArray_Check(self->stdout)) {
-		/* Capture command output in a buffer */
-		buffer = twopence_command_alloc_buffer(cmd, TWOPENCE_STDOUT, 65536);
-		twopence_command_ostream_capture(cmd, TWOPENCE_STDOUT, buffer);
-	}
+	if (!Command_redirect_iostream(cmd, TWOPENCE_STDOUT, self->stdout, &buffer))
+		return -1;
 
 	if (self->suppressOutput || self->stderr == Py_None) {
 		/* ostream has already been reset above */
@@ -220,18 +274,25 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 
 	/* If cmd.stdout and cmd.stderr are both NULL, or both refer to the same
 	 * bytearray object, send the remote stdout and stderr to a shared buffer */
-	if (buffer != NULL && self->stderr == self->stdout) {
+	if (buffer && self->stderr == self->stdout) {
 		twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, buffer);
-	} else 
-	if (self->stderr == NULL || PyByteArray_Check(self->stderr)) {
-		buffer = twopence_command_alloc_buffer(cmd, TWOPENCE_STDERR, 65536);
-		twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, buffer);
+	} else
+	if (!Command_redirect_iostream(cmd, TWOPENCE_STDERR, self->stderr, NULL)) {
+		return -1;
 	}
 
 	if (self->stdinPath != NULL) {
 		int fd = open(self->stdinPath, O_RDONLY);
 
+		if (fd < 0) {
+			PyErr_SetFromErrnoWithFilename(PyExc_IOError, self->stdinPath);
+			return -1;
+		}
 		twopence_command_iostream_redirect(cmd, TWOPENCE_STDIN, fd, true);
+	} else
+	if (self->stdin) {
+		if (!Command_redirect_iostream(cmd, TWOPENCE_STDIN, self->stdin, NULL))
+			return -1;
 	}
 
 	return 0;

@@ -20,6 +20,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 */
 
 #include <libssh/libssh.h>
+#include <libssh/callbacks.h>
 
 #include <sys/stat.h>
 #include <time.h>
@@ -27,11 +28,11 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <errno.h>
 #include <libgen.h>
 
-#include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
 #include <malloc.h>
 #include <signal.h>
+#include <assert.h>
 
 #include "twopence.h"
 
@@ -49,7 +50,21 @@ struct twopence_ssh_target
   bool use_tty;
   bool eof_sent;
   bool interrupted;
+  int exit_signal;
+
+  /* Right now, we need the callbacks for exactly one reason -
+   * to catch the exit signal of the remote process.
+   * When a command dies from a signal, libssh will always report
+   * an exit code of -1 (SSH_ERROR), and the only way to catch what
+   * really happens is by hooking up this callback.
+   */
+  struct ssh_channel_callbacks_struct callbacks;
 };
+
+/* Note to self: if you need to find out what libssh is doing,
+ * consider enabling tracing:
+ *  ssh_set_log_level(SSH_LOG_TRACE);
+ */
 
 extern const struct twopence_plugin twopence_ssh_ops;
 
@@ -123,6 +138,75 @@ __twopence_ssh_close_channel(struct twopence_ssh_target *handle)
   ssh_channel_close(handle->channel);
   ssh_channel_free(handle->channel);
   handle->channel = NULL;
+}
+
+static void
+__twopence_ssh_exit_signal_callback(ssh_session session, ssh_channel channel, const char *signal, int core, const char *errmsg, const char *lang, void *userdata)
+{
+  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) userdata;
+  static const char *signames[NSIG] = {
+	[SIGHUP] = "HUP",
+	[SIGINT] = "INT",
+	[SIGQUIT] = "QUIT",
+	[SIGILL] = "ILL",
+	[SIGTRAP] = "TRAP",
+	[SIGABRT] = "ABRT",
+	[SIGIOT] = "IOT",
+	[SIGBUS] = "BUS",
+	[SIGFPE] = "FPE",
+	[SIGKILL] = "KILL",
+	[SIGUSR1] = "USR1",
+	[SIGSEGV] = "SEGV",
+	[SIGUSR2] = "USR2",
+	[SIGPIPE] = "PIPE",
+	[SIGALRM] = "ALRM",
+	[SIGTERM] = "TERM",
+	[SIGSTKFLT] = "STKFLT",
+	[SIGCHLD] = "CHLD",
+	[SIGCONT] = "CONT",
+	[SIGSTOP] = "STOP",
+	[SIGTSTP] = "TSTP",
+	[SIGTTIN] = "TTIN",
+	[SIGTTOU] = "TTOU",
+	[SIGURG] = "URG",
+	[SIGXCPU] = "XCPU",
+	[SIGXFSZ] = "XFSZ",
+	[SIGVTALRM] = "VTALRM",
+	[SIGPROF] = "PROF",
+	[SIGWINCH] = "WINCH",
+	[SIGIO] = "IO",
+	[SIGPWR] = "PWR",
+	[SIGSYS] = "SYS",
+  };
+  int signo;
+
+  for (signo = 0; signo < NSIG; ++signo) {
+    const char *name = signames[signo];
+
+    if (name && !strcmp(name, signal)) {
+      handle->exit_signal = signo;
+      return;
+    }
+  }
+
+  handle->exit_signal = -1;
+}
+
+static void
+__twopence_ssh_init_callbacks(struct twopence_ssh_target *handle)
+{
+  struct ssh_channel_callbacks_struct *cb = &handle->callbacks;
+
+  if (cb->size == 0) {
+    cb->channel_exit_signal_function = __twopence_ssh_exit_signal_callback;
+    ssh_callbacks_init(cb);
+  }
+
+  if (handle->channel == NULL)
+    return;
+
+  cb->userdata = handle;
+  ssh_set_channel_callbacks(handle->channel, cb);
 }
 
 ///////////////////////////// Middle layer //////////////////////////////////////
@@ -218,7 +302,7 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, long timeout, ss
     // If we have received a SIGINT, exit and close the channel without
     // further delay.
     if (handle->interrupted) {
-      printf("interrupt: break out of read loop\n");
+      fprintf(stderr, "interrupt: break out of read loop\n");
       return -6;
     }
 
@@ -273,7 +357,7 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, long timeout, ss
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 static int
-__twopence_ssh_send_file(struct twopence_ssh_target *handle, int file_fd, ssh_scp scp, int remaining, int *remote_rc)
+__twopence_ssh_send_file(struct twopence_ssh_target *handle, twopence_iostream_t *local_stream, ssh_scp scp, int remaining, int *remote_rc)
 {
   char buffer[BUFFER_SIZE];
   int size, received;
@@ -283,7 +367,7 @@ __twopence_ssh_send_file(struct twopence_ssh_target *handle, int file_fd, ssh_sc
     size = remaining < BUFFER_SIZE?    // Read at most BUFFER_SIZE bytes from the file
            remaining:
            BUFFER_SIZE;
-    received = read(file_fd, buffer, size);
+    received = twopence_iostream_read(local_stream, buffer, size);
     if (received != size)
     {
       __twopence_ssh_output(handle, '\n');
@@ -309,7 +393,7 @@ __twopence_ssh_send_file(struct twopence_ssh_target *handle, int file_fd, ssh_sc
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 static int
-__twopence_ssh_receive_file(struct twopence_ssh_target *handle, int file_fd, ssh_scp scp, int remaining, int *remote_rc)
+__twopence_ssh_receive_file(struct twopence_ssh_target *handle, twopence_iostream_t *local_stream, ssh_scp scp, int remaining, int *remote_rc)
 {
   char buffer[BUFFER_SIZE];
   int size, received, written;
@@ -327,8 +411,7 @@ __twopence_ssh_receive_file(struct twopence_ssh_target *handle, int file_fd, ssh
       return TWOPENCE_RECEIVE_FILE_ERROR;
     }
 
-    written = write                    // Write these data locally
-      (file_fd, buffer, size);
+    written = twopence_iostream_write(local_stream, buffer, size);
     if (written != size)
     {
       __twopence_ssh_output(handle, '\n');
@@ -426,6 +509,9 @@ __twopence_ssh_command_ssh
   handle->eof_sent = false;
   handle->use_tty = false;
   handle->interrupted = false;
+  handle->exit_signal = 0;
+
+  __twopence_ssh_init_callbacks(handle);
 
   // Request that the command be run inside a tty
   if (cmd->request_tty)
@@ -458,7 +544,14 @@ __twopence_ssh_command_ssh
   switch (rc)
   {
     case 0:
-      status_ret->minor = ssh_channel_get_exit_status(channel);
+      if (handle->exit_signal) {
+	// mimic the behavior of the test server for now.
+	// in the long run, better reporting would be great.
+	status_ret->major = EFAULT;
+	status_ret->minor = handle->exit_signal;
+      } else {
+        status_ret->minor = ssh_channel_get_exit_status(channel);
+      }
       break;
 
     case -1:
@@ -521,12 +614,17 @@ __twopence_ssh_check_remote_dir(struct twopence_ssh_target *handle, const char *
 //
 // Returns 0 if everything went fine
 static int
-__twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, int file_fd, const char *remote_dirname, const char *remote_basename, int *remote_rc)
+__twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, twopence_file_xfer_t *xfer,
+		const char *remote_dirname, const char *remote_basename,
+		twopence_status_t *status)
 {
   ssh_session session = handle->session;
   ssh_scp scp;
-  struct stat filestats;
+  long filesize;
   int rc;
+
+  filesize = twopence_iostream_filesize(xfer->local_stream);
+  assert(filesize >= 0);
 
   /* Unfortunately, we have to make sure the remote directory exists.
    * In openssh-6.2p2 (and maybe others), if you try to create file
@@ -546,19 +644,17 @@ __twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, int file_fd, const
   }
 
   // Tell the remote host about the file size
-  fstat(file_fd, &filestats);
-
   if (ssh_scp_push_file
-         (scp, remote_basename, filestats.st_size, 00660) != SSH_OK)
+         (scp, remote_basename, filesize, xfer->remote.mode) != SSH_OK)
   {
-    *remote_rc = ssh_get_error_code(session);
+    status->major = ssh_get_error_code(session);
     ssh_scp_close(scp);
     ssh_scp_free(scp);
     return TWOPENCE_SEND_FILE_ERROR;
   }
 
   // Send the file
-  rc = __twopence_ssh_send_file(handle, file_fd, scp, filestats.st_size, remote_rc);
+  rc = __twopence_ssh_send_file(handle, xfer->local_stream, scp, filesize, &status->major);
 
   // Close the SCP session
   ssh_scp_close(scp);
@@ -570,14 +666,14 @@ __twopence_ssh_inject_ssh(struct twopence_ssh_target *handle, int file_fd, const
 //
 // Returns 0 if everything went fine
 static int
-__twopence_ssh_extract_ssh(struct twopence_ssh_target *handle, int file_fd, const char *remote_filename, int *remote_rc)
+__twopence_ssh_extract_ssh(struct twopence_ssh_target *handle, twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
   ssh_session session = handle->session;
   ssh_scp scp;
   int size, rc;
 
   // Create and initialize a SCP session
-  scp = ssh_scp_new(session, SSH_SCP_READ, remote_filename);
+  scp = ssh_scp_new(session, SSH_SCP_READ, xfer->remote.name);
   if (scp == NULL)
     return TWOPENCE_OPEN_SESSION_ERROR;
   if (ssh_scp_init(scp) != SSH_OK)
@@ -589,7 +685,7 @@ __twopence_ssh_extract_ssh(struct twopence_ssh_target *handle, int file_fd, cons
   // Get the file size from the remote host
   if (ssh_scp_pull_request(scp) != SSH_SCP_REQUEST_NEWFILE)
   {
-    *remote_rc = ssh_get_error_code(session);
+    status->major = ssh_get_error_code(session);
     ssh_scp_close(scp);
     ssh_scp_free(scp);
     return TWOPENCE_RECEIVE_FILE_ERROR;
@@ -600,7 +696,7 @@ __twopence_ssh_extract_ssh(struct twopence_ssh_target *handle, int file_fd, cons
   // Accept the transfer request
   if (ssh_scp_accept_request(scp) != SSH_OK)
   {
-    *remote_rc = ssh_get_error_code(session);
+    status->major = ssh_get_error_code(session);
     ssh_scp_close(scp);
     ssh_scp_free(scp);
     return TWOPENCE_RECEIVE_FILE_ERROR;
@@ -608,7 +704,7 @@ __twopence_ssh_extract_ssh(struct twopence_ssh_target *handle, int file_fd, cons
 
   // Receive the file
   rc = __twopence_ssh_receive_file
-        (handle, file_fd, scp, size, remote_rc);
+        (handle, xfer->local_stream, scp, size, &status->major);
   if (rc < 0)
   {
     ssh_scp_close(scp);
@@ -619,7 +715,7 @@ __twopence_ssh_extract_ssh(struct twopence_ssh_target *handle, int file_fd, cons
   // Check for proper termination
   if (ssh_scp_pull_request(scp) != SSH_SCP_REQUEST_EOF)
   {
-    *remote_rc = ssh_get_error_code(session);
+    status->major = ssh_get_error_code(session);
     ssh_scp_close(scp);
     ssh_scp_free(scp);
     return TWOPENCE_RECEIVE_FILE_ERROR;
@@ -729,8 +825,8 @@ __twopence_ssh_init(const char *hostname, unsigned int port)
 // This function expects just the part of the target spec following
 // the "ssh:" plugin type.
 //////////////////////////////////////////////////////////////////
-struct twopence_target *
-twopence_init_new(const char *arg)
+static struct twopence_target *
+twopence_ssh_init(const char *arg)
 {
   char *copy_spec, *s, *hostname;
   struct twopence_target *target = NULL;
@@ -812,39 +908,44 @@ twopence_ssh_run_test
 // Returns 0 if everything went fine
 static int
 twopence_ssh_inject_file(struct twopence_target *opaque_handle,
-		const char *username,
-		const char *local_filename, const char *remote_filename,
-		int *remote_rc, bool dots)
+		twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
   struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
   char *dirname, *basename;
-  int fd, rc;
-
-  // 'remote_rc' defaults to 0
-  *remote_rc = 0;
-
-  // Open the file
-  fd = open(local_filename, O_RDONLY);
-  if (fd == -1)
-    return errno == ENAMETOOLONG?
-           TWOPENCE_PARAMETER_ERROR:
-           TWOPENCE_LOCAL_FILE_ERROR;
+  long filesize;
+  int rc;
 
   // Connect to the remote host
-  if (__twopence_ssh_connect_ssh(handle, username) < 0)
-  {
-    close(fd);
+  if (__twopence_ssh_connect_ssh(handle, xfer->user) < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
+
+  dirname = ssh_dirname(xfer->remote.name);
+  basename = ssh_basename(xfer->remote.name);
+
+  /* Unfortunately, the SCP protocol requires the size of the file to be
+   * transmitted :-(
+   *
+   * If we've been asked to read from eg a pipe or some other special
+   * iostream, just buffer everything and then send it as a whole.
+   */
+  filesize = twopence_iostream_filesize(xfer->local_stream);
+  if (filesize < 0) {
+    twopence_file_xfer_t tmp_xfer = *xfer;
+    twopence_buf_t *bp;
+
+    bp = twopence_iostream_read_all(xfer->local_stream);
+    if (bp == NULL)
+      return TWOPENCE_LOCAL_FILE_ERROR;
+
+    tmp_xfer.local_stream = NULL;
+    twopence_iostream_wrap_buffer(bp, false, &tmp_xfer.local_stream);
+    rc = __twopence_ssh_inject_ssh(handle, &tmp_xfer, dirname, basename, status);
+    twopence_iostream_free(tmp_xfer.local_stream);
+  } else {
+    rc = __twopence_ssh_inject_ssh(handle, xfer,dirname, basename,  status);
   }
 
-  dirname = ssh_dirname(remote_filename);
-  basename = ssh_basename(remote_filename);
-
-  // Inject the file
-  rc = __twopence_ssh_inject_ssh(handle, fd,
-		  dirname, basename,
-		  remote_rc);
-  if (rc == 0 && *remote_rc != 0)
+  if (rc == 0 && (status->major != 0 || status->minor != 0))
     rc = TWOPENCE_REMOTE_FILE_ERROR;
 
   // Disconnect from remote host
@@ -853,7 +954,6 @@ twopence_ssh_inject_file(struct twopence_target *opaque_handle,
   /* Clean up */
   free(basename);
   free(dirname);
-  close(fd);
 
   return rc;
 }
@@ -863,41 +963,22 @@ twopence_ssh_inject_file(struct twopence_target *opaque_handle,
 // Returns 0 if everything went fine
 static int
 twopence_ssh_extract_file(struct twopence_target *opaque_handle,
-		const char *username,
-		const char *remote_filename, const char *local_filename,
-		int *remote_rc, bool dots)
+		twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
   struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
-  int fd, rc;
-
-  // 'remote_rc' defaults to 0
-  *remote_rc = 0;
-
-  // Open the file, creating it if it does not exist (u=rw,g=rw,o=)
-  fd = creat(local_filename, 00660);
-  if (fd == -1)
-    return errno == ENAMETOOLONG?
-           TWOPENCE_PARAMETER_ERROR:
-           TWOPENCE_LOCAL_FILE_ERROR;
+  int rc;
 
   // Connect to the remote host
-  if (__twopence_ssh_connect_ssh(handle, username) < 0)
-  {
-    close(fd);
+  if (__twopence_ssh_connect_ssh(handle, xfer->user) < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
-  }
 
   // Extract the file
-  rc = __twopence_ssh_extract_ssh
-         (handle, fd, remote_filename, remote_rc);
-  if (rc == 0 && *remote_rc != 0)
+  rc = __twopence_ssh_extract_ssh(handle, xfer, status);
+  if (rc == 0 && (status->major != 0 || status->minor != 0))
     rc = TWOPENCE_REMOTE_FILE_ERROR;
 
   // Disconnect from remote host
   __twopence_ssh_disconnect_ssh(handle);
-
-  // Close the file
-  close(fd);
 
   return rc;
 }
@@ -938,7 +1019,7 @@ twopence_ssh_end(struct twopence_target *opaque_handle)
 const struct twopence_plugin twopence_ssh_ops = {
 	.name		= "ssh",
 
-	.init = twopence_init_new,
+	.init = twopence_ssh_init,
 	.run_test = twopence_ssh_run_test,
 	.inject_file = twopence_ssh_inject_file,
 	.extract_file = twopence_ssh_extract_file,

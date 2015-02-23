@@ -84,7 +84,7 @@ int restore_handler(int signum, const struct sigaction *old_action)
 // Write output to file, in case we were requested not to ouput it to screen
 //
 // Returns 0 on success, -1 on error
-int write_output(const char *filename, const twopence_buffer_t *bp)
+int write_output(const char *filename, const twopence_buf_t *bp)
 {
   FILE *fp;
   unsigned int count;
@@ -96,8 +96,8 @@ int write_output(const char *filename, const twopence_buffer_t *bp)
     return -1;
   }
 
-  count = bp->tail - bp->head;
-  fwrite(bp->head, 1, count, fp);
+  count = twopence_buf_count(bp);
+  fwrite(twopence_buf_head(bp), 1, count, fp);
   if (ferror(fp))
   {
     fprintf(stderr, "Error while writing output to file \"%s\"\n", filename);
@@ -139,7 +139,7 @@ int main(int argc, char *argv[])
   twopence_command_t cmd;
   struct twopence_target *target;
   struct sigaction old_action;
-  twopence_buffer_t stdout_buf, stderr_buf;
+  twopence_buf_t stdout_buf, stderr_buf;
   twopence_status_t status;
   int rc;
 
@@ -183,8 +183,8 @@ int main(int argc, char *argv[])
   twopence_command_ostreams_reset(&cmd);
   twopence_command_iostream_redirect(&cmd, TWOPENCE_STDIN, 0, false);
 
-  twopence_buffer_init(&stdout_buf);
-  twopence_buffer_init(&stderr_buf);
+  twopence_buf_init(&stdout_buf);
+  twopence_buf_init(&stderr_buf);
 
   if (opt_quiet) {
     if (opt_output || opt_stdout || opt_stderr) {
@@ -200,15 +200,15 @@ int main(int argc, char *argv[])
       goto invalid_options;
     }
     /* Connect both output streams to the same buffer */
-    twopence_buffer_alloc(&stdout_buf, 65536);
+    twopence_buf_resize(&stdout_buf, 65536);
     twopence_command_ostream_capture(&cmd, TWOPENCE_STDOUT, &stdout_buf);
     twopence_command_ostream_capture(&cmd, TWOPENCE_STDERR, &stdout_buf);
   } else
   if (opt_stdout || opt_stderr) {
     /* Connect both output streams to separate buffers */
-    twopence_buffer_alloc(&stdout_buf, 65536);
+    twopence_buf_resize(&stdout_buf, 65536);
     twopence_command_ostream_capture(&cmd, TWOPENCE_STDOUT, &stdout_buf);
-    twopence_buffer_alloc(&stderr_buf, 65536);
+    twopence_buf_resize(&stderr_buf, 65536);
     twopence_command_ostream_capture(&cmd, TWOPENCE_STDERR, &stderr_buf);
   } else {
     /* No output, no -q option. Just send everything to our regular output. */

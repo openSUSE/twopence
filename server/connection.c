@@ -128,13 +128,13 @@ connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
 }
 
 bool
-connection_process_packet(connection_t *conn, buffer_t *bp)
+connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 {
 	const header_t *hdr;
 	transaction_t *trans;
 
 	while (bp && protocol_buffer_complete(bp)) {
-		buffer_t payload;
+		twopence_buf_t payload;
 
 		hdr = protocol_dissect(bp, &payload);
 		if (hdr == NULL) {
@@ -143,7 +143,7 @@ connection_process_packet(connection_t *conn, buffer_t *bp)
 			return false;
 		}
 		TRACE("connection_process_packet type=%c len=%u\n",
-				hdr->type, buffer_count(&payload));
+				hdr->type, twopence_buf_count(&payload));
 
 		/* Here, we could extract a transaction ID from the header
 		 * and locate the right transaction instead of just using
@@ -160,20 +160,20 @@ connection_process_packet(connection_t *conn, buffer_t *bp)
 			char username[128];
 			char filename[PATH_MAX];
 			char command[2048];
-			unsigned int size = 0;
+			unsigned int filemode = 0;
 			unsigned int timeout = 0;
 
 			switch (hdr->type) {
 			case PROTO_HDR_TYPE_INJECT:
 				if (!protocol_dissect_string(&payload, username, sizeof(username))
-				 || !protocol_dissect_uint(&payload, &size)
+				 || !protocol_dissect_uint(&payload, &filemode)
 				 || !protocol_dissect_string(&payload, filename, sizeof(filename))) {
 					TRACE("cannot parse packet\n");
 					break;
 				}
 
 				trans = transaction_new(conn->client_sock, hdr->type, conn->next_id++);
-				semantics->inject_file(trans, username, filename, size);
+				semantics->inject_file(trans, username, filename, filemode);
 				break;
 
 			case PROTO_HDR_TYPE_EXTRACT:
@@ -223,7 +223,7 @@ connection_process_packet(connection_t *conn, buffer_t *bp)
 bool
 connection_process_incoming(connection_t *conn)
 {
-	buffer_t *bp;
+	twopence_buf_t *bp;
 
 	if ((bp = socket_get_recvbuf(conn->client_sock)) == NULL)
 		return true;
@@ -235,17 +235,17 @@ connection_process_incoming(connection_t *conn)
 		}
 	}
 
-	if (buffer_count(bp) == 0) {
+	if (twopence_buf_count(bp) == 0) {
 		/* All data has been used. Just reset the buffer */
-		buffer_reset(bp);
+		twopence_buf_reset(bp);
 	} else {
 		/* There's an incomplete packet after the end of
 		 * the one(s) we just processed.
 		 * Make sure we still have ample tailroom
 		 * to receive the rest of the packet.
 		 */
-		if (buffer_tailroom_max(bp) < TWOPENCE_PROTO_MAX_PACKET)
-			buffer_compact(bp);
+		if (twopence_buf_tailroom_max(bp) < TWOPENCE_PROTO_MAX_PACKET)
+			twopence_buf_compact(bp);
 	}
 
 	return true;

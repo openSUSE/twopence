@@ -22,7 +22,7 @@ Packet types:
   'e'           extract file
   'q'           quit
   '0'           stdin
-  'E'           end of file on stdin
+  'E'           end of file on stdin, or during file injection
   'I'           interrupt command
 
         system under tests => local
@@ -42,6 +42,6 @@ The length includes the 4 bytes of the header.
 Parameters are separated with spaces:
 
   run command   username timeout command
-  insert file   username filesize filename
+  insert file   username filemode filename
   extract file  username filename
 
