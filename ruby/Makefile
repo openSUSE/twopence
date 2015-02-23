@@ -5,18 +5,18 @@ LIBDIR    ?= /usr/lib64
 INCDIR    ?= /usr/include
 RBDIR      = $(LIBDIR)/ruby/gems/$(RBVERSION)
 
-all: twopence-0.3.0.gem
+all: twopence-0.3.1.gem
 
-twopence-0.3.0.gem: twopence.gemspec Rakefile ext/twopence/extconf.rb \
+twopence-0.3.1.gem: twopence.gemspec Rakefile ext/twopence/extconf.rb \
                     ext/twopence/glue.c ext/twopence/target.h ext/twopence/target.c \
                     ../library/twopence.h ../library/buffer.h
 	gem build twopence.gemspec
 
-install: twopence-0.3.0.gem
-	ln -sf $(DESTDIR)$(LIBDIR)/libtwopence.so.0.3.0 $(DESTDIR)$(LIBDIR)/libtwopence.so
+install: twopence-0.3.1.gem
+	ln -sf $(DESTDIR)$(LIBDIR)/libtwopence.so.0.3.1 $(DESTDIR)$(LIBDIR)/libtwopence.so
 	CFLAGS="-I$(DESTDIR)$(INCDIR)" \
 	  LDFLAGS="-L$(DESTDIR)$(LIBDIR)" \
-	  gem install --local --install-dir $(DESTDIR)$(RBDIR)/ -V --force twopence-0.3.0.gem
+	  gem install --local --install-dir $(DESTDIR)$(RBDIR)/ -V --force twopence-0.3.1.gem
 	rm $(DESTDIR)$(LIBDIR)/libtwopence.so
 
 clean:
@@ -24,4 +24,4 @@ clean:
 	rm -f ext/library/buffer.h
 	rm -f ruby/ext/twopence/Makefile
 	rm -f ruby/ext/twopence/mkmf.log
-	rm -f twopence-0.3.0.gem
+	rm -f twopence-0.3.1.gem

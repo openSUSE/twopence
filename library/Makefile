@@ -1,6 +1,6 @@
 .PHONY: all install clean
 
-VERSION	= 0.3.0
+VERSION	= 0.3.1
 
 ifdef RPM_OPT_FLAGS
 CCOPT	= $(RPM_OPT_FLAGS)
@@ -23,8 +23,8 @@ libtwopence.so: twopence.h $(LIB_OBJS) Makefile
 install: libtwopence.so twopence.h
 	mkdir -p $(DESTDIR)$(LIBDIR)
 	install -m555 libtwopence.so $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION)
-	mkdir -p $(DESTDIR)$(INCDIR)
-	install -m444 twopence.h buffer.h $(DESTDIR)$(INCDIR)
+	mkdir -p $(DESTDIR)$(INCDIR)/twopence
+	install -m444 twopence.h buffer.h $(DESTDIR)$(INCDIR)/twopence
 
 clean:
 	rm -f *.o *.so
