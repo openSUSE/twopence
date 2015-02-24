@@ -1,5 +1,6 @@
 .PHONY: all install clean
 
+ARCH      ?= x86_64
 RBVERSION ?= 2.1.0
 LIBDIR    ?= /usr/lib64
 INCDIR    ?= /usr/include
@@ -18,6 +19,8 @@ install: twopence-0.3.1.gem
 	  LDFLAGS="-L$(DESTDIR)$(LIBDIR)" \
 	  gem install --local --install-dir $(DESTDIR)$(RBDIR)/ -V --force twopence-0.3.1.gem
 	rm $(DESTDIR)$(LIBDIR)/libtwopence.so
+	rm -f $(DESTDIR)$(RBDIR)/extensions/$(ARCH)-linux/$(RBVERSION)/twopence-0.3.1/gem.build_complete
+	rm -f $(DESTDIR)$(RBDIR)/gems/twopence-0.3.1/ext/twopence/siteconf*.rb
 
 clean:
 	rm -f ext/library/twopence.h
