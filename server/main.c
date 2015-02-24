@@ -134,7 +134,7 @@ wait_for_virtio_host(int serial_fd)
       if (!(pfd.revents & POLLHUP))
 	return;
 
-      if (nloop++ == 0)
+      if (nloop++ == 0 && !server_audit)
         fprintf(stderr, "Waiting for someone to connect to host side socket\n");
       usleep(500000);
     }
@@ -154,7 +154,9 @@ int open_unix_port(const char *filename)
   if (filename == NULL)
     filename = TWOPENCE_UNIX_PORT_DEFAULT;
 
-  printf("Listening on %s\n", filename);
+  // TODO: print at startup of server
+  if (!server_audit)
+    printf("Listening on %s\n", filename);
 
   memset(&sun, 0, sizeof(sun));
   sun.sun_family = AF_LOCAL;
