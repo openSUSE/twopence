@@ -75,7 +75,9 @@ int open_serial_port(const char *filename)
   if (filename == NULL)
     filename = TWOPENCE_SERIAL_PORT_DEFAULT;
 
-  printf("Listening on %s\n", filename);
+  // TODO: print only once, at startup of server
+  if (!server_audit)
+    printf("Listening on %s\n", filename);
 
   // Open the port
   serial_fd = open(filename, O_RDWR | O_NONBLOCK | O_CLOEXEC | O_NOCTTY);
@@ -154,7 +156,7 @@ int open_unix_port(const char *filename)
   if (filename == NULL)
     filename = TWOPENCE_UNIX_PORT_DEFAULT;
 
-  // TODO: print at startup of server
+  // TODO: print only once, at startup of server
   if (!server_audit)
     printf("Listening on %s\n", filename);
 
