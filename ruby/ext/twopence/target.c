@@ -228,6 +228,7 @@ VALUE method_test_and_store_results_together(VALUE self, VALUE ruby_args)
   else ruby_timeout = LONG2NUM(60L);
   Data_Get_Struct(self, struct twopence_target, target);
 
+  twopence_buf_init(&stdout_buf);
   twopence_buf_resize(&stdout_buf, 65536);
 
   rc = twopence_test_and_store_results_together(target,
@@ -285,6 +286,8 @@ VALUE method_test_and_store_results_separately(VALUE self, VALUE ruby_args)
   else ruby_timeout = LONG2NUM(60L);
   Data_Get_Struct(self, struct twopence_target, target);
 
+  twopence_buf_init(&stdout_buf);
+  twopence_buf_init(&stderr_buf);
   twopence_buf_resize(&stdout_buf, 65536);
   twopence_buf_resize(&stderr_buf, 65536);
 
