@@ -628,6 +628,16 @@ __twopence_pipe_command
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
 
+  /* This entire line timeout business seems not very useful, at least while
+   * waiting for a command to finish - that command may sleep for minutes
+   * without producing any output.
+   * For now, we make sure that the link timeout is the maximum of LINE_TIMEOUT
+   * and (command timeout + 1).
+   */
+  handle->link_timeout = (timeout + 1) * 1000;
+  if (handle->link_timeout < LINE_TIMEOUT)
+    handle->link_timeout = LINE_TIMEOUT;
+
   // Read "standard output" and "standard error"
   rc = _twopence_read_results(handle, link_fd, status_ret);
   if (rc < 0)

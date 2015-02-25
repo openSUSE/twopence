@@ -15,15 +15,6 @@ BUGS
    o Makefiles:
      "make clean" leaves files behind
 
-   o The "line timeout" is constant at 60 seconds, which means
-     that if you try to run a command that sleeps for longer than
-     60 seconds, the command will be aborted by the client with a
-     TWOPENCE_RECEIVE_RESULTS_ERROR.
-
-     Reproduce:
-       ./run-one ssh ./python_test.sh
-       ./run-one virtio ./python_test.sh
-
    o The protocol used for virtio has no request/reply matching.
      Problem (we == client):
       - send command (command1)
