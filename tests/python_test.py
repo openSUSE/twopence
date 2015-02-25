@@ -156,6 +156,56 @@ except:
 os.remove("etc_hosts")
 testCaseReport()
 
+testCaseBegin("Verify twopence.Command attributes")
+try:
+	outbuf = bytearray();
+	errbuf = bytearray();
+	cmd = twopence.Command("/bin/something", user = "eric",
+				 timeout = 123,
+				 stdin = "/local/file", 
+				 stdout = outbuf,
+				 stderr = errbuf,
+				 suppressOutput = True);
+	print "Verify commandline attribute"
+	if cmd.commandline != "/bin/something":
+		testCaseFail("cmd.commandline attribute invalid")
+	print "Verify user attribute"
+	if cmd.user != "eric":
+		testCaseFail("cmd.user attribute invalid")
+	print "Verify timeout attribute"
+	if cmd.timeout != 123:
+		testCaseFail("cmd.timeout attribute invalid")
+	print "Verify stdout attribute"
+	if cmd.stdout != outbuf:
+		testCaseFail("cmd.stdout attribute invalid")
+	print "Verify stderr attribute"
+	if cmd.stderr != errbuf:
+		testCaseFail("cmd.stderr attribute invalid")
+
+	print "Change user attribute"
+	cmd.user = "root"
+	if cmd.user != "root":
+		testCaseFail("unable to set cmd.user attribute")
+	print "Change timeout attribute"
+	cmd.timeout = 12;
+	if cmd.timeout != 12:
+		testCaseFail("unable to set cmd.timeout attribute")
+	print "Change stdout attribute"
+	cmd.stdout = errbuf;
+	if cmd.stdout != errbuf:
+		testCaseFail("unable to set cmd.stdout attribute")
+	print "Change stderr attribute"
+	cmd.stderr = outbuf;
+	if cmd.stderr != outbuf:
+		testCaseFail("unable to set cmd.stderr attribute")
+
+	# Not yet supported:
+	# useTty
+	# suppressOutput
+except:
+	testCaseException()
+testCaseReport()
+
 testCaseBegin("run command /bin/blablabla (should fail)")
 try:
 	status = target.run("/bin/blablabla")
