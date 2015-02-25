@@ -15,6 +15,13 @@ BUGS
    o Makefiles:
      "make clean" leaves files behind
 
+   o The ssh "line timeout" is constant at 60 seconds, which means
+     that if you try to run a command that sleeps for longer than
+     60 seconds, the command will be aborted by the client with a
+     TWOPENCE_RECEIVE_RESULTS_ERROR.
+
+     Reproduce:
+       ./run-one ssh ./python_test.sh
 
 REFACTORING
    o in ssh.c, replace
