@@ -384,11 +384,12 @@ Command_setattr(twopence_Command *self, char *name, PyObject *v)
 		return 0;
 	}
 	if (!strcmp(name, "timeout")) {
-		char *s;
-
-		if (!PyString_Check(v) || (s = PyString_AsString(v)) == NULL)
+		if (PyInt_Check(v))
+			self->timeout = PyInt_AsLong(v);
+		else if (PyLong_Check(v))
+			self->timeout = PyLong_AsLongLong(v);
+		else
 			goto bad_attr;
-		self->timeout = atol(s);
 		return 0;
 	}
 	if (!strcmp(name, "useTty")) {
