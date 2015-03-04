@@ -9,34 +9,16 @@ BUGS
      (calloc() returning NULL)
 
    o test server:
-     no more information about what is being done by the server
-     injects sometimes fail
+     Display used port when using --audit
+     Make --audit the default
 
-   o Makefiles:
-     "make clean" leaves files behind
+   o The serial/virtio protocol has no request/reply matching.
+     Proposed fix: add a new field to the header that is a timestamp.
+     Two-way exchange of transaction IDs might be a bit too complicated.
 
-   o The protocol used for virtio has no request/reply matching.
-     Problem (we == client):
-      - send command (command1)
-      - we time out locally (due to the link timeout)
-      - we return to the caller
-      - we send the next command (command2)
-      - server sends us the status of command1
-      - we receive this status and think it's the
-        status for command1.
+   o Re-enable "line timeout"
+     Add option to set it (see below)
 
-     Proposed fix: we need to use the free byte in the protocol
-     header as transaction id (XID). However, care needs to be
-     taken of the shell command case, where the client always starts
-     with "this is my first transaction", so we cannot just use a
-     client side counter.
-
-     The best approach may be for the client to send the initial
-     request with an XID of 0, and the server assigns an XID and
-     returns that in the first packet, which is the Major status.
-     All subsequent packets related to this transaction (client
-     to server data, server to client data, interrupt, status)
-     should use the assigned XID.
 
 REFACTORING
    o in ssh.c, replace
@@ -48,8 +30,6 @@ REFACTORING
      refactor shell and ruby wrappers to use directly twopence_run_test()?
      [DONE for shell/command.c]
 
-   o don't install public header files in /usr/include directly, but
-     move them into /usr/include/twopence
 
 FUNCTIONALITY
    o write help pages
@@ -89,9 +69,8 @@ FUNCTIONALITY
    o ssh.c: kill the remote command when it was aborted
      because of a timeout or another problem
 
-
-TESTING
    o Document the tests we're doing in tests/
+
 
 FUTURE DIRECTIONS
    o Twopence could be extended by writing new plugins,
