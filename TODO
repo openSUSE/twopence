@@ -15,6 +15,28 @@ BUGS
    o Makefiles:
      "make clean" leaves files behind
 
+   o The protocol used for virtio has no request/reply matching.
+     Problem (we == client):
+      - send command (command1)
+      - we time out locally (due to the link timeout)
+      - we return to the caller
+      - we send the next command (command2)
+      - server sends us the status of command1
+      - we receive this status and think it's the
+        status for command1.
+
+     Proposed fix: we need to use the free byte in the protocol
+     header as transaction id (XID). However, care needs to be
+     taken of the shell command case, where the client always starts
+     with "this is my first transaction", so we cannot just use a
+     client side counter.
+
+     The best approach may be for the client to send the initial
+     request with an XID of 0, and the server assigns an XID and
+     returns that in the first packet, which is the Major status.
+     All subsequent packets related to this transaction (client
+     to server data, server to client data, interrupt, status)
+     should use the assigned XID.
 
 REFACTORING
    o in ssh.c, replace

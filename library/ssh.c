@@ -37,7 +37,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "twopence.h"
 
 #define BUFFER_SIZE 16384              // Size in bytes of the work buffer for receiving data from the remote host
-#define LINE_TIMEOUT 60                // Timeout (in seconds) for not receiving anything
 
 // This structure encapsulates in an opaque way the behaviour of the library
 // It is not 100 % opaque, because it is publicly known that the first field is the plugin type
@@ -288,12 +287,10 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, long timeout, ss
   bool nothing_0, eof_0,
        nothing_1, eof_1,
        nothing_2, eof_2;
-  time_t line_too_late,
-         command_too_late;
+  time_t command_too_late;
 
   eof_0 = eof_1 = eof_2 = false;
-  line_too_late = command_too_late = time(NULL);
-  line_too_late += LINE_TIMEOUT;
+  command_too_late = time(NULL);
   command_too_late += timeout;
 
   // While there might still be something to read from the remote host
@@ -341,14 +338,9 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, long timeout, ss
       // Then avoid active wait
       __twopence_ssh_sleep();
 
-      // And check for timeout
-      if (time(NULL) > line_too_late)
-        return -4;
-
-    if (time(NULL) > command_too_late)
-     return -5;
+      if (time(NULL) > command_too_late)
+       return -5;
     }
-    else line_too_late = time(NULL) + LINE_TIMEOUT;
   }
   return 0;
 }

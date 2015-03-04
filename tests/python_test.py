@@ -156,6 +156,56 @@ except:
 os.remove("etc_hosts")
 testCaseReport()
 
+testCaseBegin("Verify twopence.Command attributes")
+try:
+	outbuf = bytearray();
+	errbuf = bytearray();
+	cmd = twopence.Command("/bin/something", user = "eric",
+				 timeout = 123,
+				 stdin = "/local/file", 
+				 stdout = outbuf,
+				 stderr = errbuf,
+				 suppressOutput = True);
+	print "Verify commandline attribute"
+	if cmd.commandline != "/bin/something":
+		testCaseFail("cmd.commandline attribute invalid")
+	print "Verify user attribute"
+	if cmd.user != "eric":
+		testCaseFail("cmd.user attribute invalid")
+	print "Verify timeout attribute"
+	if cmd.timeout != 123:
+		testCaseFail("cmd.timeout attribute invalid")
+	print "Verify stdout attribute"
+	if cmd.stdout != outbuf:
+		testCaseFail("cmd.stdout attribute invalid")
+	print "Verify stderr attribute"
+	if cmd.stderr != errbuf:
+		testCaseFail("cmd.stderr attribute invalid")
+
+	print "Change user attribute"
+	cmd.user = "root"
+	if cmd.user != "root":
+		testCaseFail("unable to set cmd.user attribute")
+	print "Change timeout attribute"
+	cmd.timeout = 12;
+	if cmd.timeout != 12:
+		testCaseFail("unable to set cmd.timeout attribute")
+	print "Change stdout attribute"
+	cmd.stdout = errbuf;
+	if cmd.stdout != errbuf:
+		testCaseFail("unable to set cmd.stdout attribute")
+	print "Change stderr attribute"
+	cmd.stderr = outbuf;
+	if cmd.stderr != outbuf:
+		testCaseFail("unable to set cmd.stderr attribute")
+
+	# Not yet supported:
+	# useTty
+	# suppressOutput
+except:
+	testCaseException()
+testCaseReport()
+
 testCaseBegin("run command /bin/blablabla (should fail)")
 try:
 	status = target.run("/bin/blablabla")
@@ -353,6 +403,30 @@ try:
 				print "remote: ", remoteOut
 			else:
 				print "Remote output matches output of running wc locally"
+except:
+	testCaseException()
+testCaseReport()
+
+# There's a "line timeout" in the ssh target plugin that wreaks havoc with the regular
+# timeout handling.
+# If that problem is still present, the following will result in a python exception
+# from target.run()
+testCaseBegin("Verify long command timeout")
+try:
+	import time
+
+	print "The next command should sleep for 65 seconds"
+
+	t0 = time.time()
+	st = target.run("sleep 65", timeout = 120)
+	delay = time.time() - t0
+
+	if delay < 65:
+		testCaseFail("command slept for less than 65 seconds (only %u sec)" % delay)
+	elif delay > 67:
+		testCaseFail("command slept for way more than 65 seconds (overall %u sec)" % delay)
+	else:
+		print "Good: Slept for %u seconds" % delay
 except:
 	testCaseException()
 testCaseReport()

@@ -327,6 +327,8 @@ server_path_find_bin(const char *argv0)
 		"/sbin",
 		"/usr/bin",
 		"/usr/sbin",
+		"/usr/local/bin",
+		"/usr/local/sbin",
 		NULL
 	};
 	unsigned int n;
