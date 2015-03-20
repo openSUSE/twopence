@@ -37,11 +37,8 @@ FUNCTIONALITY
      Python
      write manpages: twopence(3), twopence(3py)
 
-   o display a short help message for the twopence_exit command
-     -h --help
-
-   o display the version of the library
-     -v --version
+   o minimalistic options for the twopence_exit command
+     -h --help -v --version
 
    o accept a directory as destination filename for inject and extract
    o be able to inject or extract a full directory tree

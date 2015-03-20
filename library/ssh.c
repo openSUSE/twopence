@@ -66,6 +66,7 @@ struct twopence_ssh_target
  */
 
 extern const struct twopence_plugin twopence_ssh_ops;
+static int __twopence_ssh_interrupt_ssh(struct twopence_ssh_target *);
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
 
@@ -339,7 +340,10 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, long timeout, ss
       __twopence_ssh_sleep();
 
       if (time(NULL) > command_too_late)
-       return -5;
+      {
+        __twopence_ssh_interrupt_ssh(handle);
+        return -5;
+      }
     }
   }
   return 0;

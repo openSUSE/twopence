@@ -444,24 +444,4 @@ extern twopence_substream_t *twopence_substream_new_fd(int fd, bool closeit);
 extern void		twopence_substream_close(twopence_substream_t *);
 
 
-/*
- * Handling twopence config information
- */
-typedef struct twopence_config twopence_config_t;
-typedef struct twopence_target_config twopence_target_config_t;
-
-extern twopence_config_t *		twopence_config_new(void);
-extern void				twopence_config_free(twopence_config_t *);
-extern int				twopence_config_write(twopence_config_t *cfg, const char *path);
-extern twopence_config_t *		twopence_config_read(const char *path);
-extern twopence_target_config_t *	twopence_config_get_target(twopence_config_t *cfg, const char *name);
-extern twopence_target_config_t *	twopence_config_add_target(twopence_config_t *cfg, const char *name, const char *spec);
-extern void				twopence_config_set_attr(twopence_config_t *cfg, const char *name, const char *value);
-extern const char *			twopence_config_get_attr(twopence_config_t *cfg, const char *name);
-extern const char *			twopence_target_config_get_spec(twopence_target_config_t *cfg);
-extern void				twopence_target_config_set_attr(twopence_target_config_t *tgt, const char *name, const char *value);
-extern const char *			twopence_target_config_get_attr(twopence_target_config_t *tgt, const char *name);
-extern const char **			twopence_target_config_attr_names(const twopence_target_config_t *);
-
-
 #endif /* TWOPENCE_H */

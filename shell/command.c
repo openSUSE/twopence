@@ -29,7 +29,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 struct twopence_target *twopence_handle;
 
-char *short_options = "u:t:o:1:2:qbh";
+char *short_options = "u:t:o:1:2:qbvh";
 struct option long_options[] = {
   { "user", 1, NULL, 'u' },
   { "timeout", 1, NULL, 't' },
@@ -38,6 +38,7 @@ struct option long_options[] = {
   { "stderr", 1, NULL, '2' },
   { "quiet", 0, NULL, 'q' },
   { "batch", 0, NULL, 'b' },
+  { "version", 0, NULL, 'v' },
   { "help", 0, NULL, 'h' },
   { NULL, 0, NULL, 0 }
 };
@@ -121,6 +122,7 @@ Options: -u|--user <user>: user running the command (default: root)\n\
          -1|--stdout <file1> -2|--stderr <file2>: store them separately\n\
          -q|--quiet: do not display command output nor errors\n\
          -b|--batch: do not display status messages\n\
+         -v|--version: print version information\n\
          -h|--help: print this help message\n\
 Target: serial:<character device>\n\
         ssh:<address and port>\n\
@@ -166,6 +168,8 @@ int main(int argc, char *argv[])
               break;
     case 'b': opt_batch = true;
               break;
+    case 'v': printf("%s version 0.3.2\n", argv[0]);
+              exit(RC_OK);
     case 'h': usage(argv[0]);
               exit(RC_OK);
 
