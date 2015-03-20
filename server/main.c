@@ -225,7 +225,7 @@ int main(int argc, char *argv[])
   int c;
 
   // Welcome message, check arguments
-  printf("Twopence test server version 0.3.1\n");
+  printf("Twopence test server version 0.3.2\n");
 
   /* Initially, debug logging goes to stderr */
   server_log_file = stderr;
