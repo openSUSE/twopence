@@ -125,8 +125,6 @@ connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
 		/* Make sure we have a receive buffer posted. */
 		twopence_sock_post_recvbuf_if_needed(sock, TWOPENCE_PROTO_MAX_PACKET);
 
-		if (twopence_sock_xmit_queue_bytes(sock))
-			twopence_debug("socket %d: xmit queue=%u bytes\n", twopence_sock_id(sock), twopence_sock_xmit_queue_bytes(sock));
 		if (nfds < max && twopence_sock_fill_poll(sock, pfd + nfds))
 			nfds++;
 	}
