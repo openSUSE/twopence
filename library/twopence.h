@@ -476,6 +476,8 @@ extern void		twopence_set_syslog(bool on);
 extern void		twopence_trace(const char *fmt, ...);
 extern void		twopence_log_error(const char *fmt, ...);
 
+extern unsigned int	twopence_debug_level;
+
 #define __twopence_debug(level, fmt...) \
 			do { \
 				if (twopence_debug_level >= level) \

@@ -19,6 +19,7 @@ LIB_OBJS= twopence.o \
 	  serial.o \
 	  pipe.o \
 	  protocol.o \
+	  socket.o \
 	  buffer.o \
 	  logging.o
 
