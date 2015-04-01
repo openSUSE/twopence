@@ -1008,10 +1008,6 @@ int __twopence_pipe_inject_file
   trans = twopence_pipe_transaction_new(handle, TWOPENCE_PROTO_TYPE_INJECT);
   trans->recv = __twopence_pipe_inject_recv;
 
-#ifdef later
-  trans.print_dots = xfer->print_dots;
-#endif
-
   // Send inject command packet
   if ((rc = twopence_transaction_send_inject(trans, xfer->user, xfer->remote.name, xfer->remote.mode)) < 0)
     goto out;
@@ -1020,16 +1016,15 @@ int __twopence_pipe_inject_file
   if (channel) {
     twopence_transaction_channel_set_callback_read_eof(channel, __twopence_pipe_inject_read_eof);
     twopence_transaction_channel_set_plugged(channel, true);
+
+    if (xfer->print_dots)
+      twopence_transaction_set_dot_stream(trans, twopence_target_stream(&handle->base, TWOPENCE_STDOUT));
   }
 
   rc = __twopence_transaction_run(handle, trans, status);
 
-#ifdef later
-  if (trans.print_dots && trans.total_data != 0)
-    __twopence_pipe_output(trans.handle, '\n');
-#endif
-
 out:
+  twopence_transaction_set_dot_stream(trans, NULL);
   twopence_transaction_free(trans);
   return rc;
 }
@@ -1057,25 +1052,22 @@ int _twopence_extract_virtio_serial
   trans = twopence_pipe_transaction_new(handle, TWOPENCE_PROTO_TYPE_EXTRACT);
   trans->recv = __twopence_pipe_extract_recv;
 
-#ifdef later
-  trans.print_dots = xfer->print_dots;
-#endif
-
   // Send command packet
   if ((rc = twopence_transaction_send_extract(trans, xfer->user, xfer->remote.name)) < 0)
     goto out;
 
   sink = twopence_transaction_attach_local_sink_stream(trans, TWOPENCE_PROTO_TYPE_DATA, xfer->local_stream);
-  twopence_transaction_channel_set_callback_write_eof(sink, __twopence_pipe_extract_eof);
+  if (sink) {
+    twopence_transaction_channel_set_callback_write_eof(sink, __twopence_pipe_extract_eof);
+
+    if (xfer->print_dots)
+      twopence_transaction_set_dot_stream(trans, twopence_target_stream(&handle->base, TWOPENCE_STDOUT));
+  }
 
   rc = __twopence_transaction_run(handle, trans, status);
 
-#ifdef later
-  if (trans.print_dots && trans.total_data != 0)
-    __twopence_pipe_output(trans.handle, '\n');
-#endif
-
 out:
+  twopence_transaction_set_dot_stream(trans, NULL);
   twopence_transaction_free(trans);
   return rc;
 }

@@ -235,6 +235,23 @@ twopence_transaction_describe(const twopence_transaction_t *trans)
 }
 
 void
+twopence_transaction_set_dot_stream(twopence_transaction_t *trans, twopence_iostream_t *stream)
+{
+	if (trans->client.dot_stream != NULL && trans->client.dots_printed)
+		twopence_iostream_putc(trans->client.dot_stream, '\n');
+	trans->client.dot_stream = stream;
+}
+
+static inline void
+twopence_transaction_channel_trace_io(twopence_transaction_t *trans)
+{
+	if (trans->client.dot_stream) {
+		twopence_iostream_putc(trans->client.dot_stream, '.');
+		trans->client.dots_printed++;
+	}
+}
+
+void
 twopence_transaction_set_error(twopence_transaction_t *trans, int rc)
 {
 	twopence_debug("%s: set client side error to %d", twopence_transaction_describe(trans), rc);
@@ -357,24 +374,23 @@ twopence_transaction_close_source(twopence_transaction_t *trans, unsigned char i
  * This is taken care of by twopence_sock_xmit_shared()
  */
 static bool
-twopence_transaction_channel_write_data(twopence_trans_channel_t *sink, twopence_buf_t *payload)
+twopence_transaction_channel_write_data(twopence_transaction_t *trans, twopence_trans_channel_t *sink, twopence_buf_t *payload)
 {
+	unsigned int count = twopence_buf_count(payload);
 	twopence_iostream_t *stream;
 	twopence_sock_t *sock;
 
-	twopence_debug("About to write %u bytes of data to local sink\n", twopence_buf_count(payload));
-
+	twopence_debug("About to write %u bytes of data to local sink\n", count);
 	if ((sock = sink->socket) != NULL) {
 		if (twopence_sock_xmit_shared(sock, payload) < 0)
 			return false;
 	} else
 	if ((stream = sink->stream) != NULL) {
-		unsigned int count = twopence_buf_count(payload);
-
 		twopence_iostream_write(stream, twopence_buf_head(payload), count);
 		twopence_buf_advance_head(payload, count);
 	}
 
+	twopence_transaction_channel_trace_io(trans);
 	return true;
 }
 
@@ -461,9 +477,7 @@ twopence_transaction_channel_forward(twopence_transaction_t *trans, twopence_tra
 				twopence_protocol_push_header_ps(bp, &trans->ps, channel->id);
 				twopence_transaction_send_client(trans, bp);
 
-#ifdef later
-				/* print dots */
-#endif
+				twopence_transaction_channel_trace_io(trans);
 				continue;
 			}
 
@@ -505,10 +519,13 @@ twopence_transaction_channel_doio(twopence_transaction_t *trans, twopence_trans_
 		 * to them. If that is non-empty, queue it to the transport
 		 * socket. */
 		if ((bp = twopence_sock_take_recvbuf(sock)) != NULL) {
-			twopence_debug2("%s: %u bytes from local source %c",
-					twopence_transaction_describe(trans), twopence_buf_count(bp), channel->id);
+			unsigned int count = twopence_buf_count(bp) - TWOPENCE_PROTO_HEADER_SIZE;
+
+			twopence_debug2("%s: %u bytes from local source %c", twopence_transaction_describe(trans), count, channel->id);
 			twopence_protocol_push_header_ps(bp, &trans->ps, channel->id);
 			twopence_sock_queue_xmit(trans->client_sock, bp);
+
+			twopence_transaction_channel_trace_io(trans);
 		}
 
 		/* For file extractions, we want to send an EOF packet
@@ -600,7 +617,7 @@ twopence_transaction_recv_packet(twopence_transaction_t *trans, const twopence_h
 	if (sink != NULL) {
 		twopence_debug("%s: received %u bytes of data on channel %c\n",
 				twopence_transaction_describe(trans), twopence_buf_count(payload), sink->id);
-		if (sink && !twopence_transaction_channel_write_data(sink, payload))
+		if (sink && !twopence_transaction_channel_write_data(trans, sink, payload))
 			twopence_transaction_fail(trans, errno);
 		return;
 	}

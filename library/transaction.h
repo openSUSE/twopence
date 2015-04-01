@@ -55,6 +55,9 @@ struct twopence_transaction {
 	struct {
 		twopence_status_t	status_ret;
 		int			exception;
+
+		twopence_iostream_t *	dot_stream;
+		unsigned int		dots_printed;
 	} client;
 };
 
@@ -86,6 +89,7 @@ extern twopence_trans_channel_t *twopence_transaction_find_source(twopence_trans
 
 /* Client side functions */
 extern void			twopence_transaction_set_error(twopence_transaction_t *, int);
+extern void			twopence_transaction_set_dot_stream(twopence_transaction_t *, twopence_iostream_t *);
 
 extern bool			twopence_transaction_channel_is_read_eof(const twopence_trans_channel_t *);
 extern void			twopence_transaction_channel_set_callback_read_eof(twopence_trans_channel_t *, void (*fn)(twopence_transaction_t *, twopence_trans_channel_t *));
