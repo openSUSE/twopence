@@ -40,6 +40,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdarg.h>
 #include <assert.h>
 #include <ctype.h>
 #include <limits.h>
@@ -93,13 +94,19 @@ twopence_protocol_command_buffer_new()
 }
 
 twopence_buf_t *
-twopence_protocol_build_eof_packet(void)
+twopence_protocol_build_simple_packet(unsigned char type)
 {
 	twopence_buf_t *bp;
 
 	bp = twopence_protocol_command_buffer_new();
-	twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_EOF);
+	twopence_protocol_push_header(bp, type);
 	return bp;
+}
+
+twopence_buf_t *
+twopence_protocol_build_eof_packet(void)
+{
+	return twopence_protocol_build_simple_packet(TWOPENCE_PROTO_TYPE_EOF);
 }
 
 twopence_buf_t *
@@ -114,6 +121,52 @@ twopence_protocol_build_uint_packet(unsigned char type, unsigned int value)
 	twopence_buf_puts(bp, string);
 
 	twopence_protocol_push_header(bp, type);
+	return bp;
+}
+
+static void
+twopence_protocol_format_args(twopence_buf_t *bp, const char *fmt, ...)
+{
+	char string[8192];
+	va_list ap;
+
+	va_start(ap, fmt);
+
+	vsnprintf(string, sizeof(string), fmt, ap);
+	twopence_buf_puts(bp, string);
+
+	va_end(ap);
+}
+
+twopence_buf_t *
+twopence_protocol_build_inject_packet(const char *user, const char *remote_name, unsigned int remote_mode)
+{
+	twopence_buf_t *bp;
+
+	/* Allocate a large buffer with space reserved for the header */
+	bp = twopence_protocol_command_buffer_new();
+
+	/* Format the arguments */
+	twopence_protocol_format_args(bp, "%s %d %s", user, remote_mode, remote_name);
+
+	/* Finalize the header */
+	twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_INJECT);
+	return bp;
+}
+
+twopence_buf_t *
+twopence_protocol_build_extract_packet(const char *user, const char *remote_name)
+{
+	twopence_buf_t *bp;
+
+	/* Allocate a large buffer with space reserved for the header */
+	bp = twopence_protocol_command_buffer_new();
+
+	/* Format the arguments */
+	twopence_protocol_format_args(bp, "%s %s", user, remote_name);
+
+	/* Finalize the header */
+	twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_EXTRACT);
 	return bp;
 }
 

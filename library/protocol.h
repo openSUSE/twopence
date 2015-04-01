@@ -52,7 +52,10 @@ struct header {
 extern void		twopence_protocol_build_header(twopence_buf_t *bp, unsigned char type);
 extern void		twopence_protocol_push_header(twopence_buf_t *bp, unsigned char type);
 extern twopence_buf_t *	twopence_protocol_command_buffer_new();
+extern twopence_buf_t *	twopence_protocol_build_simple_packet(unsigned char type);
 extern twopence_buf_t *	twopence_protocol_build_eof_packet(void);
+extern twopence_buf_t *	twopence_protocol_build_inject_packet(const char *user, const char *remote_name, unsigned int remote_mode);
+extern twopence_buf_t *	twopence_protocol_build_extract_packet(const char *user, const char *remote_name);
 extern twopence_buf_t *	twopence_protocol_build_uint_packet(unsigned char type, unsigned int value);
 extern twopence_buf_t *	twopence_protocol_recv_buffer_new(void);
 extern bool		twopence_protocol_buffer_complete(const twopence_buf_t *bp);

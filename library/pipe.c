@@ -29,6 +29,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <unistd.h>
 
 #include "twopence.h"
+#include "protocol.h"
 #include "pipe.h"
 
 #define BUFFER_SIZE 32768              // Size in bytes of the work buffer for receiving data from the remote
@@ -213,6 +214,28 @@ __twopence_pipe_sendbuf(struct twopence_pipe_target *handle, int link_fd, const 
 }
 
 /*
+ * For now, this is just a simple wrapper around __twopence_pipe_sendbuf.
+ * But down the road, this will become a front-end to feed packets into the
+ * send loop, which will be fully multiplexed and poll based.
+ */
+static int
+__twopence_pipe_send(struct twopence_pipe_target *handle, twopence_buf_t *bp)
+{
+  int rc;
+
+  rc = __twopence_pipe_sendbuf(handle, handle->link_fd, twopence_buf_head(bp), twopence_buf_count(bp));
+  twopence_buf_free(bp);
+
+  return rc;
+}
+
+static int
+__twopence_pipe_send_eof(struct twopence_pipe_target *handle)
+{
+  return __twopence_pipe_send(handle, twopence_protocol_build_eof_packet());
+}
+
+/*
  * Read a chunk (normally called a packet or frame) from the link
  */
 static int
@@ -338,10 +361,7 @@ _twopence_read_results(struct twopence_pipe_target *handle, int link_fd, twopenc
    */
   if (stream == NULL || twopence_iostream_eof(stream)) {
     /* Send an EOF packet to the server */
-    buffer[0] = 'E';
-    store_length(4, buffer);
-    sent = __twopence_pipe_sendbuf(handle, link_fd, buffer, 4);
-    if (sent < 0)
+    if (__twopence_pipe_send_eof(handle) < 0)
       return TWOPENCE_FORWARD_INPUT_ERROR;
   }
 
@@ -457,29 +477,35 @@ _twopence_read_minor(struct twopence_pipe_target *handle, int link_fd, int *mino
 int _twopence_send_file_iostream
   (struct twopence_pipe_target *handle, twopence_iostream_t *file_stream, int link_fd)
 {
-  char buffer[BUFFER_SIZE];
   int received, rv = 0;
   int total = 0;
 
-  buffer[1] = '\0';
-
   do {
-    received = twopence_iostream_read(file_stream, buffer + 4, BUFFER_SIZE - 4);
+    twopence_buf_t *bp;
+
+    /* Allocate a new packet with room reserved for the header */
+    bp = twopence_protocol_command_buffer_new();
+
+    received = twopence_iostream_read(file_stream,
+		    twopence_buf_tail(bp),
+		    twopence_buf_tailroom(bp));
     if (received < 0) {
+      twopence_buf_free(bp);
       if (errno == EINTR)
 	continue;
       goto local_file_error;
     }
+
     if (received == 0) {
       // Send an EOF packet to the remote host
-      buffer[0] = 'E';
-    } else {
-      // Send data to the remote host, together with 4 bytes of header
-      buffer[0] = 'd';
+      twopence_buf_free(bp);
+      rv = __twopence_pipe_send_eof(handle);
+      break;
     }
-    store_length(received + 4, buffer);
 
-    if (!__twopence_pipe_sendbuf(handle, link_fd, buffer, received + 4))
+    twopence_buf_advance_tail(bp, received);
+    twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_DATA);
+    if (__twopence_pipe_send(handle, bp) < 0)
       goto send_file_error;
 
     __twopence_pipe_output(handle, '.');     // Progression dots
@@ -657,33 +683,25 @@ __twopence_pipe_command
 int __twopence_pipe_inject_file
   (struct twopence_pipe_target *handle, twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
-  char command[COMMAND_BUFFER_SIZE];
-  int n;
+  twopence_buf_t *bp;
   int link_fd;
-  int sent, rc;
+  int rc;
 
   // Check that the username is valid
   if (_twopence_invalid_username(xfer->user))
     return TWOPENCE_PARAMETER_ERROR;
-
-  // Prepare command to send to the remote host
-  n = snprintf(command, COMMAND_BUFFER_SIZE,
-               "i...%s %d %s", xfer->user, xfer->remote.mode, xfer->remote.name);
-  if (n < 0 || n >= COMMAND_BUFFER_SIZE)
-    return TWOPENCE_PARAMETER_ERROR;
-  store_length(n + 1, command);
 
   // Open communication link
   link_fd = __twopence_pipe_open_link(handle);
   if (link_fd < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
-  // Send command (including terminating NUL)
-  sent = __twopence_pipe_sendbuf(handle, link_fd, command, n + 1);
-  if (sent != n + 1)
-  {
+  // Prepare command to send to the remote host
+  bp = twopence_protocol_build_inject_packet(xfer->user, xfer->remote.name, xfer->remote.mode);
+
+  // Send command
+  if (__twopence_pipe_send(handle, bp) < 0)
     return TWOPENCE_SEND_COMMAND_ERROR;
-  }
 
   // Read first return code before we start transferring the file
   // This enables to detect a remote problem even before we start the transfer
@@ -716,33 +734,25 @@ int __twopence_pipe_inject_file
 int _twopence_extract_virtio_serial
   (struct twopence_pipe_target *handle, twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
-  char command[COMMAND_BUFFER_SIZE];
-  int n;
+  twopence_buf_t *bp;
   int link_fd;
-  int sent, rc;
+  int rc;
 
   // Check that the username is valid
   if (_twopence_invalid_username(xfer->user))
     return TWOPENCE_PARAMETER_ERROR;
-
-  // Prepare command to send to the remote host
-  n = snprintf(command, COMMAND_BUFFER_SIZE,
-               "e...%s %s", xfer->user, xfer->remote.name);
-  if (n < 0 || n >= COMMAND_BUFFER_SIZE)
-    return TWOPENCE_PARAMETER_ERROR;
-  store_length(n + 1, command);
 
   // Open link for transmitting the command
   link_fd = __twopence_pipe_open_link(handle);
   if (link_fd < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
+  // Prepare command to send to the remote host
+  bp = twopence_protocol_build_extract_packet(xfer->user, xfer->remote.name);
+
   // Send command (including terminating NUL)
-  sent = __twopence_pipe_sendbuf(handle, link_fd, command, n + 1);
-  if (sent != n + 1)
-  {
+  if (__twopence_pipe_send(handle, bp) < 0)
     return TWOPENCE_SEND_COMMAND_ERROR;
-  }
 
   rc = _twopence_receive_file(handle, xfer->local_stream, link_fd, &status->major);
   if (rc < 0)
@@ -757,29 +767,13 @@ int _twopence_extract_virtio_serial
 int _twopence_exit_virtio_serial
   (struct twopence_pipe_target *handle)
 {
-  char command[COMMAND_BUFFER_SIZE];
-  int n;
-  int link_fd;
-  int sent;
-
-  // Prepare command to send to the remote host
-  n = snprintf(command, COMMAND_BUFFER_SIZE,
-               "q...");
-  if (n < 0 || n >= COMMAND_BUFFER_SIZE)
-    return TWOPENCE_PARAMETER_ERROR;
-  store_length(n + 1, command);
-
-  // Open link for sending exit command
-  link_fd = __twopence_pipe_open_link(handle);
-  if (link_fd < 0)
+  // Open link for sending interrupt command
+  if (__twopence_pipe_open_link(handle) < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
-  // Send command (including terminating NUL)
-  sent = __twopence_pipe_sendbuf(handle, link_fd, command, n + 1);
-  if (sent != n + 1)
-  {
-    return TWOPENCE_SEND_COMMAND_ERROR;
-  }
+  // Send command
+  if (__twopence_pipe_send(handle, twopence_protocol_build_simple_packet(TWOPENCE_PROTO_TYPE_QUIT)) < 0)
+    return TWOPENCE_INTERRUPT_COMMAND_ERROR;
 
   return 0;
 }
@@ -790,29 +784,13 @@ int _twopence_exit_virtio_serial
 int _twopence_interrupt_virtio_serial
   (struct twopence_pipe_target *handle)
 {
-  char command[COMMAND_BUFFER_SIZE];
-  int n;
-  int link_fd;
-  int sent;
-
-  // Prepare command to send to the remote host
-  n = snprintf(command, COMMAND_BUFFER_SIZE,
-               "I...");
-  if (n < 0 || n >= COMMAND_BUFFER_SIZE)
-    return TWOPENCE_PARAMETER_ERROR;
-  store_length(n + 1, command);
-
   // Open link for sending interrupt command
-  link_fd = __twopence_pipe_open_link(handle);
-  if (link_fd < 0)
+  if (__twopence_pipe_open_link(handle) < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
-  // Send command (including terminating NUL)
-  sent = __twopence_pipe_sendbuf(handle, link_fd, command, n + 1);
-  if (sent != n + 1)
-  {
+  // Send command
+  if (__twopence_pipe_send(handle, twopence_protocol_build_simple_packet(TWOPENCE_PROTO_TYPE_INTR)) < 0)
     return TWOPENCE_INTERRUPT_COMMAND_ERROR;
-  }
 
   return 0;
 }
