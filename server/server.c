@@ -514,7 +514,7 @@ server_extract_file_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopen
 bool
 server_extract_file_send(transaction_t *trans)
 {
-	socket_t *sock;
+	twopence_sock_t *sock;
 	twopence_buf_t *bp;
 
 	TRACE("%s()\n", __func__);
@@ -568,7 +568,7 @@ bool
 server_run_command_send(transaction_t *trans)
 {
 	unsigned int i;
-	socket_t *sock;
+	twopence_sock_t *sock;
 	int status;
 	pid_t pid;
 	bool pending_output;
@@ -712,7 +712,7 @@ child_handler(int sig)
 }
 
 void
-server_run(socket_t *sock)
+server_run(twopence_sock_t *sock)
 {
 	static unsigned int global_client_id = 1;
 	connection_pool_t *pool;

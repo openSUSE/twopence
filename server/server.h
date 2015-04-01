@@ -55,23 +55,23 @@ struct transaction {
 	bool			(*recv)(transaction_t *, const twopence_hdr_t *hdr, twopence_buf_t *);
 
 	twopence_protocol_state_t ps;
-	socket_t *		client_sock;
+	twopence_sock_t *	client_sock;
 
 	pid_t			pid;
 	int			status;
 
-	socket_t *		local_sink;
+	twopence_sock_t *	local_sink;
 
 	unsigned int		num_local_sources;
-	socket_t *		local_source[TRANSACTION_MAX_SOURCES];
-	socket_t *		local_source_stderr;
+	twopence_sock_t *	local_source[TRANSACTION_MAX_SOURCES];
+	twopence_sock_t *	local_source_stderr;
 };
 
-extern transaction_t *	transaction_new(socket_t *client, unsigned int type, const twopence_protocol_state_t *ps);
+extern transaction_t *	transaction_new(twopence_sock_t *client, unsigned int type, const twopence_protocol_state_t *ps);
 extern void		transaction_free(transaction_t *trans);
-extern socket_t *	transaction_attach_local_sink(transaction_t *trans, int fd);
+extern twopence_sock_t *	transaction_attach_local_sink(transaction_t *trans, int fd);
 extern void		transaction_close_sink(transaction_t *trans);
-extern socket_t *	transaction_attach_local_source(transaction_t *trans, int fd);
+extern twopence_sock_t *	transaction_attach_local_source(transaction_t *trans, int fd);
 extern void		transaction_close_source(transaction_t *trans, unsigned int i);
 extern int		transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max);
 extern void		transaction_doio(transaction_t *trans);
@@ -87,7 +87,7 @@ extern void		transaction_send_major(transaction_t *trans, unsigned int code);
 extern void		transaction_send_minor(transaction_t *trans, unsigned int code);
 extern void		transaction_send_timeout(transaction_t *trans);
 
-extern connection_t *	connection_new(semantics_t *semantics, socket_t *client_sock, unsigned int client_id);
+extern connection_t *	connection_new(semantics_t *semantics, twopence_sock_t *client_sock, unsigned int client_id);
 extern void		connection_free(connection_t *conn);
 extern unsigned int	connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max);
 extern bool		connection_process_packet(connection_t *conn, twopence_buf_t *bp);
@@ -97,7 +97,7 @@ extern connection_pool_t *connection_pool_new(void);
 extern void		connection_pool_add_connection(connection_pool_t *pool, connection_t *conn);
 extern bool		connection_pool_poll(connection_pool_t *pool);
 
-extern void		server_run(socket_t *);
+extern void		server_run(twopence_sock_t *);
 
 #define __TRACE(level, fmt...) \
 	do { \

@@ -50,7 +50,7 @@
  * Command handling
  */
 transaction_t *
-transaction_new(socket_t *client, unsigned int type, const twopence_protocol_state_t *ps)
+transaction_new(twopence_sock_t *client, unsigned int type, const twopence_protocol_state_t *ps)
 {
 	transaction_t *trans;
 
@@ -72,7 +72,7 @@ transaction_free(transaction_t *trans)
 	if (trans->local_sink)
 		socket_free(trans->local_sink);
 	for (i = 0; i < trans->num_local_sources; ++i) {
-		socket_t *sock = trans->local_source[i];
+		twopence_sock_t *sock = trans->local_source[i];
 
 		if (sock)
 			socket_free(sock);
@@ -81,10 +81,10 @@ transaction_free(transaction_t *trans)
 	free(trans);
 }
 
-socket_t *
+twopence_sock_t *
 transaction_attach_local_sink(transaction_t *trans, int fd)
 {
-	socket_t *sock;
+	twopence_sock_t *sock;
 
 	if (trans->local_sink) {
 		fprintf(stderr, "%s: duplicate local sink\n", __func__);
@@ -105,10 +105,10 @@ transaction_close_sink(transaction_t *trans)
 	}
 }
 
-socket_t *
+twopence_sock_t *
 transaction_attach_local_source(transaction_t *trans, int fd)
 {
-	socket_t *sock;
+	twopence_sock_t *sock;
 
 	if (trans->num_local_sources >= TRANSACTION_MAX_SOURCES) {
 		fprintf(stderr, "%s: too many local sources\n", __func__);
@@ -122,7 +122,7 @@ transaction_attach_local_source(transaction_t *trans, int fd)
 void
 transaction_close_source(transaction_t *trans, unsigned int i)
 {
-	socket_t *sock;
+	twopence_sock_t *sock;
 
 	if (i < trans->num_local_sources && trans->local_source[i]) {
 		sock = trans->local_source[i];
@@ -137,7 +137,7 @@ int
 transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max)
 {
 	unsigned int nfds = 0, i;
-	socket_t *sock;
+	twopence_sock_t *sock;
 
 #if 0
 	if (nfds < max
@@ -185,7 +185,7 @@ transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max
 void
 transaction_doio(transaction_t *trans)
 {
-	socket_t *sock;
+	twopence_sock_t *sock;
 	unsigned int n;
 
 	TRACE2("transaction_doio()\n");
@@ -312,7 +312,7 @@ transaction_send_timeout(transaction_t *trans)
 void
 transaction_queue_stdin(transaction_t *trans, twopence_buf_t *bp)
 {
-	socket_t *sock;
+	twopence_sock_t *sock;
 
 	if ((sock = trans->local_sink) == NULL) {
 		twopence_buf_free(bp);
@@ -334,7 +334,7 @@ bool
 transaction_write_data(transaction_t *trans, twopence_buf_t *payload)
 {
 	unsigned int count;
-	socket_t *sock;
+	twopence_sock_t *sock;
 	int n;
 
 	if ((sock = trans->local_sink) == NULL || !socket_xmit_queue_allowed(sock)) {
@@ -358,7 +358,7 @@ transaction_write_data(transaction_t *trans, twopence_buf_t *payload)
 bool
 transaction_write_eof(transaction_t *trans)
 {
-	socket_t *sock;
+	twopence_sock_t *sock;
 
 	if ((sock = trans->local_sink) == NULL)
 		return false;
@@ -370,7 +370,7 @@ int
 transaction_process(transaction_t *trans)
 {
 	unsigned int i;
-	socket_t *sock;
+	twopence_sock_t *sock;
 
 	for (i = 0; i < trans->num_local_sources; ++i) {
 		twopence_buf_t *bp;

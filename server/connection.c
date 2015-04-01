@@ -59,7 +59,7 @@ struct connection {
 
 	semantics_t *	semantics;
 
-	socket_t *	client_sock;
+	twopence_sock_t *client_sock;
 	unsigned int	client_id;
 	unsigned int	next_id;
 
@@ -68,7 +68,7 @@ struct connection {
 };
 
 connection_t *
-connection_new(semantics_t *semantics, socket_t *client_sock, unsigned int client_id)
+connection_new(semantics_t *semantics, twopence_sock_t *client_sock, unsigned int client_id)
 {
 	connection_t *conn;
 
@@ -101,7 +101,7 @@ unsigned int
 connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
 {
 	unsigned int nfds = 0;
-	socket_t *sock;
+	twopence_sock_t *sock;
 
 	sock = conn->client_sock;
 	if (sock && socket_is_dead(sock)) {
@@ -294,7 +294,7 @@ void
 connection_doio(connection_t *conn)
 {
 	transaction_t *trans;
-	socket_t *sock;
+	twopence_sock_t *sock;
 
 	if ((sock = conn->client_sock) != NULL) {
 		if (socket_doio(sock) < 0) {

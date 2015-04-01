@@ -24,7 +24,7 @@
 #include <stdint.h>
 #include "twopence.h"
 
-typedef struct socket socket_t;
+typedef struct socket twopence_sock_t;
 typedef struct packet packet_t;
 typedef struct queue queue_t;
 
@@ -38,29 +38,29 @@ extern packet_t *	queue_head(const queue_t *queue);
 extern bool		queue_full(const queue_t *queue);
 extern packet_t *	queue_dequeue(queue_t *queue);
 
-extern socket_t *	socket_new(int fd);
-extern socket_t *	socket_new_flags(int fd, int oflags);
-extern void		socket_free(socket_t *sock);
-extern int		socket_id(const socket_t *sock);
-extern int		socket_recv_buffer(socket_t *sock, twopence_buf_t *bp);
-extern int		socket_write(socket_t *sock, twopence_buf_t *bp, unsigned int count);
-extern int		socket_send_buffer(socket_t *sock, twopence_buf_t *bp);
-extern void		socket_queue_xmit(socket_t *sock, twopence_buf_t *bp);
-extern int		socket_xmit(socket_t *sock, twopence_buf_t *bp);
-extern int		socket_send_queued(socket_t *sock);
-extern unsigned int	socket_xmit_queue_bytes(socket_t *sock);
-extern bool		socket_xmit_queue_allowed(const socket_t *sock);
-extern bool		socket_shutdown_write(socket_t *sock);
-extern void		socket_mark_dead(socket_t *sock);
-extern bool		socket_is_read_eof(const socket_t *);
-extern bool		socket_is_write_eof(const socket_t *);
-extern bool		socket_is_dead(socket_t *sock);
-extern void		socket_prepare_poll(socket_t *);
-extern bool		socket_fill_poll(socket_t *sock, struct pollfd *pfd);
-extern int		socket_doio(socket_t *sock);
-extern twopence_buf_t *	socket_post_recvbuf_if_needed(socket_t *sock, unsigned int size);
-extern void		socket_post_recvbuf(socket_t *sock, twopence_buf_t *bp);
-extern twopence_buf_t *	socket_take_recvbuf(socket_t *);
-extern twopence_buf_t *	socket_get_recvbuf(socket_t *);
+extern twopence_sock_t *socket_new(int fd);
+extern twopence_sock_t *socket_new_flags(int fd, int oflags);
+extern void		socket_free(twopence_sock_t *sock);
+extern int		socket_id(const twopence_sock_t *sock);
+extern int		socket_recv_buffer(twopence_sock_t *sock, twopence_buf_t *bp);
+extern int		socket_write(twopence_sock_t *sock, twopence_buf_t *bp, unsigned int count);
+extern int		socket_send_buffer(twopence_sock_t *sock, twopence_buf_t *bp);
+extern void		socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp);
+extern int		socket_xmit(twopence_sock_t *sock, twopence_buf_t *bp);
+extern int		socket_send_queued(twopence_sock_t *sock);
+extern unsigned int	socket_xmit_queue_bytes(twopence_sock_t *sock);
+extern bool		socket_xmit_queue_allowed(const twopence_sock_t *sock);
+extern bool		socket_shutdown_write(twopence_sock_t *sock);
+extern void		socket_mark_dead(twopence_sock_t *sock);
+extern bool		socket_is_read_eof(const twopence_sock_t *);
+extern bool		socket_is_write_eof(const twopence_sock_t *);
+extern bool		socket_is_dead(twopence_sock_t *sock);
+extern void		socket_prepare_poll(twopence_sock_t *);
+extern bool		socket_fill_poll(twopence_sock_t *sock, struct pollfd *pfd);
+extern int		socket_doio(twopence_sock_t *sock);
+extern twopence_buf_t *	socket_post_recvbuf_if_needed(twopence_sock_t *sock, unsigned int size);
+extern void		socket_post_recvbuf(twopence_sock_t *sock, twopence_buf_t *bp);
+extern twopence_buf_t *	socket_take_recvbuf(twopence_sock_t *);
+extern twopence_buf_t *	socket_get_recvbuf(twopence_sock_t *);
 
 #endif /* SOCKET_H */

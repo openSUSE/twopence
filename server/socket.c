@@ -159,10 +159,10 @@ queue_dequeue(queue_t *queue)
 	return pkt;
 }
 
-socket_t *
+twopence_sock_t *
 __socket_new(int fd)
 {
-	socket_t *sock;
+	twopence_sock_t *sock;
 	int f;
 
 	sock = calloc(1, sizeof(*sock));
@@ -179,16 +179,16 @@ __socket_new(int fd)
 	return sock;
 }
 
-socket_t *
+twopence_sock_t *
 socket_new(int fd)
 {
 	return __socket_new(fd);
 }
 
-socket_t *
+twopence_sock_t *
 socket_new_flags(int fd, int oflags)
 {
-	socket_t *sock;
+	twopence_sock_t *sock;
 
 	sock = __socket_new(fd);
 	switch (oflags & O_ACCMODE) {
@@ -207,7 +207,7 @@ socket_new_flags(int fd, int oflags)
 }
 
 void
-socket_free(socket_t *sock)
+socket_free(twopence_sock_t *sock)
 {
 	TRACE("%s(%d)\n", __func__, sock->fd);
 	if (sock->fd >= 0)
@@ -220,13 +220,13 @@ socket_free(socket_t *sock)
 }
 
 int
-socket_id(const socket_t *sock)
+socket_id(const twopence_sock_t *sock)
 {
 	return sock->fd;
 }
 
 int
-socket_recv_buffer(socket_t *sock, twopence_buf_t *bp)
+socket_recv_buffer(twopence_sock_t *sock, twopence_buf_t *bp)
 {
 	unsigned int count;
 	int n;
@@ -254,7 +254,7 @@ socket_recv_buffer(socket_t *sock, twopence_buf_t *bp)
 }
 
 twopence_buf_t *
-socket_take_recvbuf(socket_t *sock)
+socket_take_recvbuf(twopence_sock_t *sock)
 {
 	twopence_buf_t *bp;
 
@@ -267,13 +267,13 @@ socket_take_recvbuf(socket_t *sock)
 }
 
 twopence_buf_t *
-socket_get_recvbuf(socket_t *sock)
+socket_get_recvbuf(twopence_sock_t *sock)
 {
 	return sock->recv_buf;
 }
 
 void
-socket_post_recvbuf(socket_t *sock, twopence_buf_t *bp)
+socket_post_recvbuf(twopence_sock_t *sock, twopence_buf_t *bp)
 {
 	if (sock->recv_buf != NULL) {
 		assert(twopence_buf_count(sock->recv_buf) == 0);
@@ -283,7 +283,7 @@ socket_post_recvbuf(socket_t *sock, twopence_buf_t *bp)
 }
 
 twopence_buf_t *
-socket_post_recvbuf_if_needed(socket_t *sock, unsigned int size)
+socket_post_recvbuf_if_needed(twopence_sock_t *sock, unsigned int size)
 {
 	/* If the socket is at EOF, or if we already have posted a
 	 * receive buffer, there's no need to post a new one.
@@ -297,7 +297,7 @@ socket_post_recvbuf_if_needed(socket_t *sock, unsigned int size)
 }
 
 int
-socket_write(socket_t *sock, twopence_buf_t *bp, unsigned int count)
+socket_write(twopence_sock_t *sock, twopence_buf_t *bp, unsigned int count)
 {
 	int n;
 
@@ -314,7 +314,7 @@ socket_write(socket_t *sock, twopence_buf_t *bp, unsigned int count)
 }
 
 int
-socket_send_buffer(socket_t *sock, twopence_buf_t *bp)
+socket_send_buffer(twopence_sock_t *sock, twopence_buf_t *bp)
 {
 	int n;
 
@@ -327,7 +327,7 @@ socket_send_buffer(socket_t *sock, twopence_buf_t *bp)
 }
 
 static int
-__socket_queue_xmit(socket_t *sock, twopence_buf_t *bp, int direct)
+__socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp, int direct)
 {
 	int n = 0;
 
@@ -378,19 +378,19 @@ out_drop_buffer:
 }
 
 void
-socket_queue_xmit(socket_t *sock, twopence_buf_t *bp)
+socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp)
 {
 	__socket_queue_xmit(sock, bp, 1);
 }
 
 int
-socket_xmit(socket_t *sock, twopence_buf_t *bp)
+socket_xmit(twopence_sock_t *sock, twopence_buf_t *bp)
 {
 	return __socket_queue_xmit(sock, bp, 2);
 }
 
 int
-socket_send_queued(socket_t *sock)
+socket_send_queued(twopence_sock_t *sock)
 {
 	packet_t *pkt;
 	int n;
@@ -409,13 +409,13 @@ socket_send_queued(socket_t *sock)
 }
 
 unsigned int
-socket_xmit_queue_bytes(socket_t *sock)
+socket_xmit_queue_bytes(twopence_sock_t *sock)
 {
 	return sock->xmit_queue.bytes;
 }
 
 bool
-socket_xmit_queue_allowed(const socket_t *sock)
+socket_xmit_queue_allowed(const twopence_sock_t *sock)
 {
 	if (sock->write_eof) {
 		/* This is different from socket_is_write_eof.
@@ -436,7 +436,7 @@ socket_xmit_queue_allowed(const socket_t *sock)
 }
 
 static bool
-__socket_try_shutdown(socket_t *sock)
+__socket_try_shutdown(twopence_sock_t *sock)
 {
 	if (queue_empty(&sock->xmit_queue)) {
 		shutdown(sock->fd, SHUT_WR);
@@ -447,7 +447,7 @@ __socket_try_shutdown(socket_t *sock)
 }
 
 bool
-socket_shutdown_write(socket_t *sock)
+socket_shutdown_write(twopence_sock_t *sock)
 {
 	if (sock->write_eof)
 		return true;
@@ -458,32 +458,32 @@ socket_shutdown_write(socket_t *sock)
 }
 
 void
-socket_mark_dead(socket_t *sock)
+socket_mark_dead(twopence_sock_t *sock)
 {
 	sock->read_eof = true;
 	sock->write_eof = SHUTDOWN_SENT;
 }
 
 bool
-socket_is_read_eof(const socket_t *sock)
+socket_is_read_eof(const twopence_sock_t *sock)
 {
 	return sock->read_eof;
 }
 
 bool
-socket_is_write_eof(const socket_t *sock)
+socket_is_write_eof(const twopence_sock_t *sock)
 {
 	return sock->write_eof == SHUTDOWN_SENT;
 }
 
 bool
-socket_is_dead(socket_t *sock)
+socket_is_dead(twopence_sock_t *sock)
 {
 	return sock->read_eof && sock->write_eof == SHUTDOWN_SENT;
 }
 
 static const char *
-socket_state_desc(const socket_t *sock)
+socket_state_desc(const twopence_sock_t *sock)
 {
 	if (sock->read_eof) {
 		switch (sock->write_eof) {
@@ -508,7 +508,7 @@ socket_state_desc(const socket_t *sock)
 }
 
 static const char *
-socket_queue_desc(const socket_t *sock)
+socket_queue_desc(const twopence_sock_t *sock)
 {
 	static char buffer[60];
 	unsigned int recv_bytes = sock->recv_buf? twopence_buf_count(sock->recv_buf) : 0;
@@ -558,13 +558,13 @@ poll_bit_string(int events)
 }
 
 void
-socket_prepare_poll(socket_t *sock)
+socket_prepare_poll(twopence_sock_t *sock)
 {
 	sock->poll_data = NULL;
 }
 
 bool
-socket_fill_poll(socket_t *sock, struct pollfd *pfd)
+socket_fill_poll(twopence_sock_t *sock, struct pollfd *pfd)
 {
 	sock->poll_data = NULL;
 
@@ -591,7 +591,7 @@ socket_fill_poll(socket_t *sock, struct pollfd *pfd)
 }
 
 int
-socket_doio(socket_t *sock)
+socket_doio(twopence_sock_t *sock)
 {
 	struct pollfd *pfd;
 	int n;
