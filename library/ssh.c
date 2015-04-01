@@ -54,8 +54,8 @@ struct twopence_ssh_target
   ssh_event event;
 
   /* Current command being executed.
-   * Down the road, we can have one foreground command (which will
-   * receive Ctrl-C interrupts), and any number of backgrounded commands.
+   * We have one foreground command (which will receive Ctrl-C interrupts),
+   * and any number of backgrounded commands.
    */
   struct {
     twopence_ssh_transaction_t *foreground;
@@ -134,17 +134,6 @@ struct twopence_scp_transaction {
   /* Used for printing dots */
   twopence_iostream_t *	dots_stream;
 };
-
-#if 0
-# define SSH_TRACE(fmt...)	fprintf(stderr, fmt)
-#else
-# define SSH_TRACE(fmt...)	do { } while (0)
-#endif
-
-/* Note to self: if you need to find out what libssh is doing,
- * consider enabling tracing:
- *  ssh_set_log_level(SSH_LOG_TRACE);
- */
 
 extern const struct twopence_plugin twopence_ssh_ops;
 
@@ -341,7 +330,7 @@ __twopence_ssh_exit_signal_callback(ssh_session session, ssh_channel channel, co
   };
   int signo;
 
-  SSH_TRACE("%s(%s)\n", __func__, signal);
+  twopence_debug("%s(%s)\n", __func__, signal);
   for (signo = 0; signo < NSIG; ++signo) {
     const char *name = signames[signo];
 
@@ -454,14 +443,14 @@ __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
     status->minor = trans->exit_signal;
   }
 
-  SSH_TRACE("exit status is %d/%d\n", status->major, status->minor);
+  twopence_debug("exit status is %d/%d\n", status->major, status->minor);
   return 0;
 }
 
 static int
 __twopence_ssh_transaction_mark_stdin_eof(twopence_ssh_transaction_t *trans)
 {
-  SSH_TRACE("%s: stdin is at EOF\n", __func__);
+  twopence_debug("%s: stdin is at EOF\n", __func__);
   trans->stdin.eof = true;
 
   if (__twopence_ssh_transaction_send_eof(trans) == SSH_ERROR)
@@ -504,7 +493,7 @@ __twopence_ssh_transaction_forward_stdin(twopence_ssh_transaction_t *trans)
     return __twopence_ssh_transaction_mark_stdin_eof(trans);
   }
 
-  SSH_TRACE("%s: writing %d bytes to command\n", __func__, size);
+  twopence_debug("%s: writing %d bytes to command\n", __func__, size);
   written = ssh_channel_write(trans->channel, buffer, size);
   if (written != size)
     return -1;
@@ -524,7 +513,7 @@ __twopence_ssh_transaction_forward_output(twopence_ssh_transaction_t *trans, str
     return 0;
 
   while (!out->eof && ssh_channel_poll(trans->channel, out->index) != 0) {
-    SSH_TRACE("%s: trying to read some data from %s\n", __func__, name);
+    twopence_debug("%s: trying to read some data from %s\n", __func__, name);
 
     size = ssh_channel_read_nonblocking(trans->channel, buffer, sizeof(buffer), out->index);
     if (size == SSH_ERROR) {
@@ -533,11 +522,11 @@ __twopence_ssh_transaction_forward_output(twopence_ssh_transaction_t *trans, str
     }
 
     if (size == SSH_EOF) {
-      SSH_TRACE("%s: %s is at EOF\n", __func__, name);
+      twopence_debug("%s: %s is at EOF\n", __func__, name);
       out->eof = true;
     } else {
       /* If there is no local stream to write it to, simply drop it on the floor */
-      SSH_TRACE("%s: got %u bytes of data on %s\n", __func__, size, name);
+      twopence_debug("%s: got %u bytes of data on %s\n", __func__, size, name);
       if (size > 0 && out->stream) {
         if (twopence_iostream_write(out->stream, buffer, size) < 0) {
           __twopence_ssh_transaction_fail(trans, TWOPENCE_RECEIVE_RESULTS_ERROR);
@@ -555,7 +544,7 @@ __twopence_ssh_stdin_cb(socket_t fd, int revents, void *userdata)
 {
   twopence_ssh_transaction_t *trans = (twopence_ssh_transaction_t *) userdata;
 
-  SSH_TRACE("%s: can read data on fd %d\n", __func__, fd);
+  twopence_debug("%s: can read data on fd %d\n", __func__, fd);
   if (__twopence_ssh_transaction_forward_stdin(trans) < 0)
     __twopence_ssh_transaction_fail(trans, TWOPENCE_FORWARD_INPUT_ERROR);
 
@@ -574,7 +563,7 @@ __twopence_ssh_transaction_enable_poll(ssh_event event, twopence_ssh_transaction
   if ((stream = trans->stdin.stream) != NULL && !twopence_iostream_eof(stream)) {
     trans->stdin.fd = twopence_iostream_getfd(stream);
     if (trans->stdin.fd < 0) {
-      SSH_TRACE("%s: writing stdin synchronously to peer\n", __func__);
+      twopence_debug("%s: writing stdin synchronously to peer\n", __func__);
 
       while (!trans->stdin.eof) {
         if (__twopence_ssh_transaction_forward_stdin(trans) < 0) {
@@ -624,7 +613,7 @@ __twopence_ssh_poll(struct twopence_ssh_target *handle)
        || __twopence_ssh_transaction_forward_output(trans, &trans->stderr, "stderr") < 0)
         return 0;
 
-      SSH_TRACE("eof=%d/%d/%d\n", trans->stdin.eof, trans->stdout.eof, trans->stderr.eof);
+      twopence_debug("eof=%d/%d/%d\n", trans->stdin.eof, trans->stdout.eof, trans->stderr.eof);
       if (trans->stdout.eof && trans->stderr.eof) {
         trans->done = true;
         return __twopence_ssh_transaction_get_exit_status(trans);
@@ -641,10 +630,10 @@ __twopence_ssh_poll(struct twopence_ssh_target *handle)
       }
     }
 
-    SSH_TRACE("polling for events; timeout=%d\n", timeout);
+    twopence_debug("polling for events; timeout=%d\n", timeout);
     rc = ssh_event_dopoll(event, timeout);
 
-    SSH_TRACE("ssh_event_dopoll() = %d\n", rc);
+    twopence_debug("ssh_event_dopoll() = %d\n", rc);
     if (rc == SSH_ERROR)
       return TWOPENCE_INTERNAL_ERROR;
   } while (true);
@@ -809,6 +798,16 @@ __twopence_ssh_open_session(const struct twopence_ssh_target *handle, const char
   {
     ssh_free(session);
     return NULL;
+  }
+
+  if (twopence_debug_level > 1) {
+    int tracing = SSH_LOG_DEBUG;
+
+    if (twopence_debug_level > 2)
+      tracing = SSH_LOG_TRACE; /* even more verbose */
+
+    if (ssh_options_set(session, SSH_OPTIONS_LOG_VERBOSITY, &tracing) < 0)
+      twopence_debug("warning: unable to set ssh log verbosity to %d. bummer...", tracing);
   }
 
   // Connect to the server
