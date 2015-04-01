@@ -229,6 +229,42 @@ if [ $? -eq 0 ]; then
 fi
 test_case_report
 
+#
+# This doesn't really belong here, but OTOH we need to run python with a
+# specific stdin...
+#
+test_case_begin "ensure that running commands through python will also read from stdin"
+cat >/tmp/twopence-test.py <<EOF
+import twopence
+import sys
+
+target = twopence.Target("$TARGET");
+target.run("cat")
+EOF
+
+teststring="imadoofus"
+echo $teststring | python /tmp/twopence-test.py | (
+	read foo
+	if [ -z "$foo" ]; then
+		echo "No output from command"
+		exit 1
+	fi
+	if [ "$foo" != "$teststring" ]; then
+		echo "Unexpected output from command"
+		echo "--<<<--"
+		echo $foo
+		echo "-->>>--"
+		echo "Expected \"$teststring\""
+		exit 1
+	fi
+
+	echo "Good, received expected output \"$teststring\""
+	exit 0
+)
+test_case_check_status $?
+test_case_report
+rm -f /tmp/twopence-test.py
+
 test_case_begin "extract '$server_test_file' => 'etc_services.txt'"
 twopence_extract $TARGET $server_test_file etc_services.txt
 test_case_check_status $?

@@ -302,6 +302,22 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 	if (self->stdin) {
 		if (!Command_redirect_iostream(cmd, TWOPENCE_STDIN, self->stdin, NULL))
 			return -1;
+	} else
+	if (!self->background) {
+		/* Eric wants us to pipe stdin into the command by default */
+		FILE *fp;
+		int fd;
+
+		fp = PySys_GetFile("stdin", NULL);
+		if (fp != NULL) {
+			if ((fd = fileno(fp)) < 0) {
+				PyErr_SetString(PyExc_SystemError, "cannot connect command to stdin (not a regular file)");
+				return -1;
+			}
+			/* We dup() the file descriptor so that we no longer have to worry
+			 * about what python does with its File object */
+			twopence_command_iostream_redirect(cmd, TWOPENCE_STDIN, dup(fd), true);
+		}
 	}
 
 	return 0;
