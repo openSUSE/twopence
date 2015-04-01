@@ -22,6 +22,7 @@
 #define PIPE_H
 
 #include "protocol.h"
+#include "transaction.h"
 #include "socket.h"
 
 /* Base class for all targets using the twopence pipe protocol */
@@ -39,7 +40,7 @@ struct twopence_pipe_target {
 
   /* "foreground" transaction. This is the transaction that gets
    * cancelled when twopence_interrupt() is called. */
-  twopence_transaction_t *current_transaction;
+  twopence_transaction_t *	current_transaction;
 };
 
 
