@@ -560,26 +560,3 @@ twopence_transaction_find_source(twopence_transaction_t *trans, unsigned char id
 	}
 	return NULL;
 }
-
-/*
- * We have received data from the client, and are asked to write it to a local file,
- * or to the command's stdin
- */
-void
-twopence_transaction_write_data(twopence_transaction_t *trans, twopence_buf_t *payload, unsigned char id)
-{
-	twopence_trans_channel_t *sink;
-
-	sink = twopence_transaction_find_sink(trans, id);
-	if (sink && !twopence_transaction_channel_write_data(sink, payload))
-		twopence_transaction_fail(trans, errno);
-}
-
-void
-twopence_transaction_write_eof(twopence_transaction_t *trans)
-{
-	twopence_trans_channel_t *sink;
-
-	for (sink = trans->local_sink; sink; sink = sink->next)
-		twopence_transaction_channel_write_eof(sink);
-}
