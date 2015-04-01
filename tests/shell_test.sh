@@ -175,6 +175,13 @@ fi
 test_case_report
 rm -f expect.txt got.txt
 
+# If wildcard is not supported, the ls command should exit with an error
+# because there's no file named '*'
+test_case_begin "Verify that wildcarding works"
+twopence_command $TARGET 'ls *' >/dev/null
+test_case_check_status $?
+test_case_report
+
 test_case_begin "command 'ls -l /oops'"
 twopence_command -1 stdout.txt -2 stderr.txt $TARGET 'ls -l /oops'
 test_case_check_status $? 9
