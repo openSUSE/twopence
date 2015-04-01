@@ -37,15 +37,15 @@ struct semantics {
 
 #define DEFAULT_COMMAND_TIMEOUT	12	/* seconds */
 
-extern twopence_conn_t *	connection_new(twopence_conn_semantics_t *semantics, twopence_sock_t *client_sock, unsigned int client_id);
-extern void			connection_free(twopence_conn_t *conn);
-extern unsigned int		connection_fill_poll(twopence_conn_t *conn, twopence_pollinfo_t *pinfo);
-extern bool			connection_process_packet(twopence_conn_t *conn, twopence_buf_t *bp);
-extern bool			connection_process(twopence_conn_t *conn);
+extern twopence_conn_t *	twopence_conn_new(twopence_conn_semantics_t *semantics, twopence_sock_t *client_sock, unsigned int client_id);
+extern void			twopence_conn_free(twopence_conn_t *conn);
+extern unsigned int		twopence_conn_fill_poll(twopence_conn_t *conn, twopence_pollinfo_t *pinfo);
+extern bool			twopence_conn_process_packet(twopence_conn_t *conn, twopence_buf_t *bp);
+extern bool			twopence_conn_process(twopence_conn_t *conn);
 
-extern twopence_conn_pool_t *	connection_pool_new(void);
-extern void			connection_pool_add_connection(twopence_conn_pool_t *pool, twopence_conn_t *conn);
-extern bool			connection_pool_poll(twopence_conn_pool_t *pool);
+extern twopence_conn_pool_t *	twopence_conn_pool_new(void);
+extern void			twopence_conn_pool_add_connection(twopence_conn_pool_t *pool, twopence_conn_t *conn);
+extern bool			twopence_conn_pool_poll(twopence_conn_pool_t *pool);
 
 extern void			server_run(twopence_sock_t *);
 

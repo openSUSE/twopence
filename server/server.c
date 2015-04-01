@@ -739,10 +739,10 @@ server_run(twopence_sock_t *sock)
 
 	signal(SIGPIPE, SIG_IGN);
 
-	pool = connection_pool_new();
+	pool = twopence_conn_pool_new();
 
-	connection_pool_add_connection(pool, connection_new(&server_ops, sock, global_client_id++));
-	while (connection_pool_poll(pool))
+	twopence_conn_pool_add_connection(pool, twopence_conn_new(&server_ops, sock, global_client_id++));
+	while (twopence_conn_pool_poll(pool))
 		;
 
 	sigprocmask(SIG_SETMASK, &omask, NULL);

@@ -60,7 +60,7 @@ struct twopence_connection {
 };
 
 twopence_conn_t *
-connection_new(twopence_conn_semantics_t *semantics, twopence_sock_t *client_sock, unsigned int client_id)
+twopence_conn_new(twopence_conn_semantics_t *semantics, twopence_sock_t *client_sock, unsigned int client_id)
 {
 	twopence_conn_t *conn;
 
@@ -73,7 +73,7 @@ connection_new(twopence_conn_semantics_t *semantics, twopence_sock_t *client_soc
 }
 
 void
-connection_close(twopence_conn_t *conn)
+twopence_conn_close(twopence_conn_t *conn)
 {
 	if (conn->client_sock)
 		twopence_sock_free(conn->client_sock);
@@ -81,11 +81,11 @@ connection_close(twopence_conn_t *conn)
 }
 
 void
-connection_free(twopence_conn_t *conn)
+twopence_conn_free(twopence_conn_t *conn)
 {
 	twopence_transaction_t *trans;
 
-	connection_close(conn);
+	twopence_conn_close(conn);
 	while ((trans = conn->transactions) != NULL) {
 		conn->transactions = trans->next;
 		twopence_transaction_free(trans);
@@ -94,7 +94,7 @@ connection_free(twopence_conn_t *conn)
 }
 
 unsigned int
-connection_fill_poll(twopence_conn_t *conn, twopence_pollinfo_t *pinfo)
+twopence_conn_fill_poll(twopence_conn_t *conn, twopence_pollinfo_t *pinfo)
 {
 	unsigned int current_num_fds = pinfo->num_fds;
 	twopence_transaction_t *trans;
@@ -128,7 +128,7 @@ connection_fill_poll(twopence_conn_t *conn, twopence_pollinfo_t *pinfo)
  * Add a transaction to the connection
  */
 void
-connection_add_transaction(twopence_conn_t *conn, twopence_transaction_t *trans)
+twopence_conn_add_transaction(twopence_conn_t *conn, twopence_transaction_t *trans)
 {
 	trans->next = conn->transactions;
 	conn->transactions = trans;
@@ -138,7 +138,7 @@ connection_add_transaction(twopence_conn_t *conn, twopence_transaction_t *trans)
  * Find the transaction corresponding to a given XID.
  */
 twopence_transaction_t *
-connection_find_transaction(twopence_conn_t *conn, uint16_t xid)
+twopence_conn_find_transaction(twopence_conn_t *conn, uint16_t xid)
 {
 	twopence_transaction_t *trans;
 
@@ -151,7 +151,7 @@ connection_find_transaction(twopence_conn_t *conn, uint16_t xid)
 }
 
 static bool
-connection_process_request(twopence_conn_t *conn, const twopence_hdr_t *hdr,
+twopence_conn_process_request(twopence_conn_t *conn, const twopence_hdr_t *hdr,
 		twopence_buf_t *payload, const twopence_protocol_state_t *ps)
 {
 	twopence_transaction_t *trans = NULL;
@@ -173,7 +173,7 @@ connection_process_request(twopence_conn_t *conn, const twopence_hdr_t *hdr,
 	}
 
 	if (!trans->done) {
-		connection_add_transaction(conn, trans);
+		twopence_conn_add_transaction(conn, trans);
 	} else {
 		twopence_transaction_free(trans);
 	}
@@ -182,7 +182,7 @@ connection_process_request(twopence_conn_t *conn, const twopence_hdr_t *hdr,
 
 
 bool
-connection_process_packet(twopence_conn_t *conn, twopence_buf_t *bp)
+twopence_conn_process_packet(twopence_conn_t *conn, twopence_buf_t *bp)
 {
 	const twopence_hdr_t *hdr;
 	twopence_transaction_t *trans;
@@ -203,7 +203,7 @@ connection_process_packet(twopence_conn_t *conn, twopence_buf_t *bp)
 		if (hdr->type == TWOPENCE_PROTO_TYPE_HELLO) {
 			/* Process HELLO packet from client */
 			ps.cid = conn->client_id;
-			connection_process_request(conn, hdr, &payload, &ps);
+			twopence_conn_process_request(conn, hdr, &payload, &ps);
 			continue;
 		}
 
@@ -212,7 +212,7 @@ connection_process_packet(twopence_conn_t *conn, twopence_buf_t *bp)
 			continue;
 		}
 
-		trans = connection_find_transaction(conn, ps.xid);
+		trans = twopence_conn_find_transaction(conn, ps.xid);
 		if (trans != NULL) {
 			twopence_transaction_recv_packet(trans, hdr, &payload);
 		} else {
@@ -229,7 +229,7 @@ connection_process_packet(twopence_conn_t *conn, twopence_buf_t *bp)
 				break;
 
 			default:
-				connection_process_request(conn, hdr, &payload, &ps);
+				twopence_conn_process_request(conn, hdr, &payload, &ps);
 			}
 		}
 	}
@@ -241,7 +241,7 @@ connection_process_packet(twopence_conn_t *conn, twopence_buf_t *bp)
  * Process incoming packet(s) on the client connection
  */
 bool
-connection_process_incoming(twopence_conn_t *conn)
+twopence_conn_process_incoming(twopence_conn_t *conn)
 {
 	twopence_buf_t *bp;
 
@@ -249,7 +249,7 @@ connection_process_incoming(twopence_conn_t *conn)
 		return true;
 
 	while (twopence_protocol_buffer_complete(bp)) {
-		if (!connection_process_packet(conn, bp)) {
+		if (!twopence_conn_process_packet(conn, bp)) {
 			/* Something went wrong */
 			return false;
 		}
@@ -272,7 +272,7 @@ connection_process_incoming(twopence_conn_t *conn)
 }
 
 void
-connection_doio(twopence_conn_t *conn)
+twopence_conn_doio(twopence_conn_t *conn)
 {
 	twopence_transaction_t **pos, *trans;
 	twopence_sock_t *sock;
@@ -280,12 +280,12 @@ connection_doio(twopence_conn_t *conn)
 	if ((sock = conn->client_sock) != NULL) {
 		if (twopence_sock_doio(sock) < 0) {
 			twopence_debug("I/O error on socket: %m\n");
-			connection_close(conn);
+			twopence_conn_close(conn);
 			return;
 		}
 
 		/* See if we have received one or more complete packets */
-		if (!connection_process_incoming(conn)) {
+		if (!twopence_conn_process_incoming(conn)) {
 			/* Something went wrong */
 			exit(1); /* FIXME: shut down this conn forcefully */
 		}
@@ -303,7 +303,7 @@ connection_doio(twopence_conn_t *conn)
 		}
 
 		if (twopence_sock_is_dead(sock)) {
-			connection_close(conn);
+			twopence_conn_close(conn);
 			return;
 		}
 	}
@@ -326,7 +326,7 @@ struct twopence_connection_pool {
 };
 
 twopence_conn_pool_t *
-connection_pool_new(void)
+twopence_conn_pool_new(void)
 {
 	twopence_conn_pool_t *pool;
 
@@ -335,7 +335,7 @@ connection_pool_new(void)
 }
 
 void
-connection_pool_add_connection(twopence_conn_pool_t *pool, twopence_conn_t *conn)
+twopence_conn_pool_add_connection(twopence_conn_pool_t *pool, twopence_conn_t *conn)
 {
 	conn->next = pool->connections;
 	pool->connections = conn;
@@ -343,7 +343,7 @@ connection_pool_add_connection(twopence_conn_pool_t *pool, twopence_conn_t *conn
 
 
 bool
-connection_pool_poll(twopence_conn_pool_t *pool)
+twopence_conn_pool_poll(twopence_conn_pool_t *pool)
 {
 	twopence_pollinfo_t poll_info;
 	twopence_conn_t *conn, **connp;
@@ -365,10 +365,10 @@ connection_pool_poll(twopence_conn_pool_t *pool)
 
 	connp = &pool->connections;
 	while ((conn = *connp) != NULL) {
-		if (connection_fill_poll(conn, &poll_info) == 0) {
+		if (twopence_conn_fill_poll(conn, &poll_info) == 0) {
 			if (conn->client_sock == NULL) {
 				*connp = conn->next;
-				connection_free(conn);
+				twopence_conn_free(conn);
 				continue;
 			}
 			twopence_debug("connection doesn't wait for anything?!\n");
@@ -392,7 +392,7 @@ connection_pool_poll(twopence_conn_pool_t *pool)
 	(void) twopence_pollinfo_ppoll(&poll_info, &mask);
 
 	for (conn = pool->connections; conn; conn = conn->next)
-		connection_doio(conn);
+		twopence_conn_doio(conn);
 
 	return !!pool->connections;
 }
