@@ -12,7 +12,8 @@ OBJS	= main.o \
 	  connection.o \
 	  protocol.o \
 	  server.o \
-	  socket.o
+	  socket.o \
+	  transaction.o
 
 CFLAGS	= -D_GNU_SOURCE -I../library $(CCOPT)
 LIBS	= -L../library -ltwopence

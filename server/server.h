@@ -23,12 +23,12 @@
 
 #include <stdint.h>
 #include "twopence.h"
+#include "protocol.h"
 
 typedef struct socket socket_t;
 typedef struct packet packet_t;
 typedef struct queue queue_t;
 
-typedef struct header header_t;
 typedef struct transaction transaction_t;
 
 typedef struct connection connection_t;
@@ -44,33 +44,6 @@ struct semantics {
 };
 
 #define DEFAULT_COMMAND_TIMEOUT	12	/* seconds */
-
-/*
- * This should go into some global header file independent of this one.
- */
-struct header {
-	unsigned char	type;
-	unsigned char	pad;
-	uint16_t	len;
-};
-#define TWOPENCE_PROTO_HEADER_SIZE	4
-#define TWOPENCE_PROTO_MAX_PACKET	32768
-#define TWOPENCE_PROTO_MAX_PAYLOAD	(TWOPENCE_PROTO_MAX_PACKET - TWOPENCE_PROTO_HEADER_SIZE)
-
-#define PROTO_HDR_TYPE_INJECT	'i'
-#define PROTO_HDR_TYPE_EXTRACT	'e'
-#define PROTO_HDR_TYPE_COMMAND	'c'
-#define PROTO_HDR_TYPE_QUIT	'q'
-#define PROTO_HDR_TYPE_STDIN	'0'
-#define PROTO_HDR_TYPE_STDOUT	'1'
-#define PROTO_HDR_TYPE_STDERR	'2'
-#define PROTO_HDR_TYPE_DATA	'd'
-#define PROTO_HDR_TYPE_EOF	'E'
-#define PROTO_HDR_TYPE_INTR	'I'
-#define PROTO_HDR_TYPE_MAJOR	'M'
-#define PROTO_HDR_TYPE_MINOR	'm'
-#define PROTO_HDR_TYPE_TIMEOUT	'T'
-
 
 extern packet_t *	packet_new(twopence_buf_t *bp);
 extern void		packet_free(packet_t *pkt);
@@ -107,18 +80,6 @@ extern void		socket_post_recvbuf(socket_t *sock, twopence_buf_t *bp);
 extern twopence_buf_t *	socket_take_recvbuf(socket_t *);
 extern twopence_buf_t *	socket_get_recvbuf(socket_t *);
 
-
-extern void		protocol_build_header(twopence_buf_t *bp, unsigned char type);
-extern void		protocol_push_header(twopence_buf_t *bp, unsigned char type);
-extern twopence_buf_t *	protocol_command_buffer_new();
-extern twopence_buf_t *	protocol_build_eof_packet(void);
-extern twopence_buf_t *	protocol_build_uint_packet(unsigned char type, unsigned int value);
-extern twopence_buf_t *	protocol_recv_buffer_new(void);
-extern bool		protocol_buffer_complete(const twopence_buf_t *bp);
-extern const header_t *	protocol_dissect(twopence_buf_t *bp, twopence_buf_t *payload);
-extern bool		protocol_dissect_string(twopence_buf_t *bp, char *stringbuf, unsigned int size);
-extern bool		protocol_dissect_string_delim(twopence_buf_t *bp, char *stringbuf, unsigned int size, char delimiter);
-extern bool		protocol_dissect_uint(twopence_buf_t *bp, unsigned int *retval);
 
 #define TRANSACTION_MAX_SOURCES	4
 struct transaction {
