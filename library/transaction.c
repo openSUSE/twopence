@@ -44,7 +44,8 @@
 #include <ctype.h>
 #include <limits.h>
 
-#include "server.h"
+#include "protocol.h"
+#include "transaction.h"
 
 
 struct twopence_trans_channel {

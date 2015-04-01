@@ -18,6 +18,7 @@ LIB_OBJS= twopence.o \
 	  virtio.o \
 	  serial.o \
 	  pipe.o \
+	  transaction.o \
 	  protocol.o \
 	  socket.o \
 	  buffer.o \
