@@ -180,7 +180,7 @@ __socket_new(int fd)
 }
 
 twopence_sock_t *
-socket_new(int fd)
+twopence_sock_new(int fd)
 {
 	return __socket_new(fd);
 }
@@ -207,7 +207,7 @@ socket_new_flags(int fd, int oflags)
 }
 
 void
-socket_free(twopence_sock_t *sock)
+twopence_sock_free(twopence_sock_t *sock)
 {
 	TRACE("%s(%d)\n", __func__, sock->fd);
 	if (sock->fd >= 0)
@@ -220,7 +220,7 @@ socket_free(twopence_sock_t *sock)
 }
 
 int
-socket_id(const twopence_sock_t *sock)
+twopence_sock_id(const twopence_sock_t *sock)
 {
 	return sock->fd;
 }
@@ -297,7 +297,7 @@ socket_post_recvbuf_if_needed(twopence_sock_t *sock, unsigned int size)
 }
 
 int
-socket_write(twopence_sock_t *sock, twopence_buf_t *bp, unsigned int count)
+twopence_sock_write(twopence_sock_t *sock, twopence_buf_t *bp, unsigned int count)
 {
 	int n;
 
@@ -318,7 +318,7 @@ socket_send_buffer(twopence_sock_t *sock, twopence_buf_t *bp)
 {
 	int n;
 
-	n = socket_write(sock, bp, twopence_buf_count(bp));
+	n = twopence_sock_write(sock, bp, twopence_buf_count(bp));
 	if (n > 0) {
 		TRACE2("%s(%d): wrote %u bytes\n", __func__, sock->fd, n);
 		twopence_buf_advance_head(bp, n);
@@ -384,7 +384,7 @@ socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp)
 }
 
 int
-socket_xmit(twopence_sock_t *sock, twopence_buf_t *bp)
+twopence_sock_xmit(twopence_sock_t *sock, twopence_buf_t *bp)
 {
 	return __socket_queue_xmit(sock, bp, 2);
 }
@@ -591,7 +591,7 @@ socket_fill_poll(twopence_sock_t *sock, struct pollfd *pfd)
 }
 
 int
-socket_doio(twopence_sock_t *sock)
+twopence_sock_doio(twopence_sock_t *sock)
 {
 	struct pollfd *pfd;
 	int n;
@@ -602,7 +602,7 @@ socket_doio(twopence_sock_t *sock)
 	sock->poll_data = NULL;
 
 	if (pfd->revents != 0)
-		TRACE2("socket_doio(%d, pfd=<fd=%d, revents=%s)\n", sock->fd, pfd->fd, poll_bit_string(pfd->revents));
+		TRACE2("twopence_sock_doio(%d, pfd=<fd=%d, revents=%s)\n", sock->fd, pfd->fd, poll_bit_string(pfd->revents));
 
 	if (pfd->revents & POLLOUT) {
 		if ((n = socket_send_queued(sock)) < 0)

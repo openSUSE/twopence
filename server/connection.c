@@ -84,7 +84,7 @@ void
 connection_close(connection_t *conn)
 {
 	if (conn->client_sock)
-		socket_free(conn->client_sock);
+		twopence_sock_free(conn->client_sock);
 	conn->client_sock = NULL;
 }
 
@@ -107,7 +107,7 @@ connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
 	if (sock && socket_is_dead(sock)) {
 		TRACE("connection: client socket is dead, closing\n");
 		conn->client_sock = NULL;
-		socket_free(sock);
+		twopence_sock_free(sock);
 		return 0;
 	}
 
@@ -121,7 +121,7 @@ connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
 		socket_post_recvbuf_if_needed(sock, TWOPENCE_PROTO_MAX_PACKET);
 
 		if (socket_xmit_queue_bytes(sock))
-			TRACE("socket %d: xmit queue=%u bytes\n", socket_id(sock), socket_xmit_queue_bytes(sock));
+			TRACE("socket %d: xmit queue=%u bytes\n", twopence_sock_id(sock), socket_xmit_queue_bytes(sock));
 		if (nfds < max && socket_fill_poll(sock, pfd + nfds))
 			nfds++;
 	}
@@ -297,7 +297,7 @@ connection_doio(connection_t *conn)
 	twopence_sock_t *sock;
 
 	if ((sock = conn->client_sock) != NULL) {
-		if (socket_doio(sock) < 0) {
+		if (twopence_sock_doio(sock) < 0) {
 			TRACE("I/O error on socket: %m\n");
 			connection_close(conn);
 			return;

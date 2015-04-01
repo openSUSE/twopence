@@ -385,7 +385,7 @@ int main(int argc, char *argv[])
 void
 service_connection(int serial_fd)
 {
-  server_run(socket_new(serial_fd));
+  server_run(twopence_sock_new(serial_fd));
 }
 
 void

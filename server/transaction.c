@@ -70,12 +70,12 @@ transaction_free(transaction_t *trans)
 
 	/* Do not free trans->client_sock, we don't own it */
 	if (trans->local_sink)
-		socket_free(trans->local_sink);
+		twopence_sock_free(trans->local_sink);
 	for (i = 0; i < trans->num_local_sources; ++i) {
 		twopence_sock_t *sock = trans->local_source[i];
 
 		if (sock)
-			socket_free(sock);
+			twopence_sock_free(sock);
 	}
 	memset(trans, 0, sizeof(*trans));
 	free(trans);
@@ -100,7 +100,7 @@ transaction_close_sink(transaction_t *trans)
 {
 	if (trans->local_sink) {
 		TRACE("closing command input fd\n");
-		socket_free(trans->local_sink);
+		twopence_sock_free(trans->local_sink);
 		trans->local_sink = NULL;
 	}
 }
@@ -128,7 +128,7 @@ transaction_close_source(transaction_t *trans, unsigned int i)
 		sock = trans->local_source[i];
 
 		TRACE("closing command output fd %d%s\n", i + 1, socket_is_read_eof(sock)? ", EOF" : "");
-		socket_free(sock);
+		twopence_sock_free(sock);
 		trans->local_source[i] = NULL;
 	}
 }
@@ -190,7 +190,7 @@ transaction_doio(transaction_t *trans)
 
 	TRACE2("transaction_doio()\n");
 	if ((sock = trans->local_sink) != NULL) {
-		if (socket_doio(sock) < 0) {
+		if (twopence_sock_doio(sock) < 0) {
 			transaction_fail(trans, errno);
 			socket_mark_dead(sock);
 		}
@@ -205,7 +205,7 @@ transaction_doio(transaction_t *trans)
 		if (!sock)
 			continue;
 
-		if (socket_doio(sock) < 0) {
+		if (twopence_sock_doio(sock) < 0) {
 			transaction_fail(trans, errno);
 			socket_mark_dead(sock);
 		}
@@ -345,7 +345,7 @@ transaction_write_data(transaction_t *trans, twopence_buf_t *payload)
 	count = twopence_buf_count(payload);
 
 	TRACE("About to write %u bytes of data to local sink\n", count);
-	if ((n = socket_write(sock, payload, count)) < 0) {
+	if ((n = twopence_sock_write(sock, payload, count)) < 0) {
 		transaction_fail(trans, errno);
 		trans->done = true;
 		return true;
