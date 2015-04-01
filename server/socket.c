@@ -18,70 +18,62 @@
  */
 
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <netinet/in.h> /* for htons */
 
-#include <pwd.h>
-#include <grp.h>
 #include <fcntl.h>
 #include <poll.h>
 #include <time.h>
-#include <termios.h>
 #include <errno.h>
-#include <signal.h>
 #include <unistd.h>
-#include <getopt.h>
 
-#include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
-#include <stdint.h>
 #include <assert.h>
-#include <ctype.h>
-#include <limits.h>
 
 #include "server.h"
+#include "socket.h"
 
-struct queue {
-	unsigned int	bytes;
-	unsigned int	max_bytes;
 
-	packet_t *	head;
-	packet_t **	tail;
+typedef struct twopence_packet twopence_packet_t;
+typedef struct twopence_queue twopence_queue_t;
+
+struct twopence_queue {
+	unsigned int		bytes;
+	unsigned int		max_bytes;
+
+	twopence_packet_t *	head;
+	twopence_packet_t **	tail;
 };
 
-struct socket {
-	int		fd;
+struct twopence_socket {
+	int			fd;
 
-	unsigned int	bytes_sent;
+	unsigned int		bytes_sent;
 
-	queue_t		xmit_queue;
-	twopence_buf_t *recv_buf;
+	twopence_queue_t	xmit_queue;
+	twopence_buf_t *	recv_buf;
 
-	bool		read_eof;
-	unsigned char	write_eof;
+	bool			read_eof;
+	unsigned char		write_eof;
 
-	struct pollfd *	poll_data;
+	struct pollfd *		poll_data;
 };
 
-struct packet {
-	packet_t *	next;
+struct twopence_packet {
+	twopence_packet_t *	next;
 
-	unsigned int	bytes;
+	unsigned int		bytes;
 	twopence_buf_t *	buffer;
 };
 
 #define SHUTDOWN_WANTED		1
 #define SHUTDOWN_SENT		2
 
-packet_t *
-packet_new(twopence_buf_t *bp)
+static twopence_packet_t *
+twopence_packet_new(twopence_buf_t *bp)
 {
-	packet_t *pkt;
+	twopence_packet_t *pkt;
 
 	pkt = calloc(1, sizeof(*pkt));
 	pkt->buffer = bp;
@@ -89,64 +81,64 @@ packet_new(twopence_buf_t *bp)
 	return pkt;
 }
 
-void
-packet_free(packet_t *pkt)
+static void
+twopence_packet_free(twopence_packet_t *pkt)
 {
 	if (pkt->buffer)
 		twopence_buf_free(pkt->buffer);
 	free(pkt);
 }
 
-void
-queue_init(queue_t *queue)
+static void
+twopence_queue_init(twopence_queue_t *queue)
 {
 	queue->head = NULL;
 	queue->tail = &queue->head;
 	queue->max_bytes = 16 * 65536;
 }
 
-void
-queue_destroy(queue_t *queue)
+static void
+twopence_queue_destroy(twopence_queue_t *queue)
 {
-	packet_t *pkt;
+	twopence_packet_t *pkt;
 
 	while ((pkt = queue->head) != NULL) {
 		queue->head = pkt->next;
-		packet_free(pkt);
+		twopence_packet_free(pkt);
 	}
 	queue->tail = &queue->head;
 }
 
-bool
-queue_empty(const queue_t *queue)
+static bool
+twopence_queue_empty(const twopence_queue_t *queue)
 {
 	return queue->head == NULL;
 }
 
-void
-queue_append(queue_t *queue, packet_t *pkt)
+static void
+twopence_queue_append(twopence_queue_t *queue, twopence_packet_t *pkt)
 {
 	*queue->tail = pkt;
 	queue->tail = &pkt->next;
 	queue->bytes += pkt->bytes;
 }
 
-packet_t *
-queue_head(const queue_t *queue)
+static twopence_packet_t *
+twopence_queue_head(const twopence_queue_t *queue)
 {
 	return queue->head;
 }
 
-bool
-queue_full(const queue_t *queue)
+static bool
+twopence_queue_full(const twopence_queue_t *queue)
 {
 	return queue->max_bytes == 0 || queue->bytes >= queue->max_bytes;
 }
 
-packet_t *
-queue_dequeue(queue_t *queue)
+static twopence_packet_t *
+twopence_queue_dequeue(twopence_queue_t *queue)
 {
-	packet_t *pkt;
+	twopence_packet_t *pkt;
 
 	if ((pkt = queue->head) != NULL) {
 		assert(pkt->bytes <= queue->bytes);
@@ -159,8 +151,8 @@ queue_dequeue(queue_t *queue)
 	return pkt;
 }
 
-twopence_sock_t *
-__socket_new(int fd)
+static twopence_sock_t *
+__twopence_socket_new(int fd)
 {
 	twopence_sock_t *sock;
 	int f;
@@ -175,14 +167,14 @@ __socket_new(int fd)
 		/* Continue anyway */
 	}
 
-	queue_init(&sock->xmit_queue);
+	twopence_queue_init(&sock->xmit_queue);
 	return sock;
 }
 
 twopence_sock_t *
 twopence_sock_new(int fd)
 {
-	return __socket_new(fd);
+	return __twopence_socket_new(fd);
 }
 
 twopence_sock_t *
@@ -190,7 +182,7 @@ socket_new_flags(int fd, int oflags)
 {
 	twopence_sock_t *sock;
 
-	sock = __socket_new(fd);
+	sock = __twopence_socket_new(fd);
 	switch (oflags & O_ACCMODE) {
 	case O_RDONLY:
 		sock->write_eof = SHUTDOWN_SENT;
@@ -213,7 +205,7 @@ twopence_sock_free(twopence_sock_t *sock)
 	if (sock->fd >= 0)
 		close(sock->fd);
 
-	queue_destroy(&sock->xmit_queue);
+	twopence_queue_destroy(&sock->xmit_queue);
 	if (sock->recv_buf)
 		twopence_buf_free(sock->recv_buf);
 	free(sock);
@@ -343,7 +335,7 @@ __socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp, int direct)
 	 */
 	if (direct > 1) {
 		/* Flush out all queued packets first */
-		while (queue_head(&sock->xmit_queue) != NULL) {
+		while (twopence_queue_head(&sock->xmit_queue) != NULL) {
 			n = socket_send_queued(sock);
 			if (n < 0)
 				goto out_drop_buffer;
@@ -352,7 +344,7 @@ __socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp, int direct)
 
 	/* If nothing is queued to the socket, we might as well try to
 	 * send this data directly. */
-	if (direct && queue_empty(&sock->xmit_queue)) {
+	if (direct && twopence_queue_empty(&sock->xmit_queue)) {
 		if (direct == 1) {
 			/* opportunistic - write some */
 			(void) socket_send_buffer(sock, bp);
@@ -368,7 +360,7 @@ __socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp, int direct)
 
 	/* If there's data left in this buffer, queue it to the socket */
 	if (twopence_buf_count(bp) != 0) {
-		queue_append(&sock->xmit_queue, packet_new(bp));
+		twopence_queue_append(&sock->xmit_queue, twopence_packet_new(bp));
 		return 0;
 	}
 
@@ -392,17 +384,17 @@ twopence_sock_xmit(twopence_sock_t *sock, twopence_buf_t *bp)
 int
 socket_send_queued(twopence_sock_t *sock)
 {
-	packet_t *pkt;
+	twopence_packet_t *pkt;
 	int n;
 
-	if ((pkt = queue_head(&sock->xmit_queue)) == NULL)
+	if ((pkt = twopence_queue_head(&sock->xmit_queue)) == NULL)
 		return 0;
 
 	n = socket_send_buffer(sock, pkt->buffer);
 	if (twopence_buf_count(pkt->buffer) == 0) {
 		/* Sent the complete buffer */
-		queue_dequeue(&sock->xmit_queue);
-		packet_free(pkt);
+		twopence_queue_dequeue(&sock->xmit_queue);
+		twopence_packet_free(pkt);
 	}
 
 	return n;
@@ -429,7 +421,7 @@ socket_xmit_queue_allowed(const twopence_sock_t *sock)
 		return false;
 	}
 
-	if (queue_full(&sock->xmit_queue))
+	if (twopence_queue_full(&sock->xmit_queue))
 		return false;
 
 	return true;
@@ -438,7 +430,7 @@ socket_xmit_queue_allowed(const twopence_sock_t *sock)
 static bool
 __socket_try_shutdown(twopence_sock_t *sock)
 {
-	if (queue_empty(&sock->xmit_queue)) {
+	if (twopence_queue_empty(&sock->xmit_queue)) {
 		shutdown(sock->fd, SHUT_WR);
 		sock->write_eof = SHUTDOWN_SENT;
 		return true;
@@ -573,7 +565,7 @@ socket_fill_poll(twopence_sock_t *sock, struct pollfd *pfd)
 		return false;
 
 	if (sock->write_eof != SHUTDOWN_SENT) {
-		if (!queue_empty(&sock->xmit_queue))
+		if (!twopence_queue_empty(&sock->xmit_queue))
 			pfd->events |= POLLOUT;
 	}
 	if (!sock->read_eof) {

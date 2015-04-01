@@ -24,19 +24,7 @@
 #include <stdint.h>
 #include "twopence.h"
 
-typedef struct socket twopence_sock_t;
-typedef struct packet packet_t;
-typedef struct queue queue_t;
-
-extern packet_t *	packet_new(twopence_buf_t *bp);
-extern void		packet_free(packet_t *pkt);
-extern void		queue_init(queue_t *queue);
-extern void		queue_destroy(queue_t *queue);
-extern bool		queue_empty(const queue_t *queue);
-extern void		queue_append(queue_t *queue, packet_t *pkt);
-extern packet_t *	queue_head(const queue_t *queue);
-extern bool		queue_full(const queue_t *queue);
-extern packet_t *	queue_dequeue(queue_t *queue);
+typedef struct twopence_socket twopence_sock_t;
 
 extern twopence_sock_t *twopence_sock_new(int fd);
 extern twopence_sock_t *socket_new_flags(int fd, int oflags);
