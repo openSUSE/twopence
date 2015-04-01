@@ -57,14 +57,28 @@ struct twopence_ssh_target
    */
   struct {
     twopence_ssh_transaction_t *foreground;
+
+    twopence_ssh_transaction_t *running;
+    twopence_ssh_transaction_t *done;
+
+    unsigned int next_pid;
   } transactions;
 };
 
 struct twopence_ssh_transaction {
+  twopence_ssh_transaction_t *next;
+
   struct twopence_ssh_target *handle;
+
+  /* This is a twopence-internal "pid" that has no relation whatsoever
+   * with any system PIDs */
+  unsigned int		pid;
 
   ssh_session		session;
   ssh_channel		channel;
+
+  /* Set to true when the transaction is done. */
+  bool			done;
 
   /* This is used by the lower-level routines to report exceptions
    * while processing the transaction. The value of the exception
@@ -72,8 +86,8 @@ struct twopence_ssh_transaction {
    */
   int			exception;
 
-  /* If non-NULL, this is where we store the command's status */
-  twopence_status_t *	status_ret;
+  /* This is where we store the command's status */
+  twopence_status_t	status;
 
   struct {
     twopence_iostream_t *stream;
@@ -221,6 +235,7 @@ __twopence_ssh_transaction_fail(twopence_ssh_transaction_t *trans, int error)
 {
   if (!trans->exception)
     trans->exception = error;
+  trans->done = true;
 }
 
 static void
@@ -364,8 +379,6 @@ __twopence_ssh_transaction_execute_command(twopence_ssh_transaction_t *trans, tw
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
 
-  trans->status_ret = status_ret;
-
   return 0;
 }
 
@@ -373,13 +386,12 @@ __twopence_ssh_transaction_execute_command(twopence_ssh_transaction_t *trans, tw
 static int
 __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
 {
-  twopence_status_t *status_ret;
+  twopence_status_t *status = &trans->status;
 
-  if ((status_ret = trans->status_ret) == NULL)
-    return 0;
-
-  if (trans->channel == NULL)
-    return 0;
+  if (trans->channel == NULL) {
+    __twopence_ssh_transaction_fail(trans, TWOPENCE_INTERNAL_ERROR);
+    return -1;
+  }
 
   /* If we haven't done so, send the EOF now. */
   if (__twopence_ssh_transaction_send_eof(trans) == SSH_ERROR) {
@@ -392,17 +404,15 @@ __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
    * but the exit_signal_callback will be invoked, which allows us
    * to snarf the exit_signal
    */
-  status_ret->minor = ssh_channel_get_exit_status(trans->channel);
+  status->minor = ssh_channel_get_exit_status(trans->channel);
 
-  if (status_ret->minor == SSH_ERROR && trans->exit_signal) {
+  if (status->minor == SSH_ERROR && trans->exit_signal) {
     // mimic the behavior of the test server for now.
     // in the long run, better reporting would be great.
-    status_ret->major = EFAULT;
-    status_ret->minor = trans->exit_signal;
+    status->major = EFAULT;
+    status->minor = trans->exit_signal;
   }
 
-  /* We successfully reported the exit status; do not try again */
-  trans->status_ret = NULL;
   return 0;
 }
 
@@ -538,6 +548,27 @@ __twopence_ssh_transaction_poll_stdin(twopence_ssh_transaction_t *trans)
   return 0;
 }
 
+static int
+__twopence_ssh_transaction_doio(twopence_ssh_transaction_t *trans)
+{
+  if (trans->stdin.pfd.revents & (POLLIN|POLLHUP)) {
+    SSH_TRACE("%s: trying to read some data from stdin\n", __func__);
+    if (__twopence_ssh_transaction_forward_stdin(trans) < 0) {
+      __twopence_ssh_transaction_fail(trans, TWOPENCE_FORWARD_INPUT_ERROR);
+      return -1;
+    }
+  }
+  trans->stdin.pfd.revents = 0;
+
+  if (__twopence_ssh_transaction_forward_output(trans, &trans->stdout, "stdout") < 0)
+    return -1;
+
+  if (__twopence_ssh_transaction_forward_output(trans, &trans->stderr, "stderr") < 0)
+    return -1;
+
+  return 0;
+}
+
 static void
 __twopence_ssh_poll_add_transaction(ssh_event event, twopence_ssh_transaction_t *trans)
 {
@@ -572,64 +603,117 @@ __twopence_ssh_check_timeout(const struct timeval *now, const struct timeval *ex
 }
 
 static int
-__twopence_ssh_poll(struct twopence_ssh_transaction *trans)
+__twopence_ssh_poll(struct twopence_ssh_target *handle)
 {
+  twopence_ssh_transaction_t *trans;
   ssh_event event;
 
   fflush(stdout);
 
-  if (__twopence_ssh_transaction_poll_stdin(trans) < 0)
-    return -1;
+  for (trans = handle->transactions.running; trans; trans = trans->next) {
+    if (__twopence_ssh_transaction_poll_stdin(trans) < 0)
+      return 0;
+  }
 
   do {
     struct timeval now;
     int timeout;
     int rc;
 
-    if (trans->stdin.pfd.revents & (POLLIN|POLLHUP)) {
-      SSH_TRACE("%s: trying to read some data from stdin\n", __func__);
-      if (__twopence_ssh_transaction_forward_stdin(trans) < 0) {
-	__twopence_ssh_transaction_fail(trans, TWOPENCE_FORWARD_INPUT_ERROR);
-        return -1;
+    for (trans = handle->transactions.running; trans; trans = trans->next) {
+      if (__twopence_ssh_transaction_doio(trans) < 0)
+        return 0;
+
+      SSH_TRACE("eof=%d/%d/%d\n", trans->stdin.eof, trans->stdout.eof, trans->stderr.eof);
+      if (trans->stdout.eof && trans->stderr.eof) {
+        trans->done = true;
+        return __twopence_ssh_transaction_get_exit_status(trans);
       }
     }
-    trans->stdin.pfd.revents = 0;
-
-    if (__twopence_ssh_transaction_forward_output(trans, &trans->stdout, "stdout") < 0)
-      return -1;
-
-    if (__twopence_ssh_transaction_forward_output(trans, &trans->stderr, "stderr") < 0)
-      return -1;
-
-    SSH_TRACE("eof=%d/%d/%d\n", trans->stdin.eof, trans->stdout.eof, trans->stderr.eof);
-    if (trans->stdout.eof && trans->stderr.eof)
-      return __twopence_ssh_transaction_get_exit_status(trans);
 
     gettimeofday(&now, NULL);
-    timeout = -1;
+    timeout = 0;
 
-    if (!__twopence_ssh_check_timeout(&now, &trans->command_timeout, &timeout)) {
-      __twopence_ssh_transaction_fail(trans, TWOPENCE_COMMAND_TIMEOUT_ERROR);
-      return -1;
+    for (trans = handle->transactions.running; trans; trans = trans->next) {
+      if (!__twopence_ssh_check_timeout(&now, &trans->command_timeout, &timeout)) {
+        __twopence_ssh_transaction_fail(trans, TWOPENCE_COMMAND_TIMEOUT_ERROR);
+        return 0;
+      }
     }
 
     event = ssh_event_new();
 
-    __twopence_ssh_poll_add_transaction(event, trans);
+    for (trans = handle->transactions.running; trans; trans = trans->next)
+      __twopence_ssh_poll_add_transaction(event, trans);
 
     SSH_TRACE("polling for events; timeout=%d\n", timeout);
     rc = ssh_event_dopoll(event, timeout);
     ssh_event_free(event);
 
-    if (rc == SSH_ERROR) {
-      __twopence_ssh_transaction_fail(trans, TWOPENCE_RECEIVE_RESULTS_ERROR);
-      return -1;
-    }
-
     SSH_TRACE("ssh_event_dopoll() = %d\n", rc);
+    if (rc == SSH_ERROR)
+      return TWOPENCE_INTERNAL_ERROR;
   } while (true);
 
   return 0;
+}
+
+static void
+__twopence_ssh_transaction_add_running(struct twopence_ssh_target *handle, twopence_ssh_transaction_t *trans)
+{
+  trans->next = handle->transactions.running;
+  handle->transactions.running = trans;
+
+  trans->pid = handle->transactions.next_pid++;
+}
+
+static twopence_ssh_transaction_t *
+__twopence_ssh_transaction_get_done(struct twopence_ssh_target *handle, unsigned int want_pid)
+{
+  twopence_ssh_transaction_t **pos, *trans;
+
+  pos = &handle->transactions.done;
+  while ((trans = *pos) != NULL) {
+    if (want_pid == 0 || trans->pid == want_pid)
+      break;
+
+    pos = &trans->next;
+  }
+
+  if (trans == NULL)
+    return NULL;
+
+  *pos = trans->next;
+  trans->next = NULL;
+
+  return trans;
+}
+
+static int
+__twopence_ssh_reap(struct twopence_ssh_target *handle)
+{
+  twopence_ssh_transaction_t **pos, **tail, *trans;
+  int nreaped = 0;
+
+  for (tail = &handle->transactions.done; *tail != NULL; tail = &(*tail)->next)
+    ;
+
+  pos = &handle->transactions.running;
+  while ((trans = *pos) != NULL) {
+    if (trans->done) {
+      *pos = trans->next;
+      *tail = trans;
+      trans->next = NULL;
+      tail = &trans->next;
+
+      __twopence_ssh_transaction_close_channel(trans);
+      nreaped ++;
+    } else {
+      pos = &trans->next;
+    }
+  }
+
+  return nreaped;
 }
 
 // Send a file in chunks through SCP
@@ -767,8 +851,6 @@ __twopence_ssh_command_ssh
   if (trans == NULL)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
-  handle->transactions.foreground = trans;
-
   rc = __twopence_ssh_transaction_open_session(trans, cmd->user);
   if (rc != 0) {
     __twopence_ssh_transaction_free(trans);
@@ -782,17 +864,40 @@ __twopence_ssh_command_ssh
     return rc;
   }
 
-  // Read "standard output", "standard error", and remote error code
-  rc = __twopence_ssh_poll(trans);
+  __twopence_ssh_transaction_add_running(handle, trans);
 
-  if (rc < 0) {
-    assert(trans->exception < 0);
+  if (cmd->background)
+    return trans->pid;
+
+  handle->transactions.foreground = trans;
+  do {
+    /* Process SSH I/O for all active commands.
+     * When this function returns, at least one transaction has
+     * finished, either by exiting or by an exception.
+     */
+    rc = __twopence_ssh_poll(handle);
+
+    /* If this fails, this always denotes an internal error. */
+    if (rc < 0) {
+      handle->transactions.foreground = NULL;
+      return rc;
+    }
+
+    if (!__twopence_ssh_reap(handle))
+      return TWOPENCE_INTERNAL_ERROR;
+  } while (!__twopence_ssh_transaction_get_done(handle, trans->pid));
+
+  if (trans->exception) {
     rc = trans->exception;
+  } else {
+    *status_ret = trans->status;
+    rc = 0;
   }
 
-  // Terminate the channel
-  __twopence_ssh_transaction_free(trans);
   handle->transactions.foreground = NULL;
+
+  /* We're done with this transaction. Nuke it */
+  __twopence_ssh_transaction_free(trans);
 
   return rc;
 }
@@ -1002,6 +1107,8 @@ __twopence_ssh_init(const char *hostname, unsigned int port)
   handle->base.plugin_type = TWOPENCE_PLUGIN_SSH;
   handle->base.ops = &twopence_ssh_ops;
 
+  handle->transactions.next_pid = 1;
+
   // Create the SSH session template
   template = ssh_new();
   if (template == NULL)
@@ -1099,6 +1206,39 @@ twopence_ssh_run_test
 
   // Execute the command
   return __twopence_ssh_command_ssh(handle, cmd, status_ret);
+}
+
+/*
+ * Wait for a remote command to finish
+ */
+static int
+twopence_ssh_wait(struct twopence_target *opaque_handle, int want_pid, twopence_status_t *status)
+{
+  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
+  twopence_ssh_transaction_t *trans = NULL;
+  int rc;
+
+  while (handle->transactions.running) {
+    trans = __twopence_ssh_transaction_get_done(handle, want_pid);
+    if (trans != NULL)
+      break;
+
+    rc = __twopence_ssh_poll(handle);
+    if (rc < 0)
+      return rc;
+  }
+
+  assert(trans->done);
+
+  if (trans->exception < 0) {
+    rc = trans->exception;
+  } else {
+    *status = trans->status;
+    rc = trans->pid;
+  }
+
+  __twopence_ssh_transaction_free(trans);
+  return rc;
 }
 
 
@@ -1221,6 +1361,7 @@ const struct twopence_plugin twopence_ssh_ops = {
 
 	.init = twopence_ssh_init,
 	.run_test = twopence_ssh_run_test,
+	.wait = twopence_ssh_wait,
 	.inject_file = twopence_ssh_inject_file,
 	.extract_file = twopence_ssh_extract_file,
 	.exit_remote = twopence_ssh_exit_remote,

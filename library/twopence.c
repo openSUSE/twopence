@@ -231,6 +231,15 @@ twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twope
 }
 
 int
+twopence_wait(struct twopence_target *target, int pid, twopence_status_t *status)
+{
+  if (target->ops->wait == NULL)
+    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
+
+  return target->ops->wait(target, pid, status);
+}
+
+int
 twopence_test_and_print_results
   (struct twopence_target *target, const char *username, long timeout, const char *command, twopence_status_t *status)
 {
@@ -483,6 +492,8 @@ twopence_strerror(int rc)
       return "Operation not supported by the plugin";
     case TWOPENCE_PROTOCOL_ERROR:
       return "Twopence custom protocol error";
+    case TWOPENCE_INTERNAL_ERROR:
+      return "Internal error";
   }
   return "Unknow error";
 }

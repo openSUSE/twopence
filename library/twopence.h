@@ -48,6 +48,7 @@ struct pollfd;
 #define TWOPENCE_INCOMPATIBLE_PLUGIN_ERROR  -14
 #define TWOPENCE_UNSUPPORTED_FUNCTION_ERROR -15
 #define TWOPENCE_PROTOCOL_ERROR             -16
+#define TWOPENCE_INTERNAL_ERROR		    -17
 
 struct twopence_target;
 
@@ -80,6 +81,7 @@ struct twopence_plugin {
 
 	struct twopence_target *(*init)(const char *);
 	int			(*run_test)(struct twopence_target *, struct twopence_command *, twopence_status_t *);
+	int			(*wait)(struct twopence_target *, int, twopence_status_t *);
 
 	int			(*inject_file)(struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);
 	int			(*extract_file)(struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);
@@ -175,6 +177,12 @@ struct twopence_command {
 	 * May be needed for some commands to behave properly */
 	bool			request_tty;
 
+	/* Do not wait for the command to finish, but execute it in
+	 * the background.
+	 */
+	bool			background;
+	void *			userdata;
+
 	/* FIXME: support passing environment variables to the command --okir
 	 *
          * For the time being we can start "bash" as a command
@@ -246,8 +254,22 @@ extern int		twopence_target_new(const char *target_spec, struct twopence_target 
  * The @command parameter points to a struct specifying the command itself,
  * the user to run it as (defaults to root), which timeout (defaults to 60),
  * what file to pass it on standard input, and how to handle its output
+ *
+ * If the backend supports it, you can run commands in the background by setting
+ * command->background = true.
+ * This will assign a "pid" to the command, which will be returned.
  */
 extern int		twopence_run_test(struct twopence_target *, twopence_command_t *, twopence_status_t *);
+
+/*
+ * Wait for a previously backgrounded command to complete.
+ *
+ * Returns:
+ *  < 0:	an error occured
+ *  0:		no more processes
+ * either an error (negative) or the "pid" of the completed process.
+ */
+extern int		twopence_wait(struct twopence_target *, int, twopence_status_t *);
 
 /*
  * Run a test command, and print output
