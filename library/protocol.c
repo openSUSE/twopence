@@ -93,6 +93,12 @@ twopence_protocol_push_header(twopence_buf_t *bp, unsigned char type)
 	__twopence_protocol_push_header(bp, type, 0, 0);
 }
 
+void
+twopence_protocol_push_header_ps(twopence_buf_t *bp, const twopence_protocol_state_t *ps, unsigned char type)
+{
+	__twopence_protocol_push_header(bp, type, ps->cid, ps->xid);
+}
+
 twopence_buf_t *
 twopence_protocol_command_buffer_new()
 {
@@ -108,17 +114,26 @@ twopence_protocol_command_buffer_new()
 }
 
 twopence_buf_t *
-twopence_protocol_build_simple_packet(unsigned char type)
+twopence_protocol_build_simple_packet_ps(twopence_protocol_state_t *ps, unsigned char type)
 {
 	twopence_buf_t *bp;
 
 	bp = twopence_protocol_command_buffer_new();
-	twopence_protocol_push_header(bp, type);
+	if (ps)
+		twopence_protocol_push_header_ps(bp, ps, type);
+	else
+		twopence_protocol_push_header(bp, type);
 	return bp;
 }
 
 twopence_buf_t *
-twopence_protocol_build_eof_packet(void)
+twopence_protocol_build_simple_packet(unsigned char type)
+{
+	return twopence_protocol_build_simple_packet_ps(NULL, type);
+}
+
+twopence_buf_t *
+twopence_protocol_build_eof_packet(twopence_protocol_state_t *ps)
 {
 	return twopence_protocol_build_simple_packet(TWOPENCE_PROTO_TYPE_EOF);
 }
@@ -135,6 +150,21 @@ twopence_protocol_build_uint_packet(unsigned char type, unsigned int value)
 	twopence_buf_puts(bp, string);
 
 	twopence_protocol_push_header(bp, type);
+	return bp;
+}
+
+twopence_buf_t *
+twopence_protocol_build_uint_packet_ps(const twopence_protocol_state_t *ps, unsigned char type, unsigned int value)
+{
+	twopence_buf_t *bp;
+	char string[32];
+
+	bp = twopence_protocol_command_buffer_new();
+
+	snprintf(string, sizeof(string), "%u", value);
+	twopence_buf_puts(bp, string);
+
+	twopence_protocol_push_header_ps(bp, ps, type);
 	return bp;
 }
 
@@ -182,7 +212,7 @@ twopence_protocol_build_inject_packet(const char *user, const char *remote_name,
 }
 
 twopence_buf_t *
-twopence_protocol_build_command_packet(const char *user, const char *command, long timeout)
+twopence_protocol_build_command_packet(const twopence_protocol_state_t *ps, const char *user, const char *command, long timeout)
 {
 	twopence_buf_t *bp;
 
@@ -193,7 +223,7 @@ twopence_protocol_build_command_packet(const char *user, const char *command, lo
 	twopence_protocol_format_args(bp, "%s %ld %s", user, timeout, command);
 
 	/* Finalize the header */
-	twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_COMMAND);
+	twopence_protocol_push_header_ps(bp, ps, TWOPENCE_PROTO_TYPE_COMMAND);
 
 	return bp;
 }
@@ -275,6 +305,19 @@ twopence_protocol_dissect(twopence_buf_t *bp, twopence_buf_t *payload)
 
 	twopence_buf_init_static(payload, (void *) twopence_buf_head(bp), len);
 	twopence_buf_advance_head(bp, len);
+	return hdr;
+}
+
+const twopence_hdr_t *
+twopence_protocol_dissect_ps(twopence_buf_t *bp, twopence_buf_t *payload, twopence_protocol_state_t *ps)
+{
+	const twopence_hdr_t *hdr;
+
+	if ((hdr = twopence_protocol_dissect(bp, payload)) == NULL)
+		return hdr;
+
+	ps->cid = ntohs(hdr->cid);
+	ps->xid = ntohs(hdr->xid);
 	return hdr;
 }
 

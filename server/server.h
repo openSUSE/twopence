@@ -93,6 +93,7 @@ struct transaction {
 	bool			(*send)(transaction_t *);
 	bool			(*recv)(transaction_t *, const twopence_hdr_t *hdr, twopence_buf_t *);
 
+	twopence_protocol_state_t ps;
 	socket_t *		client_sock;
 
 	pid_t			pid;
@@ -105,7 +106,7 @@ struct transaction {
 	socket_t *		local_source_stderr;
 };
 
-extern transaction_t *	transaction_new(socket_t *client, unsigned int type, unsigned int id);
+extern transaction_t *	transaction_new(socket_t *client, unsigned int type, const twopence_protocol_state_t *ps);
 extern void		transaction_free(transaction_t *trans);
 extern socket_t *	transaction_attach_local_sink(transaction_t *trans, int fd);
 extern void		transaction_close_sink(transaction_t *trans);

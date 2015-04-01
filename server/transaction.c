@@ -50,13 +50,14 @@
  * Command handling
  */
 transaction_t *
-transaction_new(socket_t *client, unsigned int type, unsigned int id)
+transaction_new(socket_t *client, unsigned int type, const twopence_protocol_state_t *ps)
 {
 	transaction_t *trans;
 
-	TRACE("%s('%c', %u)\n", __func__, type, id);
+	TRACE("%s('%c', %u)\n", __func__, type, ps->xid);
 	trans = calloc(1, sizeof(*trans));
-	trans->id = id;
+	trans->ps = *ps;
+	trans->id = ps->xid;
 	trans->type = type;
 	trans->client_sock = client;
 	return trans;
@@ -238,7 +239,7 @@ transaction_send_major(transaction_t *trans, unsigned int code)
 {
 	TRACE("%s(id=%d, %d)\n", __func__, trans->id, code);
 	assert(!trans->major_sent);
-	transaction_send_client(trans, twopence_protocol_build_uint_packet(TWOPENCE_PROTO_TYPE_MAJOR, code));
+	transaction_send_client(trans, twopence_protocol_build_uint_packet_ps(&trans->ps, TWOPENCE_PROTO_TYPE_MAJOR, code));
 	trans->major_sent = true;
 }
 
@@ -247,7 +248,7 @@ transaction_send_minor(transaction_t *trans, unsigned int code)
 {
 	TRACE("%s(id=%d, %d)\n", __func__, trans->id, code);
 	assert(!trans->minor_sent);
-	transaction_send_client(trans, twopence_protocol_build_uint_packet(TWOPENCE_PROTO_TYPE_MINOR, code));
+	transaction_send_client(trans, twopence_protocol_build_uint_packet_ps(&trans->ps, TWOPENCE_PROTO_TYPE_MINOR, code));
 	trans->minor_sent = true;
 }
 
@@ -298,7 +299,7 @@ transaction_send_timeout(transaction_t *trans)
 	twopence_buf_t *bp;
 
 	bp = twopence_protocol_command_buffer_new();
-	twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_TIMEOUT);
+	twopence_protocol_push_header_ps(bp, &trans->ps, TWOPENCE_PROTO_TYPE_TIMEOUT);
 	transaction_send_client(trans, bp);
 	trans->done = 1;
 }
@@ -376,7 +377,7 @@ transaction_process(transaction_t *trans)
 
 		sock = trans->local_source[i];
 		if (sock && (bp = socket_take_recvbuf(sock)) != NULL) {
-			twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_STDOUT + i);
+			twopence_protocol_push_header_ps(bp, &trans->ps, TWOPENCE_PROTO_TYPE_STDOUT + i);
 			socket_queue_xmit(trans->client_sock, bp);
 		}
 	}

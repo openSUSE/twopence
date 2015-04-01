@@ -136,16 +136,17 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 	transaction_t *trans;
 
 	while (bp && twopence_protocol_buffer_complete(bp)) {
+		twopence_protocol_state_t ps;
 		twopence_buf_t payload;
 
-		hdr = twopence_protocol_dissect(bp, &payload);
+		hdr = twopence_protocol_dissect_ps(bp, &payload, &ps);
 		if (hdr == NULL) {
 			fprintf(stderr, "%s: received invalid packet\n", __func__);
 			/* kill the connection? */
 			return false;
 		}
-		TRACE("connection_process_packet type=%c len=%u\n",
-				hdr->type, twopence_buf_count(&payload));
+		TRACE("connection_process_packet cid=0x%04u xid=0x%04u type=%c len=%u\n",
+				ps.cid, ps.xid, hdr->type, twopence_buf_count(&payload));
 
 		if (hdr->type == TWOPENCE_PROTO_TYPE_HELLO) {
 			/* HELLO packet. Respond with the ID we assigned to the client */
@@ -181,7 +182,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 					break;
 				}
 
-				trans = transaction_new(conn->client_sock, hdr->type, conn->next_id++);
+				trans = transaction_new(conn->client_sock, hdr->type, &ps);
 				semantics->inject_file(trans, username, filename, filemode);
 				break;
 
@@ -190,7 +191,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 				 || !twopence_protocol_dissect_string(&payload, filename, sizeof(filename)))
 					break;
 
-				trans = transaction_new(conn->client_sock, hdr->type, conn->next_id++);
+				trans = transaction_new(conn->client_sock, hdr->type, &ps);
 				semantics->extract_file(trans, username, filename);
 				break;
 
@@ -203,7 +204,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 					break;
 				}
 
-				trans = transaction_new(conn->client_sock, hdr->type, conn->next_id++);
+				trans = transaction_new(conn->client_sock, hdr->type, &ps);
 				semantics->run_command(trans, username, timeout, command);
 				break;
 

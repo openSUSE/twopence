@@ -21,6 +21,8 @@
 #ifndef PIPE_H
 #define PIPE_H
 
+#include "protocol.h"
+
 /* Base class for all targets using the twopence pipe protocol */
 struct twopence_pipe_target {
   struct twopence_target base;
@@ -30,8 +32,7 @@ struct twopence_pipe_target {
 
   int link_fd;
 
-  uint16_t client_id;
-  uint16_t next_xid;
+  twopence_protocol_state_t ps;
 };
 
 

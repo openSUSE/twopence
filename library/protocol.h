@@ -52,20 +52,28 @@ struct header {
 #define TWOPENCE_PROTO_TYPE_MINOR	'm'
 #define TWOPENCE_PROTO_TYPE_TIMEOUT	'T'
 
+typedef struct twopence_protocol_state {
+	uint16_t	cid;
+	uint16_t	xid;
+} twopence_protocol_state_t;
+
 extern void		twopence_protocol_build_header(twopence_buf_t *bp, unsigned char type);
 extern void		twopence_protocol_push_header(twopence_buf_t *bp, unsigned char type);
+extern void		twopence_protocol_push_header_ps(twopence_buf_t *bp, const twopence_protocol_state_t *ps, unsigned char type);
 extern twopence_buf_t *	twopence_protocol_command_buffer_new();
 extern twopence_buf_t *	twopence_protocol_build_simple_packet(unsigned char type);
-extern twopence_buf_t *	twopence_protocol_build_eof_packet(void);
+extern twopence_buf_t *	twopence_protocol_build_eof_packet(twopence_protocol_state_t *);
 extern twopence_buf_t *	twopence_protocol_build_hello_packet(unsigned int cid);
 extern twopence_buf_t *	twopence_protocol_build_inject_packet(const char *user, const char *remote_name, unsigned int remote_mode);
 extern twopence_buf_t *	twopence_protocol_build_extract_packet(const char *user, const char *remote_name);
-extern twopence_buf_t *	twopence_protocol_build_command_packet(const char *user, const char *command, long timeout);
+extern twopence_buf_t *	twopence_protocol_build_command_packet(const twopence_protocol_state_t *ps, const char *user, const char *command, long timeout);
 extern twopence_buf_t *	twopence_protocol_build_uint_packet(unsigned char type, unsigned int value);
+extern twopence_buf_t *	twopence_protocol_build_uint_packet_ps(const twopence_protocol_state_t *ps, unsigned char type, unsigned int value);
 extern twopence_buf_t *	twopence_protocol_recv_buffer_new(void);
 extern int		twopence_protocol_buffer_need_to_recv(const twopence_buf_t *bp);
 extern bool		twopence_protocol_buffer_complete(const twopence_buf_t *bp);
 extern const twopence_hdr_t *twopence_protocol_dissect(twopence_buf_t *bp, twopence_buf_t *payload);
+extern const twopence_hdr_t *twopence_protocol_dissect_ps(twopence_buf_t *bp, twopence_buf_t *payload, twopence_protocol_state_t *ps);
 extern bool		twopence_protocol_dissect_string(twopence_buf_t *bp, char *stringbuf, unsigned int size);
 extern bool		twopence_protocol_dissect_string_delim(twopence_buf_t *bp, char *stringbuf, unsigned int size, char delimiter);
 extern bool		twopence_protocol_dissect_uint(twopence_buf_t *bp, unsigned int *retval);
