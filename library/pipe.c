@@ -36,6 +36,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define LINE_TIMEOUT 60000             // Maximum silence on the line in milliseconds
 #define COMMAND_BUFFER_SIZE 8192       // Size in bytes of the work buffer for sending data to the remote
 
+
+static int	__twopence_pipe_handshake(struct twopence_pipe_target *handle);
+
 /*
  * Class initialization
  */
@@ -114,8 +117,13 @@ _twopence_invalid_username(const char *username)
 static int
 __twopence_pipe_open_link(struct twopence_pipe_target *handle)
 {
-  if (handle->link_fd < 0)
+  if (handle->link_fd < 0) {
     handle->link_fd = handle->link_ops->open(handle);
+    if (__twopence_pipe_handshake(handle) < 0) {
+      close(handle->link_fd);
+      handle->link_fd = -1;
+    }
+  }
   return handle->link_fd;
 }
 
@@ -267,6 +275,39 @@ __twopence_pipe_read_packet(struct twopence_pipe_target *handle)
 failed:
   twopence_buf_free(bp);
   return NULL;
+}
+
+/*
+ * Perform the initial exchange of HELLO packets
+ */
+static int
+__twopence_pipe_handshake(struct twopence_pipe_target *handle)
+{
+  twopence_buf_t *bp, payload;
+  const twopence_hdr_t *hdr;
+  int rc = 0;
+
+  if (handle->link_fd < 0)
+    return TWOPENCE_PROTOCOL_ERROR;
+
+  rc = __twopence_pipe_send(handle, twopence_protocol_build_hello_packet(0));
+  if (rc < 0)
+    return rc;
+
+  if ((bp = __twopence_pipe_read_packet(handle)) == NULL)
+    return TWOPENCE_PROTOCOL_ERROR;
+
+  if ((hdr = twopence_protocol_dissect(bp, &payload)) != NULL
+   && hdr->type == TWOPENCE_PROTO_TYPE_HELLO) {
+    handle->client_id = ntohs(hdr->cid);
+    fprintf(stderr, "HELLO handshake complete, cid=%u\n", handle->client_id);
+    rc = 0;
+  } else {
+    rc = TWOPENCE_PROTOCOL_ERROR;
+  }
+
+  twopence_buf_free(bp);
+  return rc;
 }
 
 /*

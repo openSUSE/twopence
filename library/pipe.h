@@ -29,6 +29,9 @@ struct twopence_pipe_target {
   const struct twopence_pipe_ops *link_ops;
 
   int link_fd;
+
+  uint16_t client_id;
+  uint16_t next_xid;
 };
 
 

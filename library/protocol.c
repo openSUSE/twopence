@@ -52,7 +52,7 @@
  * Protocol handling functions
  */
 void
-twopence_protocol_build_header(twopence_buf_t *bp, unsigned char type)
+__twopence_protocol_build_header(twopence_buf_t *bp, unsigned char type, unsigned int cid, unsigned int xid)
 {
 	unsigned int len = twopence_buf_count(bp);
 	twopence_hdr_t hdr;
@@ -61,13 +61,21 @@ twopence_protocol_build_header(twopence_buf_t *bp, unsigned char type)
 
 	hdr.type = type;
 	hdr.pad = 0;
+	hdr.cid = htons(cid);
+	hdr.xid = htons(xid);
 	hdr.len = htons(len);
 
 	memcpy((void *) twopence_buf_head(bp), &hdr, TWOPENCE_PROTO_HEADER_SIZE);
 }
 
 void
-twopence_protocol_push_header(twopence_buf_t *bp, unsigned char type)
+twopence_protocol_build_header(twopence_buf_t *bp, unsigned char type)
+{
+	__twopence_protocol_build_header(bp, type, 0, 0);
+}
+
+void
+__twopence_protocol_push_header(twopence_buf_t *bp, unsigned char type, unsigned int cid, unsigned int xid)
 {
 	/* When we post buffers to the output streams of a command, for instance,
 	 * we reserve the space needed for the header.
@@ -76,7 +84,13 @@ twopence_protocol_push_header(twopence_buf_t *bp, unsigned char type)
 	assert(bp->head == TWOPENCE_PROTO_HEADER_SIZE);
 	bp->head = 0;
 
-	twopence_protocol_build_header(bp, type);
+	__twopence_protocol_build_header(bp, type, cid, xid);
+}
+
+void
+twopence_protocol_push_header(twopence_buf_t *bp, unsigned char type)
+{
+	__twopence_protocol_push_header(bp, type, 0, 0);
 }
 
 twopence_buf_t *
@@ -139,6 +153,19 @@ twopence_protocol_format_args(twopence_buf_t *bp, const char *fmt, ...)
 }
 
 twopence_buf_t *
+twopence_protocol_build_hello_packet(unsigned int cid)
+{
+	twopence_buf_t *bp;
+
+	/* Allocate a large buffer with space reserved for the header */
+	bp = twopence_protocol_command_buffer_new();
+
+	/* Finalize the header */
+	__twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_HELLO, cid, 0);
+	return bp;
+}
+
+twopence_buf_t *
 twopence_protocol_build_inject_packet(const char *user, const char *remote_name, unsigned int remote_mode)
 {
 	twopence_buf_t *bp;
@@ -167,6 +194,7 @@ twopence_protocol_build_command_packet(const char *user, const char *command, lo
 
 	/* Finalize the header */
 	twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_COMMAND);
+
 	return bp;
 }
 

@@ -60,6 +60,7 @@ struct connection {
 	semantics_t *	semantics;
 
 	socket_t *	client_sock;
+	unsigned int	client_id;
 	unsigned int	next_id;
 
 	/* We may want to have concurrent transactions later on */
@@ -67,13 +68,14 @@ struct connection {
 };
 
 connection_t *
-connection_new(semantics_t *semantics, socket_t *client_sock)
+connection_new(semantics_t *semantics, socket_t *client_sock, unsigned int client_id)
 {
 	connection_t *conn;
 
 	conn = calloc(1, sizeof(*conn));
 	conn->semantics = semantics;
 	conn->client_sock = client_sock;
+	conn->client_id = client_id;
 
 	return conn;
 }
@@ -145,6 +147,13 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 		TRACE("connection_process_packet type=%c len=%u\n",
 				hdr->type, twopence_buf_count(&payload));
 
+		if (hdr->type == TWOPENCE_PROTO_TYPE_HELLO) {
+			/* HELLO packet. Respond with the ID we assigned to the client */
+			socket_queue_xmit(conn->client_sock,
+				twopence_protocol_build_hello_packet(conn->client_id));
+			continue;
+		}
+
 		/* Here, we could extract a transaction ID from the header
 		 * and locate the right transaction instead of just using
 		 * the default one. */
@@ -189,8 +198,10 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 				if (!twopence_protocol_dissect_string(&payload, username, sizeof(username))
 				 || !twopence_protocol_dissect_uint(&payload, &timeout)
 				 || !twopence_protocol_dissect_string_delim(&payload, command, sizeof(command), '\n')
-				 || command[0] == '\0')
+				 || command[0] == '\0') {
+					TRACE("Failed to parse COMMAND packet\n");
 					break;
+				}
 
 				trans = transaction_new(conn->client_sock, hdr->type, conn->next_id++);
 				semantics->run_command(trans, username, timeout, command);
@@ -202,6 +213,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 
 			default:
 				fprintf(stderr, "Unknown command code '%c' in global context\n", hdr->type);
+				TRACE("Unknown command code '%c' in global context\n", hdr->type);
 			}
 
 			if (trans == NULL) {

@@ -125,7 +125,7 @@ extern void		transaction_send_major(transaction_t *trans, unsigned int code);
 extern void		transaction_send_minor(transaction_t *trans, unsigned int code);
 extern void		transaction_send_timeout(transaction_t *trans);
 
-extern connection_t *	connection_new(semantics_t *semantics, socket_t *client_sock);
+extern connection_t *	connection_new(semantics_t *semantics, socket_t *client_sock, unsigned int client_id);
 extern void		connection_free(connection_t *conn);
 extern unsigned int	connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max);
 extern bool		connection_process_packet(connection_t *conn, twopence_buf_t *bp);

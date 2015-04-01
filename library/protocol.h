@@ -29,12 +29,15 @@ typedef struct header twopence_hdr_t;
 struct header {
 	unsigned char	type;
 	unsigned char	pad;
+	uint16_t	cid;		/* unique client ID assigned by server */
+	uint16_t	xid;		/* unique transaction ID */
 	uint16_t	len;
-};
-#define TWOPENCE_PROTO_HEADER_SIZE	4
+} __attribute((packed));
+#define TWOPENCE_PROTO_HEADER_SIZE	sizeof(twopence_hdr_t)
 #define TWOPENCE_PROTO_MAX_PACKET	32768
 #define TWOPENCE_PROTO_MAX_PAYLOAD	(TWOPENCE_PROTO_MAX_PACKET - TWOPENCE_PROTO_HEADER_SIZE)
 
+#define TWOPENCE_PROTO_TYPE_HELLO	'h'
 #define TWOPENCE_PROTO_TYPE_INJECT	'i'
 #define TWOPENCE_PROTO_TYPE_EXTRACT	'e'
 #define TWOPENCE_PROTO_TYPE_COMMAND	'c'
@@ -54,6 +57,7 @@ extern void		twopence_protocol_push_header(twopence_buf_t *bp, unsigned char typ
 extern twopence_buf_t *	twopence_protocol_command_buffer_new();
 extern twopence_buf_t *	twopence_protocol_build_simple_packet(unsigned char type);
 extern twopence_buf_t *	twopence_protocol_build_eof_packet(void);
+extern twopence_buf_t *	twopence_protocol_build_hello_packet(unsigned int cid);
 extern twopence_buf_t *	twopence_protocol_build_inject_packet(const char *user, const char *remote_name, unsigned int remote_mode);
 extern twopence_buf_t *	twopence_protocol_build_extract_packet(const char *user, const char *remote_name);
 extern twopence_buf_t *	twopence_protocol_build_command_packet(const char *user, const char *command, long timeout);
