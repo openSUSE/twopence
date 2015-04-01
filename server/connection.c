@@ -133,8 +133,17 @@ connection_fill_poll(connection_t *conn, twopence_pollinfo_t *pinfo)
 }
 
 /*
+ * Add a transaction to the connection
+ */
+void
+connection_add_transaction(connection_t *conn, twopence_transaction_t *trans)
+{
+	trans->next = conn->transactions;
+	conn->transactions = trans;
+}
+
+/*
  * Find the transaction corresponding to a given XID.
- * Trivial for now, as we do not support concurrent transactions yet.
  */
 twopence_transaction_t *
 connection_find_transaction(connection_t *conn, uint16_t xid)
@@ -149,6 +158,13 @@ connection_find_transaction(connection_t *conn, uint16_t xid)
 	return NULL;
 }
 
+void
+connection_send_hello_reply(connection_t *conn)
+{
+	twopence_sock_queue_xmit(conn->client_sock,
+				twopence_protocol_build_hello_packet(conn->client_id));
+}
+
 bool
 connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 {
@@ -156,6 +172,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 	twopence_transaction_t *trans;
 
 	while (bp && twopence_protocol_buffer_complete(bp)) {
+		semantics_t *semantics = conn->semantics;
 		twopence_protocol_state_t ps;
 		twopence_buf_t payload;
 
@@ -168,10 +185,9 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 		twopence_debug("connection_process_packet cid=%u xid=%u type=%c len=%u\n",
 				ps.cid, ps.xid, hdr->type, twopence_buf_count(&payload));
 
-		if (hdr->type == TWOPENCE_PROTO_TYPE_HELLO) {
-			/* HELLO packet. Respond with the ID we assigned to the client */
-			twopence_sock_queue_xmit(conn->client_sock,
-				twopence_protocol_build_hello_packet(conn->client_id));
+		if (hdr->type == TWOPENCE_PROTO_TYPE_HELLO && semantics) {
+			/* Process HELLO packet from client */
+			semantics->hello(conn);
 			continue;
 		}
 
@@ -180,14 +196,11 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 			continue;
 		}
 
-		/* Here, we could extract a transaction ID from the header
-		 * and locate the right transaction instead of just using
-		 * the default one. */
 		trans = connection_find_transaction(conn, ps.xid);
 		if (trans != NULL) {
 			twopence_transaction_recv_packet(trans, hdr, &payload);
-		} else {
-			semantics_t *semantics = conn->semantics;
+		} else
+		if (semantics) {
 			twopence_transaction_t *trans = NULL;
 			char username[128];
 			char filename[PATH_MAX];
@@ -232,6 +245,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 
 			case TWOPENCE_PROTO_TYPE_QUIT:
 				semantics->request_quit();
+				/* we should not get here */
 				continue;
 
 			case TWOPENCE_PROTO_TYPE_DATA:
@@ -253,8 +267,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 				twopence_sock_queue_xmit(conn->client_sock,
 					 twopence_protocol_build_uint_packet_ps(&ps, TWOPENCE_PROTO_TYPE_MAJOR, EPROTO));
 			} else {
-				trans->next = conn->transactions;
-				conn->transactions = trans;
+				connection_add_transaction(conn, trans);
 			}
 		}
 	}

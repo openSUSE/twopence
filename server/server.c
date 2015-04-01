@@ -1,5 +1,5 @@
 /*
- * Server semanticServer semantics
+ * Server semantic
  * 
  * The idea is to avoid interfering with networks test. This enables to test
  * even with all network interfaces are shut down.
@@ -639,10 +639,28 @@ failed:
 	return false;
 }
 
+/*
+ * Handle incoming HELLO packet. Respond with the ID we assigned to the client
+ */
+bool
+server_hello(connection_t *conn)
+{
+	connection_send_hello_reply(conn);
+	return true;
+}
+
+bool
+server_request_quit(void)
+{
+	exit(0);
+}
+
 static semantics_t	server_ops = {
+	.hello			= server_hello,
 	.inject_file		= server_inject_file,
 	.extract_file		= server_extract_file,
 	.run_command		= server_run_command,
+	.request_quit		= server_request_quit,
 };
 
 static void
