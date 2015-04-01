@@ -96,7 +96,7 @@ connection_free(connection_t *conn)
 	connection_close(conn);
 	while ((trans = conn->transactions) != NULL) {
 		conn->transactions = trans->next;
-		transaction_free(trans);
+		twopence_transaction_free(trans);
 	}
 	free(conn);
 }
@@ -117,7 +117,7 @@ connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
 	}
 
 	for (trans = conn->transactions; trans; trans = trans->next)
-		nfds += transaction_fill_poll(trans, pfd, max);
+		nfds += twopence_transaction_fill_poll(trans, pfd, max);
 
 	if ((sock = conn->client_sock) != NULL) {
 		twopence_sock_prepare_poll(sock);
@@ -187,7 +187,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 		 * the default one. */
 		trans = connection_find_transaction(conn, ps.xid);
 		if (trans != NULL) {
-			transaction_recv_packet(trans, hdr, &payload);
+			twopence_transaction_recv_packet(trans, hdr, &payload);
 		} else {
 			semantics_t *semantics = conn->semantics;
 			twopence_transaction_t *trans = NULL;
@@ -206,7 +206,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 					break;
 				}
 
-				trans = transaction_new(conn->client_sock, hdr->type, &ps);
+				trans = twopence_transaction_new(conn->client_sock, hdr->type, &ps);
 				semantics->inject_file(trans, username, filename, filemode);
 				break;
 
@@ -215,7 +215,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 				 || !twopence_protocol_dissect_string(&payload, filename, sizeof(filename)))
 					break;
 
-				trans = transaction_new(conn->client_sock, hdr->type, &ps);
+				trans = twopence_transaction_new(conn->client_sock, hdr->type, &ps);
 				semantics->extract_file(trans, username, filename);
 				break;
 
@@ -228,7 +228,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 					break;
 				}
 
-				trans = transaction_new(conn->client_sock, hdr->type, &ps);
+				trans = twopence_transaction_new(conn->client_sock, hdr->type, &ps);
 				semantics->run_command(trans, username, timeout, command);
 				break;
 
@@ -326,12 +326,12 @@ connection_doio(connection_t *conn)
 	}
 
 	for (pos = &conn->transactions; (trans = *pos) != NULL; ) {
-		transaction_doio(trans);
+		twopence_transaction_doio(trans);
 
 		if (trans->done) {
-			twopence_debug("%s: transaction done, free it", transaction_describe(trans));
+			twopence_debug("%s: transaction done, free it", twopence_transaction_describe(trans));
 			*pos = trans->next;
-			transaction_free(trans);
+			twopence_transaction_free(trans);
 		} else {
 			pos = &trans->next;
 		}
@@ -376,7 +376,7 @@ connection_pool_poll(connection_pool_t *pool)
 
 		maxfds ++;	/* One socket for the client */
 		for (trans = conn->transactions; trans; trans = trans->next)
-			maxfds += transaction_num_channels(trans);
+			maxfds += twopence_transaction_num_channels(trans);
 	}
 
 	pfd = alloca(maxfds * sizeof(*pfd));
