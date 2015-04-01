@@ -69,6 +69,7 @@ struct transaction {
 
 extern transaction_t *		transaction_new(twopence_sock_t *client, unsigned int type, const twopence_protocol_state_t *ps);
 extern void			transaction_free(transaction_t *trans);
+extern const char *		transaction_describe(const transaction_t *);
 extern transaction_channel_t *	transaction_attach_local_sink(transaction_t *trans, int fd, unsigned char channel);
 extern transaction_channel_t *	transaction_attach_local_source(transaction_t *trans, int fd, unsigned char channel);
 extern void			transaction_close_sink(transaction_t *trans, unsigned char id);

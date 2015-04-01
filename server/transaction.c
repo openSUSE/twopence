@@ -141,12 +141,13 @@ transaction_new(twopence_sock_t *client, unsigned int type, const twopence_proto
 {
 	transaction_t *trans;
 
-	twopence_debug("%s('%c', %u)\n", __func__, type, ps->xid);
 	trans = calloc(1, sizeof(*trans));
 	trans->ps = *ps;
 	trans->id = ps->xid;
 	trans->type = type;
 	trans->client_sock = client;
+
+	twopence_debug("%s: created new transaction", transaction_describe(trans));
 	return trans;
 }
 
@@ -160,6 +161,31 @@ transaction_free(transaction_t *trans)
 
 	memset(trans, 0, sizeof(*trans));
 	free(trans);
+}
+
+const char *
+transaction_describe(const transaction_t *trans)
+{
+	static char descbuf[64];
+	const char *n;
+
+	switch (trans->type) {
+	case TWOPENCE_PROTO_TYPE_INJECT:
+		n = "inject";
+		break;
+	case TWOPENCE_PROTO_TYPE_EXTRACT:
+		n = "extract";
+		break;
+	case TWOPENCE_PROTO_TYPE_COMMAND:
+		n = "command";
+		break;
+	default:
+		snprintf(descbuf, sizeof(descbuf), "trans-type-%d/%u", trans->type, trans->ps.xid);
+		return descbuf;
+	}
+
+	snprintf(descbuf, sizeof(descbuf), "%s/%u", n, trans->ps.xid);
+	return descbuf;
 }
 
 unsigned int
@@ -194,7 +220,7 @@ transaction_attach_local_sink(transaction_t *trans, int fd, unsigned char id)
 void
 transaction_close_sink(transaction_t *trans, unsigned char id)
 {
-	twopence_debug("%s(%c)\n", __func__, id);
+	twopence_debug("%s: close sink %c\n", transaction_describe(trans), id? : '-');
 	transaction_channel_list_close(&trans->local_sink, id);
 }
 
@@ -217,7 +243,7 @@ transaction_attach_local_source(transaction_t *trans, int fd, unsigned char chan
 void
 transaction_close_source(transaction_t *trans, unsigned char id)
 {
-	twopence_debug("%s(%c)\n", __func__, id);
+	twopence_debug("%s: close source %c\n", transaction_describe(trans), id? : '-');
 	transaction_channel_list_close(&trans->local_source, id);
 }
 
@@ -351,7 +377,7 @@ transaction_doio(transaction_t *trans)
 {
 	transaction_channel_t *channel;
 
-	twopence_debug2("transaction_doio()\n");
+	twopence_debug2("%s: transaction_doio()\n", transaction_describe(trans));
 	for (channel = trans->local_sink; channel; channel = channel->next)
 		transaction_channel_doio(trans, channel);
 	transaction_channel_list_purge(&trans->local_sink);
@@ -386,14 +412,15 @@ transaction_recv_packet(transaction_t *trans, const twopence_hdr_t *hdr, twopenc
 	}
 
 	if (trans->recv == NULL) {
-		twopence_log_error("Unexpected packet type '%c' in transaction context\n", hdr->type);
+		twopence_log_error("%s: unexpected packet type '%c'\n", transaction_describe(trans), hdr->type);
 		transaction_fail(trans, EPROTO);
 		return;
 	}
 
 	sink = transaction_find_sink(trans, hdr->type);
 	if (sink != NULL) {
-		twopence_debug("received %u bytes of data\n", twopence_buf_count(payload));
+		twopence_debug("%s: received %u bytes of data on channel %c\n",
+				transaction_describe(trans), twopence_buf_count(payload), sink->id);
 		if (sink && !transaction_channel_write_data(sink, payload))
 			transaction_fail(trans, errno);
 		return;
@@ -408,16 +435,17 @@ transaction_send_client(transaction_t *trans, twopence_buf_t *bp)
 {
 	const twopence_hdr_t *h = (const twopence_hdr_t *) twopence_buf_head(bp);
 
-	twopence_debug("%s()\n", __func__);
-	if (h)
-		twopence_debug("%s: sending packet type %c, payload=%u\n", __func__, h->type, ntohs(h->len) - TWOPENCE_PROTO_HEADER_SIZE);
+	if (h == NULL)
+		return;
+
+	twopence_debug("%s: sending packet type %c, payload=%u\n", transaction_describe(trans), h->type, ntohs(h->len) - TWOPENCE_PROTO_HEADER_SIZE);
 	twopence_sock_queue_xmit(trans->client_sock, bp);
 }
 
 void
 transaction_send_major(transaction_t *trans, unsigned int code)
 {
-	twopence_debug("%s(id=%d, %d)\n", __func__, trans->id, code);
+	twopence_debug("%s: send status.major=%u", transaction_describe(trans), code);
 	assert(!trans->major_sent);
 	transaction_send_client(trans, twopence_protocol_build_uint_packet_ps(&trans->ps, TWOPENCE_PROTO_TYPE_MAJOR, code));
 	trans->major_sent = true;
@@ -426,7 +454,7 @@ transaction_send_major(transaction_t *trans, unsigned int code)
 void
 transaction_send_minor(transaction_t *trans, unsigned int code)
 {
-	twopence_debug("%s(id=%d, %d)\n", __func__, trans->id, code);
+	twopence_debug("%s: send status.minor=%u", transaction_describe(trans), code);
 	assert(!trans->minor_sent);
 	transaction_send_client(trans, twopence_protocol_build_uint_packet_ps(&trans->ps, TWOPENCE_PROTO_TYPE_MINOR, code));
 	trans->minor_sent = true;

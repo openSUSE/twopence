@@ -547,7 +547,7 @@ server_run_command_send(transaction_t *trans)
 	if (trans->pid) {
 		pid = waitpid(trans->pid, &status, WNOHANG);
 		if (pid > 0) {
-			twopence_debug("process exited, status=%u\n", status);
+			twopence_debug("%s: process exited, status=%u\n", transaction_describe(trans), status);
 			transaction_close_sink(trans, 0);
 			trans->status = status;
 			trans->pid = 0;
