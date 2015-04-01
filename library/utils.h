@@ -22,14 +22,27 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <sys/types.h>
 #include <stdbool.h>
+#include <poll.h>
 
 typedef struct twopence_timeout {
 	struct timeval		now;
 	struct timeval		until;
 } twopence_timeout_t;
 
-extern void	twopence_timeout_init(twopence_timeout_t *);
-extern bool	twopence_timeout_update(twopence_timeout_t *, const struct timeval *deadline);
-extern long	twopence_timeout_msec(const twopence_timeout_t *);
+typedef struct twopence_pollinfo {
+	unsigned int		max_fds, num_fds;
+	struct pollfd *		pfd;
+
+	twopence_timeout_t	timeout;
+} twopence_pollinfo_t;
+
+extern void		twopence_timeout_init(twopence_timeout_t *);
+extern bool		twopence_timeout_update(twopence_timeout_t *, const struct timeval *deadline);
+extern long		twopence_timeout_msec(const twopence_timeout_t *);
+
+extern void		twopence_pollinfo_init(twopence_pollinfo_t *, struct pollfd *, unsigned int);
+extern struct pollfd *	twopence_pollinfo_update(twopence_pollinfo_t *, int fd, int events, const struct timeval *deadline);
+extern int		twopence_pollinfo_poll(const twopence_pollinfo_t *);
+extern int		twopence_pollinfo_ppoll(const twopence_pollinfo_t *, const sigset_t *);
 
 #endif /* UTILS_H */

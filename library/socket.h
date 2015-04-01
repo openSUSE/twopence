@@ -23,6 +23,7 @@
 
 #include <stdint.h>
 #include "twopence.h"
+#include "utils.h"
 
 typedef struct twopence_socket twopence_sock_t;
 
@@ -47,7 +48,7 @@ extern bool		twopence_sock_is_read_eof(const twopence_sock_t *);
 extern bool		twopence_sock_is_write_eof(const twopence_sock_t *);
 extern bool		twopence_sock_is_dead(twopence_sock_t *sock);
 extern void		twopence_sock_prepare_poll(twopence_sock_t *);
-extern bool		twopence_sock_fill_poll(twopence_sock_t *sock, struct pollfd *pfd);
+extern bool		twopence_sock_fill_poll(twopence_sock_t *sock, twopence_pollinfo_t *);
 extern int		twopence_sock_doio(twopence_sock_t *sock);
 extern twopence_buf_t *	twopence_sock_post_recvbuf_if_needed(twopence_sock_t *sock, unsigned int size);
 extern void		twopence_sock_post_recvbuf(twopence_sock_t *sock, twopence_buf_t *bp);

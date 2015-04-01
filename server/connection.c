@@ -102,10 +102,10 @@ connection_free(connection_t *conn)
 }
 
 unsigned int
-connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
+connection_fill_poll(connection_t *conn, twopence_pollinfo_t *pinfo)
 {
+	unsigned int current_num_fds = pinfo->num_fds;
 	twopence_transaction_t *trans;
-	unsigned int nfds = 0;
 	twopence_sock_t *sock;
 
 	sock = conn->client_sock;
@@ -117,7 +117,7 @@ connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
 	}
 
 	for (trans = conn->transactions; trans; trans = trans->next)
-		nfds += twopence_transaction_fill_poll(trans, pfd, max);
+		twopence_transaction_fill_poll(trans, pinfo);
 
 	if ((sock = conn->client_sock) != NULL) {
 		twopence_sock_prepare_poll(sock);
@@ -125,11 +125,11 @@ connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
 		/* Make sure we have a receive buffer posted. */
 		twopence_sock_post_recvbuf_if_needed(sock, TWOPENCE_PROTO_MAX_PACKET);
 
-		if (nfds < max && twopence_sock_fill_poll(sock, pfd + nfds))
-			nfds++;
+		twopence_sock_fill_poll(sock, pinfo);
 	}
 
-	return nfds;
+	/* Return the number of fds we've added */
+	return pinfo->num_fds - current_num_fds;
 }
 
 /*
@@ -370,10 +370,9 @@ connection_pool_add_connection(connection_pool_t *pool, connection_t *conn)
 bool
 connection_pool_poll(connection_pool_t *pool)
 {
+	twopence_pollinfo_t poll_info;
 	connection_t *conn, **connp;
 	unsigned int maxfds = 0;
-	struct pollfd *pfd;
-	unsigned int nfds;
 	sigset_t mask;
 
 	if (pool->connections == NULL)
@@ -387,15 +386,11 @@ connection_pool_poll(connection_pool_t *pool)
 			maxfds += twopence_transaction_num_channels(trans);
 	}
 
-	pfd = alloca(maxfds * sizeof(*pfd));
+	twopence_pollinfo_init(&poll_info, alloca(maxfds * sizeof(struct pollfd)), maxfds);
 
 	connp = &pool->connections;
-	nfds = 0;
 	while ((conn = *connp) != NULL) {
-		unsigned int n;
-
-		n = connection_fill_poll(conn, pfd + nfds, maxfds - nfds);
-		if (n == 0) {
+		if (connection_fill_poll(conn, &poll_info) == 0) {
 			if (conn->client_sock == NULL) {
 				*connp = conn->next;
 				connection_free(conn);
@@ -404,8 +399,6 @@ connection_pool_poll(connection_pool_t *pool)
 			twopence_debug("connection doesn't wait for anything?!\n");
 		}
 		connp = &conn->next;
-
-		nfds += n;
 	}
 
 	if (pool->connections == NULL) {
@@ -413,7 +406,7 @@ connection_pool_poll(connection_pool_t *pool)
 		return false;
 	}
 
-	if (nfds == 0) {
+	if (poll_info.num_fds == 0) {
 		twopence_debug("No events to wait for?!\n");
 	}
 
@@ -421,7 +414,7 @@ connection_pool_poll(connection_pool_t *pool)
 	sigprocmask(SIG_BLOCK, NULL, &mask);
 	sigdelset(&mask, SIGCHLD);
 
-	(void) ppoll(pfd, nfds, NULL, &mask);
+	(void) twopence_pollinfo_ppoll(&poll_info, &mask);
 
 	for (conn = pool->connections; conn; conn = conn->next)
 		connection_doio(conn);

@@ -616,29 +616,31 @@ twopence_sock_prepare_poll(twopence_sock_t *sock)
 }
 
 bool
-twopence_sock_fill_poll(twopence_sock_t *sock, struct pollfd *pfd)
+twopence_sock_fill_poll(twopence_sock_t *sock, twopence_pollinfo_t *pinfo)
 {
+	int events = 0;
+
 	sock->poll_data = NULL;
 
-	memset(pfd, 0, sizeof(*pfd));
 	if (sock->fd < 0)
 		return false;
 
 	if (sock->write_eof != SHUTDOWN_SENT) {
 		if (!twopence_queue_empty(&sock->xmit_queue))
-			pfd->events |= POLLOUT;
+			events |= POLLOUT;
 	}
 	if (!sock->read_eof) {
 		if (sock->recv_buf != NULL && twopence_buf_tailroom_max(sock->recv_buf) != 0)
-			pfd->events |= POLLIN;
+			events |= POLLIN;
 	}
 
-	if (pfd->events == 0)
+	if (events == 0)
 		return false;
 
-	twopence_debug2("%s(fd=%d, %s%s): events=%s\n", __func__, sock->fd, twopence_sock_state_desc(sock), twopence_sock_queue_desc(sock), poll_bit_string(pfd->events));
-	sock->poll_data = pfd;
-	pfd->fd = sock->fd;
+	twopence_debug2("%s(fd=%d, %s%s): events=%s\n", __func__, sock->fd, twopence_sock_state_desc(sock), twopence_sock_queue_desc(sock), poll_bit_string(events));
+	if (!(sock->poll_data = twopence_pollinfo_update(pinfo, sock->fd, events, NULL)))
+		return false;
+
 	return true;
 }
 

@@ -451,7 +451,7 @@ twopence_transaction_channel_write_eof(twopence_trans_channel_t *sink)
 }
 
 int
-twopence_transaction_channel_poll(twopence_trans_channel_t *channel, struct pollfd *pfd)
+twopence_transaction_channel_poll(twopence_trans_channel_t *channel, twopence_pollinfo_t *pinfo)
 {
 	twopence_sock_t *sock = channel->socket;
 
@@ -479,7 +479,7 @@ twopence_transaction_channel_poll(twopence_trans_channel_t *channel, struct poll
 			twopence_sock_post_recvbuf(sock, bp);
 		}
 
-		if (twopence_sock_fill_poll(sock, pfd))
+		if (twopence_sock_fill_poll(sock, pinfo))
 			return 1;
 	}
 
@@ -573,17 +573,16 @@ twopence_transaction_channel_doio(twopence_transaction_t *trans, twopence_trans_
 }
 
 int
-twopence_transaction_fill_poll(twopence_transaction_t *trans, struct pollfd *pfd, unsigned int max)
+twopence_transaction_fill_poll(twopence_transaction_t *trans, twopence_pollinfo_t *pinfo)
 {
-	unsigned int nfds = 0;
+	if (!twopence_timeout_update(&pinfo->timeout, &trans->client.deadline))
+		return TWOPENCE_COMMAND_TIMEOUT_ERROR;
 
 	if (trans->local_sink != NULL) {
 		twopence_trans_channel_t *sink;
 
-		for (sink = trans->local_sink; sink; sink = sink->next) {
-			if (nfds < max && twopence_transaction_channel_poll(sink, pfd + nfds))
-				nfds++;
-		}
+		for (sink = trans->local_sink; sink; sink = sink->next)
+			twopence_transaction_channel_poll(sink, pinfo);
 	}
 
 	/* If the client socket's write queue is already bursting with data,
@@ -592,9 +591,7 @@ twopence_transaction_fill_poll(twopence_transaction_t *trans, struct pollfd *pfd
 		twopence_trans_channel_t *source;
 
 		for (source = trans->local_source; source; source = source->next) {
-			if (nfds < max && twopence_transaction_channel_poll(source, pfd + nfds)) {
-				nfds++;
-			} else {
+			if (!twopence_transaction_channel_poll(source, pinfo)) {
 				/* This is a source not backed by a file descriptor but
 				 * something else (such as a buffer).
 				 * This means we cannot poll, so we just forward all data
@@ -604,7 +601,7 @@ twopence_transaction_fill_poll(twopence_transaction_t *trans, struct pollfd *pfd
 		}
 	}
 
-	return nfds;
+	return 0;
 }
 
 void

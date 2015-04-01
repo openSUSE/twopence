@@ -243,32 +243,29 @@ static int
 __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transaction_t *trans, twopence_status_t *status)
 {
 	twopence_sock_t *sock = handle->link_sock;
+	int rc;
 
 	while (!trans->done) {
 		/* This is connection_fill_poll() */
 		{
 			struct pollfd pfd[16];
-			unsigned int nfds = 0, max = 16;
-			twopence_timeout_t timeout;
+			twopence_pollinfo_t poll_info;
+
+			twopence_pollinfo_init(&poll_info, pfd, 16);
 
 			twopence_sock_prepare_poll(sock);
 
 			/* Make sure we have a receive buffer posted. */
 			twopence_sock_post_recvbuf_if_needed(sock, TWOPENCE_PROTO_MAX_PACKET);
 
-			if (nfds < max && twopence_sock_fill_poll(sock, pfd + nfds))
-				nfds++;
-
-			twopence_timeout_init(&timeout);
-			if (!twopence_transaction_update_timeout(trans, &timeout)) {
-				/* expired */
-				twopence_transaction_set_error(trans, TWOPENCE_COMMAND_TIMEOUT_ERROR);
+			twopence_sock_fill_poll(sock, &poll_info);
+			if ((rc = twopence_transaction_fill_poll(trans, &poll_info)) < 0) {
+				/* most likely a timeout */
+				twopence_transaction_set_error(trans, rc);
 				break;
 			}
 
-			nfds += twopence_transaction_fill_poll(trans, pfd + nfds, max - nfds);
-
-			poll(pfd, nfds, twopence_timeout_msec(&timeout));
+			twopence_pollinfo_poll(&poll_info);
 		}
 
 		/* This is connection_doio() */
@@ -316,7 +313,8 @@ __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transac
 					twopence_buf_compact(bp);
 			}
 
-			twopence_transaction_doio(trans);
+			if (!trans->done)
+				twopence_transaction_doio(trans);
 		}
 
 	}

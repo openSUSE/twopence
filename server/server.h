@@ -43,7 +43,7 @@ struct semantics {
 
 extern connection_t *		connection_new(semantics_t *semantics, twopence_sock_t *client_sock, unsigned int client_id);
 extern void			connection_free(connection_t *conn);
-extern unsigned int		connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max);
+extern unsigned int		connection_fill_poll(connection_t *conn, twopence_pollinfo_t *pinfo);
 extern bool			connection_process_packet(connection_t *conn, twopence_buf_t *bp);
 extern bool			connection_process(connection_t *conn);
 
