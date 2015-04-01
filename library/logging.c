@@ -20,6 +20,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <string.h>
 #include <syslog.h>
 
 #include "twopence.h"
@@ -64,6 +65,8 @@ twopence_trace(const char *fmt, ...)
   va_start(ap, fmt);
   if (twopence_log_file) {
     vfprintf(twopence_log_file, fmt, ap);
+    if (strchr(fmt, '\n') == NULL)
+      fputc('\n', twopence_log_file);
   }
   if (twopence_log_syslog) {
     vsyslog(LOG_DEBUG, fmt, ap);
@@ -82,6 +85,8 @@ twopence_log_error(const char *fmt, ...)
   if (twopence_log_file) {
     fprintf(twopence_log_file, "Error: ");
     vfprintf(twopence_log_file, fmt, ap);
+    if (strchr(fmt, '\n') == NULL)
+      fputc('\n', twopence_log_file);
   }
   if (twopence_log_syslog) {
     vsyslog(LOG_ERR, fmt, ap);
