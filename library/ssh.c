@@ -157,37 +157,16 @@ __twopence_ssh_transaction_close_channel(twopence_ssh_transaction_t *trans)
 }
 
 static twopence_ssh_transaction_t *
-__twopence_ssh_transaction_new(struct twopence_ssh_target *handle,
-		twopence_iostream_t *stdin_stream,
-		twopence_iostream_t *stdout_stream,
-		twopence_iostream_t *stderr_stream,
-		unsigned long timeout)
+__twopence_ssh_transaction_new(struct twopence_ssh_target *handle, unsigned long timeout)
 {
   twopence_ssh_transaction_t *trans;
-  int was_blocking;
-
-  /* Set stdin to non-blocking IO */
-  was_blocking = twopence_iostream_set_blocking(stdin_stream, false);
-  if (was_blocking < 0)
-    return NULL;
 
   trans = calloc(1, sizeof(*trans));
-  if (trans == NULL) {
-    twopence_iostream_set_blocking(trans->stdin.stream, was_blocking);
+  if (trans == NULL)
     return NULL;
-  }
 
   trans->handle = handle;
   trans->channel = NULL;
-
-  /* Set up stdin. TBD: Backgrounded commands should not be connected to stdin */
-  trans->stdin.stream = stdin_stream;
-  trans->stdin.was_blocking = was_blocking;
-  trans->stdin.pfd.fd = -1;
-  trans->stdin.pfd.revents = 0;
-
-  trans->stdout.stream = stdout_stream;
-  trans->stderr.stream = stderr_stream;
 
   gettimeofday(&trans->command_timeout, NULL);
   trans->command_timeout.tv_sec += timeout;
@@ -202,10 +181,30 @@ __twopence_ssh_transaction_free(struct twopence_ssh_transaction *trans)
 
   /* Reset stdin to previous behavior */
   if ((stream = trans->stdin.stream) != NULL)
-    twopence_iostream_set_blocking(stream, trans->stdin.was_blocking);
+    if (trans->stdin.was_blocking >= 0)
+      twopence_iostream_set_blocking(stream, trans->stdin.was_blocking);
 
   __twopence_ssh_transaction_close_channel(trans);
   free(trans);
+}
+
+static void
+__twopence_ssh_transaction_setup_stdio(twopence_ssh_transaction_t *trans,
+		twopence_iostream_t *stdin_stream,
+		twopence_iostream_t *stdout_stream,
+		twopence_iostream_t *stderr_stream)
+{
+  if (stdin_stream) {
+    /* Set stdin to non-blocking IO */
+    trans->stdin.was_blocking = twopence_iostream_set_blocking(stdin_stream, false);
+    trans->stdin.stream = stdin_stream;
+    trans->stdin.pfd.fd = -1;
+    trans->stdin.pfd.revents = 0;
+  }
+
+  trans->stdout.stream = stdout_stream;
+  trans->stderr.stream = stderr_stream;
+
 }
 
 static void
@@ -280,6 +279,57 @@ __twopence_ssh_init_callbacks(twopence_ssh_transaction_t *trans)
 }
 
 static int
+__twopence_ssh_transaction_open_session(twopence_ssh_transaction_t *trans)
+{
+  if (!trans->handle || !trans->handle->session)
+    return TWOPENCE_OPEN_SESSION_ERROR;
+
+  trans->channel = ssh_channel_new(trans->handle->session);
+  if (trans->channel == NULL)
+    return TWOPENCE_OPEN_SESSION_ERROR;
+
+  if (ssh_channel_open_session(trans->channel) != SSH_OK)
+    return TWOPENCE_OPEN_SESSION_ERROR;
+
+  return 0;
+}
+
+static int
+__twopence_ssh_transaction_execute_command(twopence_ssh_transaction_t *trans, twopence_command_t *cmd, twopence_status_t *status_ret)
+{
+  if (trans->channel == NULL)
+    return TWOPENCE_OPEN_SESSION_ERROR;
+
+  __twopence_ssh_init_callbacks(trans);
+
+  // Request that the command be run inside a tty
+  if (cmd->request_tty) {
+    if (ssh_channel_request_pty(trans->channel) != SSH_OK) {
+      __twopence_ssh_transaction_free(trans);
+      return TWOPENCE_OPEN_SESSION_ERROR;
+    }
+    trans->use_tty = true;
+  }
+
+  __twopence_ssh_transaction_setup_stdio(trans,
+		  &cmd->iostream[TWOPENCE_STDIN],
+		  &cmd->iostream[TWOPENCE_STDOUT],
+		  &cmd->iostream[TWOPENCE_STDERR]);
+
+  // Execute the command
+  if (ssh_channel_request_exec(trans->channel, cmd->command) != SSH_OK)
+  {
+    __twopence_ssh_transaction_free(trans);
+    return TWOPENCE_SEND_COMMAND_ERROR;
+  }
+
+  trans->status_ret = status_ret;
+
+  return 0;
+}
+
+
+static int
 __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
 {
   twopence_status_t *status_ret;
@@ -292,7 +342,7 @@ __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
 
   /* If we haven't done so, send the EOF now. */
   if (__twopence_ssh_transaction_send_eof(trans) == SSH_ERROR)
-    return -6;
+    return -7;
 
   /* Get the exit status as reported by the SSH server.
    * If the command exited with a signal, this will be SSH_ERROR;
@@ -633,57 +683,26 @@ static int
 __twopence_ssh_command_ssh
     (struct twopence_ssh_target *handle, twopence_command_t *cmd, twopence_status_t *status_ret)
 {
-  ssh_session session = handle->session;
   twopence_ssh_transaction_t *trans = NULL;
-  ssh_channel channel;
   int rc;
 
-  trans = __twopence_ssh_transaction_new(handle,
-		  &cmd->iostream[TWOPENCE_STDIN],
-		  &cmd->iostream[TWOPENCE_STDOUT],
-		  &cmd->iostream[TWOPENCE_STDERR],
-		  cmd->timeout);
+  trans = __twopence_ssh_transaction_new(handle, cmd->timeout);
   if (trans == NULL)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
   handle->transactions.foreground = trans;
 
-  // We need a SSH channel to get the results
-  channel = ssh_channel_new(session);
-  if (channel == NULL)
-  {
+  rc = __twopence_ssh_transaction_open_session(trans);
+  if (rc != 0) {
     __twopence_ssh_transaction_free(trans);
-    return TWOPENCE_OPEN_SESSION_ERROR;
+    return rc;
   }
-  trans->channel = channel;
 
-  if (ssh_channel_open_session(channel) != SSH_OK)
-  {
+  rc = __twopence_ssh_transaction_execute_command(trans, cmd, status_ret);
+  if (rc != 0) {
     __twopence_ssh_transaction_free(trans);
-    return TWOPENCE_OPEN_SESSION_ERROR;
+    return rc;
   }
-
-  __twopence_ssh_init_callbacks(trans);
-
-  // Request that the command be run inside a tty
-  if (cmd->request_tty)
-  {
-    if (ssh_channel_request_pty(channel) != SSH_OK)
-    {
-      __twopence_ssh_transaction_free(trans);
-      return TWOPENCE_OPEN_SESSION_ERROR;
-    }
-    trans->use_tty = true;
-  }
-
-  // Execute the command
-  if (ssh_channel_request_exec(channel, cmd->command) != SSH_OK)
-  {
-    __twopence_ssh_transaction_free(trans);
-    return TWOPENCE_SEND_COMMAND_ERROR;
-  }
-
-  trans->status_ret = status_ret;
 
   // Read "standard output", "standard error", and remote error code
   rc = __twopence_ssh_poll(trans);
