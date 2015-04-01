@@ -62,7 +62,7 @@ twopence_buf_clone(twopence_buf_t *bp)
 	twopence_buf_t *clone;
 
 	clone = twopence_buf_new(count);
-	twopence_buf_append(clone, bp->base, count);
+	twopence_buf_append(clone, bp->base + bp->head, count);
 	return clone;
 }
 
