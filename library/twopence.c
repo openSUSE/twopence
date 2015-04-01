@@ -800,7 +800,7 @@ twopence_iostream_poll(twopence_iostream_t *stream, struct pollfd *pfd, int mask
       continue;
 
     if (substream->ops->poll == NULL)
-      return -1;
+      return 0;
 
     return substream->ops->poll(substream, pfd, mask);
   }

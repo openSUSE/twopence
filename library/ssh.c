@@ -23,6 +23,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <libssh/callbacks.h>
 
 #include <sys/stat.h>
+#include <sys/poll.h>
+#include <sys/time.h>
 #include <time.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -60,6 +62,27 @@ struct twopence_ssh_target
   struct ssh_channel_callbacks_struct callbacks;
 };
 
+// Read the results of a command
+struct twopence_ssh_transaction {
+	struct twopence_ssh_target *handle;
+	ssh_channel		channel;
+
+	struct {
+	  twopence_iostream_t *	stream;;
+	  struct pollfd		pfd;
+	} stdin;
+
+	bool			at_eof[3];
+
+	struct timeval		command_timeout;
+};
+
+#if 0
+# define SSH_TRACE(fmt...)	fprintf(stderr, fmt)
+#else
+# define SSH_TRACE(fmt...)	do { } while (0)
+#endif
+
 /* Note to self: if you need to find out what libssh is doing,
  * consider enabling tracing:
  *  ssh_set_log_level(SSH_LOG_TRACE);
@@ -88,6 +111,7 @@ __twopence_ssh_error(struct twopence_ssh_target *handle, char c)
   return twopence_target_putc(&handle->base, TWOPENCE_STDERR, c);
 }
 
+#if 0
 // Process chunk of data sent by the remote host
 //
 // Returns 0 if everything went fine, a negative error code otherwise
@@ -112,6 +136,7 @@ __twopence_ssh_sleep()
 
   nanosleep(&t, NULL);
 }
+#endif
 
 static int
 __twopence_ssh_channel_eof(struct twopence_ssh_target *handle)
@@ -138,6 +163,35 @@ __twopence_ssh_close_channel(struct twopence_ssh_target *handle)
   ssh_channel_close(handle->channel);
   ssh_channel_free(handle->channel);
   handle->channel = NULL;
+}
+
+static struct twopence_ssh_transaction *
+__twopence_ssh_transaction_new(struct twopence_ssh_target *handle, ssh_channel channel,
+		twopence_iostream_t *stdin_stream, unsigned long timeout)
+{
+  struct twopence_ssh_transaction *trans;
+
+  trans = calloc(1, sizeof(*trans));
+  if (trans == NULL)
+    return NULL;
+
+  trans->handle = handle;
+  trans->channel = channel;
+  trans->stdin.stream = stdin_stream;
+  trans->stdin.pfd.fd = -1;
+  trans->stdin.pfd.revents = 0;
+
+  gettimeofday(&trans->command_timeout, NULL);
+  trans->command_timeout.tv_sec += timeout;
+
+  return trans;
+}
+
+void
+__twopence_ssh_transaction_free(struct twopence_ssh_transaction *trans)
+{
+  /* For now, nothing */
+  free(trans);
 }
 
 static void
@@ -213,43 +267,42 @@ __twopence_ssh_init_callbacks(struct twopence_ssh_target *handle)
 
 // Read the input from the keyboard or a pipe
 static int
-__twopence_ssh_read_input(struct twopence_ssh_target *handle, ssh_channel channel, bool *nothing, bool *eof)
+__twopence_ssh_read_input(struct twopence_ssh_transaction *trans)
 {
   twopence_iostream_t *stream;
   char buffer[BUFFER_SIZE];
   int size, written;
 
-  stream = twopence_target_stream(&handle->base, TWOPENCE_STDIN);
+  stream = trans->stdin.stream;
   if (stream == NULL || twopence_iostream_eof(stream)) {
-    *nothing = *eof = true;
+    trans->stdin.stream = NULL;
     return 0;
   }
 
   // Read from stdin
   size = twopence_iostream_read(stream, buffer, BUFFER_SIZE);
-  if (size < 0)
-  {
+  if (size < 0) {
     if (errno != EAGAIN)               // Error
       return -1;
-    *nothing = true;                   // Nothing to read
     return 0;
   }
-  if (size == 0)                       // End of file
-  {
-    *nothing = true;
-    *eof = true;
-    if (__twopence_ssh_channel_eof(handle) == SSH_ERROR)
+  if (size == 0) {
+    /* EOF from local file */
+    SSH_TRACE("%s: EOF\n", __func__);
+    if (__twopence_ssh_channel_eof(trans->handle) == SSH_ERROR)
       return -1;
+    trans->stdin.stream = NULL;
     return 0;
   }
+  SSH_TRACE("%s: writing %d bytes to command\n", __func__, size);
   written = ssh_channel_write          // Data, forward it to the remote host
-    (channel, buffer, size);
+    (trans->channel, buffer, size);
   if (written != size)
     return -1;
-  *nothing = false;
   return 0;
 }
 
+#if 0
 // Read the output of the system under test
 //   'fd': 1 for stdout, 2 for stderr
 //
@@ -280,7 +333,167 @@ __twopence_ssh_read_output(struct twopence_ssh_target *handle, ssh_channel chann
   }
   return 0;
 }
+#endif
 
+#if 1
+static int
+__twopence_ssh_stdin_cb(socket_t fd, int revents, void *userdata)
+{
+  struct pollfd *pfd = (struct pollfd *) userdata;
+
+  SSH_TRACE("%s: revents=%d\n", __func__, revents);
+  pfd->revents = revents;
+  return 0;
+}
+
+static bool
+__twopence_ssh_check_timeout(const struct timeval *now, const struct timeval *expires, int *msec)
+{
+    struct timeval until;
+    long until_ms;
+
+    if (timercmp(expires, now, <))
+      return false;
+
+    timersub(expires, now, &until);
+    until_ms = 1000 * until.tv_sec + until.tv_usec / 1000;
+    if (*msec < 0 || until_ms < *msec)
+      *msec = until_ms;
+
+    return true;
+}
+
+
+static int
+__twopence_ssh_poll(struct twopence_ssh_transaction *trans)
+{
+  twopence_iostream_t *stream;
+  ssh_event event;
+
+  fflush(stdout);
+  while ((stream = trans->stdin.stream) != NULL) {
+    int n;
+
+    n = twopence_iostream_poll(stream, &trans->stdin.pfd, POLLIN);
+    if (n == 0) {
+      /* Buffer iostreams return 0; which means it's either a buffer object
+       * that has no open fd, or it's at EOF already.
+       * In either case, we should try reading from this stream right away. */
+      SSH_TRACE("%s: writing stdin synchronously to peer\n", __func__);
+      if (__twopence_ssh_read_input(trans) < 0)
+        return -1;
+    }
+    if (n < 0) {
+      /* Close this iostream */
+      SSH_TRACE("%s: stdin is at EOF\n", __func__);
+      trans->at_eof[0] = true;
+      break;
+    }
+    if (n > 0) {
+      SSH_TRACE("%s: set up stdin for polling from fd %d\n", __func__, trans->stdin.pfd.fd);
+      break;
+    }
+  }
+
+  do {
+    struct timeval now;
+    char buffer[BUFFER_SIZE];
+    int timeout;
+    int size;
+    int rc;
+
+    if (trans->stdin.pfd.revents & (POLLIN|POLLHUP)) {
+      SSH_TRACE("%s: trying to read some data from stdin\n", __func__);
+      if (__twopence_ssh_read_input(trans) < 0)
+        return -1;
+    }
+    if (trans->stdin.stream == NULL) {
+      /* We received an EOF when trying to read from the stream */
+      if (trans->stdin.pfd.fd >= 0) {
+        SSH_TRACE("%s: stdin is at EOF\n", __func__);
+        trans->stdin.pfd.fd = -1;
+      }
+      trans->stdin.stream = NULL;
+      trans->at_eof[0] = true;
+    }
+    trans->stdin.pfd.revents = 0;
+
+    if (ssh_channel_poll(trans->channel, 0) != 0) {
+      SSH_TRACE("%s: trying to read some data from stdout\n", __func__);
+      size = ssh_channel_read_nonblocking(trans->channel, buffer, sizeof(buffer), 0);
+      if (size == SSH_ERROR)
+        return -2;
+      if (size == SSH_EOF) {
+        SSH_TRACE("%s: stdout is at EOF\n", __func__);
+	trans->at_eof[1] = true;
+      }
+      if (size > 0) {
+        if (twopence_target_write(&trans->handle->base, TWOPENCE_STDOUT, buffer, size) < 0)
+	  return -2;
+      }
+    }
+
+    if (ssh_channel_poll(trans->channel, 1) != 0) {
+      SSH_TRACE("%s: trying to read some data from stderr\n", __func__);
+      size = ssh_channel_read_nonblocking(trans->channel, buffer, sizeof(buffer), 1);
+      if (size == SSH_ERROR)
+        return -2;
+      if (size == SSH_EOF) {
+        SSH_TRACE("%s: stderr is at EOF\n", __func__);
+	trans->at_eof[2] = true;
+      }
+      if (size > 0) {
+        if (twopence_target_write(&trans->handle->base, TWOPENCE_STDERR, buffer, size) < 0)
+	  return -2;
+      }
+    }
+
+    SSH_TRACE("eof=%d/%d/%d\n", trans->at_eof[0], trans->at_eof[1], trans->at_eof[2]);
+    if (trans->at_eof[1] && trans->at_eof[2])
+      break;
+
+    gettimeofday(&now, NULL);
+    timeout = -1;
+
+    if (!__twopence_ssh_check_timeout(&now, &trans->command_timeout, &timeout))
+      return -5;
+
+    event = ssh_event_new();
+    ssh_event_add_session(event, ssh_channel_get_session(trans->channel));
+    if (trans->stdin.pfd.fd >= 0) {
+      SSH_TRACE("poll on fd %d\n", trans->stdin.pfd.fd);
+      ssh_event_add_fd(event, trans->stdin.pfd.fd, POLLIN, __twopence_ssh_stdin_cb, &trans->stdin.pfd);
+    }
+
+    SSH_TRACE("polling for events; timeout=%d\n", timeout);
+    rc = ssh_event_dopoll(event, timeout);
+    ssh_event_free(event);
+
+    if (rc == SSH_ERROR)
+      return -6;
+
+    SSH_TRACE("ssh_event_dopoll() = %d\n", rc);
+  } while (true);
+
+  return 0;
+}
+
+static int
+__twopence_ssh_read_results(struct twopence_ssh_target *handle, long timeout, ssh_channel channel)
+{
+  struct twopence_ssh_transaction *trans;
+  int rv;
+
+  trans = __twopence_ssh_transaction_new(handle, channel,
+			  twopence_target_stream(&handle->base, TWOPENCE_STDIN),
+			  timeout);
+
+  rv = __twopence_ssh_poll(trans);
+  __twopence_ssh_transaction_free(trans);
+
+  return rv;
+}
+#else
 // Read the results of a command
 static int
 __twopence_ssh_read_results(struct twopence_ssh_target *handle, long timeout, ssh_channel channel)
@@ -348,6 +561,7 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, long timeout, ss
   }
   return 0;
 }
+#endif
 
 // Send a file in chunks through SCP
 //
