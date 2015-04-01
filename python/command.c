@@ -105,6 +105,9 @@ Command_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 	self->stderr = NULL;
 	self->stdin = NULL;
 	self->suppressOutput = 0;
+	self->useTty = 0;
+	self->background = false;
+	self->pid = 0;
 
 	return (PyObject *)self;
 }
@@ -128,14 +131,18 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 		"stdout",
 		"stderr",
 		"suppressOutput",
+		"background",
 		NULL
 	};
 	PyObject *stdinObject = NULL, *stdoutObject = NULL, *stderrObject = NULL;
 	char *command, *user = NULL;
 	long timeout = 0L;
 	int suppressOutput = 0;
+	int background = 0;
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|slOOOi", kwlist, &command, &user, &timeout, &stdinObject, &stdoutObject, &stderrObject, &suppressOutput))
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|slOOOii", kwlist,
+				&command, &user, &timeout, &stdinObject, &stdoutObject, &stderrObject, &suppressOutput,
+				&background))
 		return -1;
 
 	self->command = strdup(command);
@@ -146,6 +153,7 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 	self->stdinPath = NULL;
 	self->stdin = NULL;
 	self->suppressOutput = suppressOutput;
+	self->background = background;
 
 	if (stdoutObject == NULL) {
 		stdoutObject = twopence_callType(&PyByteArray_Type, NULL, NULL);
@@ -253,6 +261,7 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 	cmd->user = self->user;
 	cmd->timeout = self->timeout;
 	cmd->request_tty = self->useTty;
+	cmd->background = self->background;
 
 	twopence_command_ostreams_reset(cmd);
 	if (self->suppressOutput || self->stdout == Py_None) {
@@ -349,6 +358,8 @@ Command_getattr(twopence_Command *self, char *name)
 		return Command_stdout(self);
 	if (!strcmp(name, "stderr"))
 		return Command_stderr(self);
+	if (!strcmp(name, "pid"))
+		return PyInt_FromLong(self->pid);
 	if (!strcmp(name, "useTty")) {
 		PyObject *rv;
 

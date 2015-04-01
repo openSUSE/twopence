@@ -32,6 +32,8 @@ typedef struct {
 	struct twopence_target *handle;
 	char *		name;
 	PyObject *	attrs;
+
+	struct backgroundedCommand *backgrounded;
 } twopence_Target;
 
 typedef struct {
@@ -46,7 +48,18 @@ typedef struct {
 	PyObject *	stderr;
 	PyObject *	stdin;
 	bool		useTty;
+	bool		background;
+
+	unsigned int	pid;
 } twopence_Command;
+
+struct backgroundedCommand {
+	struct backgroundedCommand *next;
+
+	unsigned int	pid;
+	twopence_command_t cmd;
+	twopence_Command *object;
+};
 
 typedef struct {
 	PyObject_HEAD
@@ -68,6 +81,8 @@ typedef struct {
 	/* for cmd operations */
 	PyObject *	stdout;
 	PyObject *	stderr;
+	PyObject *	command;
+
 	/* for xfer operations */
 	PyObject *	buffer;
 } twopence_Status;

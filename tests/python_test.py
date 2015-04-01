@@ -406,6 +406,67 @@ except:
 	testCaseException()
 testCaseReport()
 
+testCaseBegin("run a command procuding lots of output")
+try:
+	cmd = twopence.Command("dd if=/dev/zero bs=1k count=1k", suppressOutput = 1)
+	status = target.run(cmd)
+	if testCaseCheckStatus(status):
+		got_bytes = len(status.stdout)
+		# We do not check the total amount of data received;
+		# right now, the buffer size is capped at 64K which is not
+		# useful in this context
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("run /bin/pwd in the background")
+try:
+	cmd = twopence.Command("/bin/pwd", background = 1);
+	if target.run(cmd):
+		testCaseFail("Target.run() of a backgrounded command should return None")
+	elif not cmd.pid:
+		testCaseFail("Target.run() of a backgrounded command should set the command's pid")
+	else:
+		status = target.wait()
+		if status == None:
+			testCaseFail("Did not find any process to wait for")
+		elif status.command != cmd:
+			testCaseFail("target.wait() returned a different process (pid=%d)" % status.command.pid)
+		elif testCaseCheckStatus(status):
+			pwd = str(status.stdout).strip();
+			if pwd != "/" and pwd != '/root':
+				testCaseFail("expected pwd to print '/' or '/root', instead got '%s'" % pwd);
+	if cmd.pid:
+		testCaseFail("command pid should be reset to 0 after completion")
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("run several processes in the background")
+try:
+	cmds = []
+	for time in range(1, 6):
+		cmd = twopence.Command("sleep %d" % time, background = 1);
+		print "Starting ", cmd.commandline
+		target.run(cmd)
+
+	nreaped = 0
+	while True:
+		status = target.wait()
+		if status == None:
+			break
+		print "finished one command", status.command.commandline
+		if not(status):
+			testCaseFail("command failed")
+		nreaped = nreaped + 1;
+
+	if nreaped != 5:
+		testCaseFail("Reaped %d commands, expected 5" % nreaped)
+except:
+	testCaseException()
+testCaseReport()
+sys.exit(1)
+
 # There's a "line timeout" in the ssh target plugin that wreaks havoc with the regular
 # timeout handling.
 # If that problem is still present, the following will result in a python exception

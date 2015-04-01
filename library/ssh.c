@@ -129,7 +129,7 @@ struct twopence_scp_transaction {
   long			remaining;
 };
 
-#if 0
+#if 1
 # define SSH_TRACE(fmt...)	fprintf(stderr, fmt)
 #else
 # define SSH_TRACE(fmt...)	do { } while (0)
@@ -368,7 +368,7 @@ __twopence_ssh_transaction_execute_command(twopence_ssh_transaction_t *trans, tw
   }
 
   __twopence_ssh_transaction_setup_stdio(trans,
-		  &cmd->iostream[TWOPENCE_STDIN],
+		  cmd->background? NULL : &cmd->iostream[TWOPENCE_STDIN],
 		  &cmd->iostream[TWOPENCE_STDOUT],
 		  &cmd->iostream[TWOPENCE_STDERR]);
 
@@ -413,6 +413,7 @@ __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
     status->minor = trans->exit_signal;
   }
 
+  SSH_TRACE("exit status is %d/%d\n", status->major, status->minor);
   return 0;
 }
 
@@ -439,6 +440,9 @@ __twopence_ssh_transaction_forward_stdin(twopence_ssh_transaction_t *trans)
   twopence_iostream_t *stream;
   char buffer[BUFFER_SIZE];
   int size, written;
+
+  if (trans->stdin.eof)
+    return 0;
 
   stream = trans->stdin.stream;
   if (stream == NULL || twopence_iostream_eof(stream))
@@ -472,8 +476,13 @@ __twopence_ssh_transaction_forward_output(twopence_ssh_transaction_t *trans, str
   char buffer[BUFFER_SIZE];
   int size;
 
-  if (ssh_channel_poll(trans->channel, out->index) != 0) {
+  if (out->eof)
+    return 0;
+
+  fprintf(stderr, "channel=%p%s\n", trans->channel, out->eof? " EOF" : "");
+  while (!out->eof && ssh_channel_poll(trans->channel, out->index) != 0) {
     SSH_TRACE("%s: trying to read some data from %s\n", __func__, name);
+    fprintf(stderr, "channel=%p\n", trans->channel);
 
     size = ssh_channel_read_nonblocking(trans->channel, buffer, sizeof(buffer), out->index);
     if (size == SSH_ERROR) {
@@ -484,13 +493,14 @@ __twopence_ssh_transaction_forward_output(twopence_ssh_transaction_t *trans, str
     if (size == SSH_EOF) {
       SSH_TRACE("%s: %s is at EOF\n", __func__, name);
       out->eof = true;
-    }
-
-    /* If there is no local stream to write it to, simply drop it on the floor */
-    if (size > 0 && out->stream) {
-      if (twopence_iostream_write(out->stream, buffer, size) < 0) {
-        __twopence_ssh_transaction_fail(trans, TWOPENCE_RECEIVE_RESULTS_ERROR);
-        return -1;
+    } else {
+      /* If there is no local stream to write it to, simply drop it on the floor */
+      SSH_TRACE("%s: got %u bytes of data on %s\n", __func__, size, name);
+      if (size > 0 && out->stream) {
+        if (twopence_iostream_write(out->stream, buffer, size) < 0) {
+          __twopence_ssh_transaction_fail(trans, TWOPENCE_RECEIVE_RESULTS_ERROR);
+          return -1;
+        }
       }
     }
   }
@@ -572,12 +582,7 @@ __twopence_ssh_transaction_doio(twopence_ssh_transaction_t *trans)
 static void
 __twopence_ssh_poll_add_transaction(ssh_event event, twopence_ssh_transaction_t *trans)
 {
-  twopence_iostream_t *stream;
-
-  ssh_event_add_session(event, ssh_channel_get_session(trans->channel));
-
-  if ((stream = trans->stdin.stream) == NULL)
-    __twopence_ssh_transaction_mark_stdin_eof(trans);
+  ssh_event_add_session(event, trans->session);
 
   if (trans->stdin.pfd.fd >= 0) {
     SSH_TRACE("poll on fd %d\n", trans->stdin.pfd.fd);
@@ -632,7 +637,7 @@ __twopence_ssh_poll(struct twopence_ssh_target *handle)
     }
 
     gettimeofday(&now, NULL);
-    timeout = 0;
+    timeout = -1;
 
     for (trans = handle->transactions.running; trans; trans = trans->next) {
       if (!__twopence_ssh_check_timeout(&now, &trans->command_timeout, &timeout)) {
@@ -1218,15 +1223,25 @@ twopence_ssh_wait(struct twopence_target *opaque_handle, int want_pid, twopence_
   twopence_ssh_transaction_t *trans = NULL;
   int rc;
 
-  while (handle->transactions.running) {
+  want_pid = 0;
+  while (true) {
     trans = __twopence_ssh_transaction_get_done(handle, want_pid);
     if (trans != NULL)
+      break;
+
+    if (!handle->transactions.running)
       break;
 
     rc = __twopence_ssh_poll(handle);
     if (rc < 0)
       return rc;
+
+    if (!__twopence_ssh_reap(handle))
+      return TWOPENCE_INTERNAL_ERROR;
   }
+
+  if (trans == NULL)
+    return 0;
 
   assert(trans->done);
 
