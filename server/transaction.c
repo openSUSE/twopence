@@ -282,10 +282,26 @@ transaction_channel_doio(transaction_t *trans, transaction_channel_t *channel)
 	twopence_sock_t *sock = channel->socket;
 
 	if (sock) {
+		twopence_buf_t *bp;
+
 		if (twopence_sock_doio(sock) < 0) {
 			transaction_fail(trans, errno);
 			twopence_sock_mark_dead(sock);
+			return;
 		}
+
+		/* Only source channels will even have a recv buffer posted
+		 * to them. If that is non-empty, queue it to the transport
+		 * socket. */
+		if ((bp = twopence_sock_take_recvbuf(sock)) != NULL) {
+			twopence_protocol_push_header_ps(bp, &trans->ps, channel->id);
+			twopence_sock_queue_xmit(trans->client_sock, bp);
+		}
+
+		/* For file extractions, we want to send an EOF packet
+		 * when the file has been transmitted in its entirety.
+		 * This condition is checked for in server_extract_file_send.
+		 */
 	}
 }
 
@@ -317,32 +333,6 @@ transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max
 	return nfds;
 }
 
-int
-transaction_send_data(transaction_t *trans)
-{
-	transaction_channel_t *channel;
-
-	for (channel = trans->local_source; channel; channel = channel->next) {
-		twopence_sock_t *sock;
-
-		if ((sock = channel->socket) != NULL) {
-			twopence_buf_t *bp;
-
-			if ((bp = twopence_sock_take_recvbuf(sock)) != NULL) {
-				twopence_protocol_push_header_ps(bp, &trans->ps, channel->id);
-				twopence_sock_queue_xmit(trans->client_sock, bp);
-			}
-
-			/* For file extractions, we want to send an EOF packet
-			 * when the file has been transmitted in its entirety.
-			 * This condition is checked for in server_extract_file_send.
-			 */
-		}
-	}
-
-	return true;
-}
-
 void
 transaction_doio(transaction_t *trans)
 {
@@ -355,9 +345,6 @@ transaction_doio(transaction_t *trans)
 
 	for (channel = trans->local_source; channel; channel = channel->next)
 		transaction_channel_doio(trans, channel);
-
-	/* FIXME: this should be wrapped into transaction_channel_doio */
-	transaction_send_data(trans);
 
 	twopence_debug2("transaction_doio(): calling trans->send()\n");
 	if (trans->send)
