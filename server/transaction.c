@@ -56,11 +56,72 @@ struct transaction_channel {
 	twopence_sock_t *	socket;
 };
 
-static transaction_channel_t *	transaction_channel_from_fd(int fd, int flags);
-static void			transaction_channel_free(transaction_channel_t *);
-static bool			transaction_channel_write_data(transaction_channel_t *, twopence_buf_t *);
-static bool			transaction_channel_write_eof(transaction_channel_t *);
-extern void			transaction_channel_list_free(transaction_channel_t **);
+/*
+ * Transaction channel primitives
+ */
+static transaction_channel_t *
+transaction_channel_from_fd(int fd, int flags)
+{
+	transaction_channel_t *sink;
+	twopence_sock_t *sock;
+
+	sock = twopence_sock_new_flags(fd, flags);
+
+	sink = calloc(1, sizeof(*sink));
+	sink->socket = sock;
+
+	return sink;
+}
+
+static void
+transaction_channel_free(transaction_channel_t *sink)
+{
+	twopence_debug("%s(%c)", __func__, sink->id);
+	if (sink->socket)
+		twopence_sock_free(sink->socket);
+	sink->socket = NULL;
+	free(sink);
+}
+
+bool
+transaction_channel_is_read_eof(const transaction_channel_t *channel)
+{
+	twopence_sock_t *sock = channel->socket;
+
+	if (sock)
+		return twopence_sock_is_read_eof(sock);
+	return false;
+}
+
+static void
+transaction_channel_list_purge(transaction_channel_t **list)
+{
+	transaction_channel_t *channel;
+
+	while ((channel = *list) != NULL) {
+		if (channel->socket && twopence_sock_is_dead(channel->socket)) {
+			*list = channel->next;
+			transaction_channel_free(channel);
+		} else {
+			list = &channel->next;
+		}
+	}
+}
+
+static void
+transaction_channel_list_close(transaction_channel_t **list, unsigned char id)
+{
+	transaction_channel_t *channel;
+
+	while ((channel = *list) != NULL) {
+		if (id == 0 || channel->id == id) {
+			*list = channel->next;
+			transaction_channel_free(channel);
+		} else {
+			list = &channel->next;
+		}
+	}
+}
 
 /*
  * Command handling
@@ -84,8 +145,8 @@ transaction_free(transaction_t *trans)
 {
 	/* Do not free trans->client_sock, we don't own it */
 
-	transaction_channel_list_free(&trans->local_sink);
-	transaction_channel_list_free(&trans->local_source);
+	transaction_channel_list_close(&trans->local_sink, 0);
+	transaction_channel_list_close(&trans->local_source, 0);
 
 	memset(trans, 0, sizeof(*trans));
 	free(trans);
@@ -121,65 +182,33 @@ transaction_attach_local_sink(transaction_t *trans, int fd, unsigned char id)
 }
 
 void
-transaction_close_sink(transaction_t *trans)
+transaction_close_sink(transaction_t *trans, unsigned char id)
 {
-	while (trans->local_sink) {
-		transaction_channel_t *sink = trans->local_sink;
-
-		twopence_debug("closing sink for id %c\n", sink->id);
-		trans->local_sink = sink->next;
-		transaction_channel_free(sink);
-	}
+	twopence_debug("%s(%c)\n", __func__, id);
+	transaction_channel_list_close(&trans->local_sink, id);
 }
 
-transaction_channel_t *
-transaction_channel_from_fd(int fd, int flags)
+int
+transaction_attach_local_source(transaction_t *trans, int fd, unsigned char channel_id)
 {
-	transaction_channel_t *sink;
-	twopence_sock_t *sock;
+	transaction_channel_t *source;
 
-	sock = twopence_sock_new_flags(fd, flags);
+	/* Make I/O to this file descriptor non-blocking */
+	fcntl(fd, F_SETFL, O_NONBLOCK);
 
-	sink = calloc(1, sizeof(*sink));
-	sink->socket = sock;
+	source = transaction_channel_from_fd(fd, O_RDONLY);
+	source->id = channel_id;
 
-	return sink;
+	source->next = trans->local_source;
+	trans->local_source = source;
+	return 0;
 }
 
 void
-transaction_channel_free(transaction_channel_t *sink)
+transaction_close_source(transaction_t *trans, unsigned char id)
 {
-	twopence_debug("%s(%c)", __func__, sink->id);
-	if (sink->socket)
-		twopence_sock_free(sink->socket);
-	sink->socket = NULL;
-	free(sink);
-}
-
-void
-transaction_channel_list_free(transaction_channel_t **list)
-{
-	transaction_channel_t *channel;
-
-	while ((channel = *list) != NULL) {
-		*list = channel->next;
-		transaction_channel_free(channel);
-	}
-}
-
-void
-transaction_channel_list_purge(transaction_channel_t **list)
-{
-	transaction_channel_t *channel;
-
-	while ((channel = *list) != NULL) {
-		if (channel->socket && twopence_sock_is_dead(channel->socket)) {
-			*list = channel->next;
-			transaction_channel_free(channel);
-		} else {
-			list = &channel->next;
-		}
-	}
+	twopence_debug("%s(%c)\n", __func__, id);
+	transaction_channel_list_close(&trans->local_source, id);
 }
 
 /*
@@ -188,7 +217,7 @@ transaction_channel_list_purge(transaction_channel_t **list)
  * want to enqueue it to the socket, it has to be cloned first.
  * This is taken care of by twopence_sock_xmit_shared()
  */
-bool
+static bool
 transaction_channel_write_data(transaction_channel_t *sink, twopence_buf_t *payload)
 {
 	twopence_sock_t *sock;
@@ -204,24 +233,13 @@ transaction_channel_write_data(transaction_channel_t *sink, twopence_buf_t *payl
 	return true;
 }
 
-bool
+static void
 transaction_channel_write_eof(transaction_channel_t *sink)
 {
 	twopence_sock_t *sock = sink->socket;
 
-	if (sock && twopence_sock_shutdown_write(sock))
-		return true;
-	return false;
-}
-
-bool
-transaction_channel_is_read_eof(const transaction_channel_t *channel)
-{
-	twopence_sock_t *sock = channel->socket;
-
 	if (sock)
-		return twopence_sock_is_read_eof(sock);
-	return false;
+		twopence_sock_shutdown_write(sock);
 }
 
 int
@@ -267,38 +285,6 @@ transaction_channel_doio(transaction_t *trans, transaction_channel_t *channel)
 		if (twopence_sock_doio(sock) < 0) {
 			transaction_fail(trans, errno);
 			twopence_sock_mark_dead(sock);
-		}
-	}
-}
-
-int
-transaction_attach_local_source(transaction_t *trans, int fd, unsigned char channel_id)
-{
-	transaction_channel_t *source;
-
-	/* Make I/O to this file descriptor non-blocking */
-	fcntl(fd, F_SETFL, O_NONBLOCK);
-
-	source = transaction_channel_from_fd(fd, O_RDONLY);
-	source->id = channel_id;
-
-	source->next = trans->local_source;
-	trans->local_source = source;
-	return 0;
-}
-
-void
-transaction_close_source(transaction_t *trans, unsigned char id)
-{
-	transaction_channel_t **pos, *channel;
-
-	twopence_debug("%s(%c)\n", __func__, id);
-	for (pos = &trans->local_source; (channel = *pos) != NULL; pos = &channel->next) {
-		if (id == 0 || channel->id == id) {
-			twopence_debug("closing source channel %c\n", id);
-			*pos = channel->next;
-			transaction_channel_free(channel);
-			return;
 		}
 	}
 }

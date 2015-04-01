@@ -574,7 +574,7 @@ server_run_command_send(transaction_t *trans)
 		pid = waitpid(trans->pid, &status, WNOHANG);
 		if (pid > 0) {
 			twopence_debug("process exited, status=%u\n", status);
-			transaction_close_sink(trans);
+			transaction_close_sink(trans, 0);
 			trans->status = status;
 			trans->pid = 0;
 		}
@@ -623,7 +623,7 @@ server_run_command_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopenc
 		 */
 		if (trans->pid && !trans->done) {
 			kill(trans->pid, SIGKILL);
-			transaction_close_sink(trans);
+			transaction_close_sink(trans, 0);
 			transaction_close_source(trans, 0); /* ID zero means all */
 		}
 		break;
