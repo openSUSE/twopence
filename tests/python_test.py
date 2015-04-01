@@ -445,7 +445,7 @@ testCaseReport()
 testCaseBegin("run several processes in the background")
 try:
 	cmds = []
-	for time in range(1, 6):
+	for time in range(6, 0, -1):
 		cmd = twopence.Command("sleep %d" % time, background = 1);
 		print "Starting ", cmd.commandline
 		target.run(cmd)
@@ -455,13 +455,13 @@ try:
 		status = target.wait()
 		if status == None:
 			break
-		print "finished one command", status.command.commandline
+		print "finished command:", status.command.commandline
 		if not(status):
 			testCaseFail("command failed")
 		nreaped = nreaped + 1;
 
-	if nreaped != 5:
-		testCaseFail("Reaped %d commands, expected 5" % nreaped)
+	if nreaped != 6:
+		testCaseFail("Reaped %d commands, expected 6" % nreaped)
 except:
 	testCaseException()
 testCaseReport()

@@ -133,7 +133,7 @@ struct twopence_io_ops {
 	int			(*write)(twopence_substream_t *, const void *, size_t);
 	int			(*read)(twopence_substream_t *, void *, size_t);
 	int			(*set_blocking)(twopence_substream_t *, bool);
-	int			(*poll)(twopence_substream_t *, struct pollfd *, int);
+	int			(*getfd)(twopence_substream_t *);
 	long			(*filesize)(twopence_substream_t *);
 };
 
@@ -460,6 +460,7 @@ extern twopence_buf_t *	twopence_iostream_read_all(twopence_iostream_t *);
 extern int		twopence_iostream_set_blocking(twopence_iostream_t *, bool);
 extern int		twopence_iostream_poll(twopence_iostream_t *, struct pollfd *, int mask);
 extern long		twopence_iostream_filesize(twopence_iostream_t *);
+extern int		twopence_iostream_getfd(twopence_iostream_t *);
 
 extern twopence_substream_t *twopence_substream_new_buffer(twopence_buf_t *, bool resizable);
 extern twopence_substream_t *twopence_substream_new_fd(int fd, bool closeit);

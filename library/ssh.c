@@ -51,6 +51,8 @@ struct twopence_ssh_target
 
   ssh_session template;
 
+  ssh_event event;
+
   /* Current command being executed.
    * Down the road, we can have one foreground command (which will
    * receive Ctrl-C interrupts), and any number of backgrounded commands.
@@ -76,6 +78,7 @@ struct twopence_ssh_transaction {
 
   ssh_session		session;
   ssh_channel		channel;
+  ssh_event		event;
 
   /* Set to true when the transaction is done. */
   bool			done;
@@ -91,7 +94,7 @@ struct twopence_ssh_transaction {
 
   struct {
     twopence_iostream_t *stream;
-    struct pollfd	pfd;
+    int			fd;
     bool		eof;
     int			was_blocking;
   } stdin;
@@ -129,7 +132,7 @@ struct twopence_scp_transaction {
   long			remaining;
 };
 
-#if 1
+#if 0
 # define SSH_TRACE(fmt...)	fprintf(stderr, fmt)
 #else
 # define SSH_TRACE(fmt...)	do { } while (0)
@@ -184,6 +187,16 @@ __twopence_ssh_transaction_send_eof(twopence_ssh_transaction_t *trans)
 static void
 __twopence_ssh_transaction_close_channel(twopence_ssh_transaction_t *trans)
 {
+  if (trans->event) {
+    if (trans->session)
+      ssh_event_remove_session(trans->event, trans->session);
+    if (trans->stdin.fd >= 0) {
+      ssh_event_remove_fd(trans->event, trans->stdin.fd);
+      trans->stdin.fd = -1;
+    }
+    trans->event = NULL;
+  }
+
   if (trans->channel) {
     ssh_channel_close(trans->channel);
     ssh_channel_free(trans->channel);
@@ -207,11 +220,11 @@ __twopence_ssh_transaction_new(struct twopence_ssh_target *handle, unsigned long
     return NULL;
 
   trans->handle = handle;
-  trans->channel = NULL;
-  trans->stdin.pfd.fd = -1;
 
   gettimeofday(&trans->command_timeout, NULL);
   trans->command_timeout.tv_sec += timeout;
+
+  trans->stdin.fd = -1;
 
   return trans;
 }
@@ -248,8 +261,7 @@ __twopence_ssh_transaction_setup_stdio(twopence_ssh_transaction_t *trans,
     /* Set stdin to non-blocking IO */
     trans->stdin.was_blocking = twopence_iostream_set_blocking(stdin_stream, false);
     trans->stdin.stream = stdin_stream;
-    trans->stdin.pfd.fd = -1;
-    trans->stdin.pfd.revents = 0;
+    trans->stdin.fd = -1;
   }
 
   trans->stdout.index = 0;
@@ -427,7 +439,12 @@ __twopence_ssh_transaction_mark_stdin_eof(twopence_ssh_transaction_t *trans)
 
   if (__twopence_ssh_transaction_send_eof(trans) == SSH_ERROR)
     return -1;
-  trans->stdin.pfd.fd = -1;
+
+  if (trans->stdin.fd >= 0) {
+    ssh_event_remove_fd(trans->handle->event, trans->stdin.fd);
+    trans->stdin.fd = -1;
+  }
+
   return 0;
 }
 
@@ -479,10 +496,8 @@ __twopence_ssh_transaction_forward_output(twopence_ssh_transaction_t *trans, str
   if (out->eof)
     return 0;
 
-  fprintf(stderr, "channel=%p%s\n", trans->channel, out->eof? " EOF" : "");
   while (!out->eof && ssh_channel_poll(trans->channel, out->index) != 0) {
     SSH_TRACE("%s: trying to read some data from %s\n", __func__, name);
-    fprintf(stderr, "channel=%p\n", trans->channel);
 
     size = ssh_channel_read_nonblocking(trans->channel, buffer, sizeof(buffer), out->index);
     if (size == SSH_ERROR) {
@@ -511,83 +526,41 @@ __twopence_ssh_transaction_forward_output(twopence_ssh_transaction_t *trans, str
 static int
 __twopence_ssh_stdin_cb(socket_t fd, int revents, void *userdata)
 {
-  struct pollfd *pfd = (struct pollfd *) userdata;
+  twopence_ssh_transaction_t *trans = (twopence_ssh_transaction_t *) userdata;
 
-  SSH_TRACE("%s: revents=%d\n", __func__, revents);
-  pfd->revents = revents;
-  return 0;
-}
-
-static int
-__twopence_ssh_transaction_poll_stdin(twopence_ssh_transaction_t *trans)
-{
-  trans->stdin.pfd.events = 0;
-  trans->stdin.pfd.fd = -1;
-
-  while (!trans->stdin.eof) {
-    twopence_iostream_t *stream;
-    int n;
-
-    if ((stream = trans->stdin.stream) == NULL) {
-      __twopence_ssh_transaction_mark_stdin_eof(trans);
-      break;
-    }
-
-    n = twopence_iostream_poll(stream, &trans->stdin.pfd, POLLIN);
-    if (n == 0) {
-      /* twopence_iostream_poll returns 0; which means it's either a buffer object
-       * that has no open fd, or it's at EOF already.
-       * In either case, we should try reading from this stream right away. */
-      SSH_TRACE("%s: writing stdin synchronously to peer\n", __func__);
-      if (__twopence_ssh_transaction_forward_stdin(trans) < 0) {
-        __twopence_ssh_transaction_fail(trans, TWOPENCE_FORWARD_INPUT_ERROR);
-        return -1;
-      }
-    }
-    if (n < 0) {
-      __twopence_ssh_transaction_mark_stdin_eof(trans);
-      break;
-    }
-    if (n > 0) {
-      SSH_TRACE("%s: set up stdin for polling from fd %d\n", __func__, trans->stdin.pfd.fd);
-      assert(trans->stdin.pfd.fd >= 0);
-      break;
-    }
-  }
+  SSH_TRACE("%s: can read data on fd %d\n", __func__, fd);
+  if (__twopence_ssh_transaction_forward_stdin(trans) < 0)
+    __twopence_ssh_transaction_fail(trans, TWOPENCE_FORWARD_INPUT_ERROR);
 
   return 0;
 }
 
 static int
-__twopence_ssh_transaction_doio(twopence_ssh_transaction_t *trans)
+__twopence_ssh_transaction_enable_poll(ssh_event event, twopence_ssh_transaction_t *trans)
 {
-  if (trans->stdin.pfd.revents & (POLLIN|POLLHUP)) {
-    SSH_TRACE("%s: trying to read some data from stdin\n", __func__);
-    if (__twopence_ssh_transaction_forward_stdin(trans) < 0) {
-      __twopence_ssh_transaction_fail(trans, TWOPENCE_FORWARD_INPUT_ERROR);
-      return -1;
-    }
-  }
-  trans->stdin.pfd.revents = 0;
+  twopence_iostream_t *stream;
 
-  if (__twopence_ssh_transaction_forward_output(trans, &trans->stdout, "stdout") < 0)
-    return -1;
+  trans->event = event;
 
-  if (__twopence_ssh_transaction_forward_output(trans, &trans->stderr, "stderr") < 0)
-    return -1;
-
-  return 0;
-}
-
-static void
-__twopence_ssh_poll_add_transaction(ssh_event event, twopence_ssh_transaction_t *trans)
-{
   ssh_event_add_session(event, trans->session);
 
-  if (trans->stdin.pfd.fd >= 0) {
-    SSH_TRACE("poll on fd %d\n", trans->stdin.pfd.fd);
-    ssh_event_add_fd(event, trans->stdin.pfd.fd, POLLIN, __twopence_ssh_stdin_cb, &trans->stdin.pfd);
+  if ((stream = trans->stdin.stream) != NULL && !twopence_iostream_eof(stream)) {
+    trans->stdin.fd = twopence_iostream_getfd(stream);
+    if (trans->stdin.fd < 0) {
+      SSH_TRACE("%s: writing stdin synchronously to peer\n", __func__);
+
+      while (!trans->stdin.eof) {
+        if (__twopence_ssh_transaction_forward_stdin(trans) < 0) {
+          __twopence_ssh_transaction_fail(trans, TWOPENCE_FORWARD_INPUT_ERROR);
+	  return -1;
+	}
+      }
+    } else {
+      ssh_event_add_fd(event, trans->stdin.fd, POLLIN, __twopence_ssh_stdin_cb, trans);
+    }
   }
+
+  return 0;
 }
 
 static bool
@@ -610,23 +583,18 @@ __twopence_ssh_check_timeout(const struct timeval *now, const struct timeval *ex
 static int
 __twopence_ssh_poll(struct twopence_ssh_target *handle)
 {
+  ssh_event event = handle->event;
   twopence_ssh_transaction_t *trans;
-  ssh_event event;
 
   fflush(stdout);
-
-  for (trans = handle->transactions.running; trans; trans = trans->next) {
-    if (__twopence_ssh_transaction_poll_stdin(trans) < 0)
-      return 0;
-  }
-
   do {
     struct timeval now;
     int timeout;
     int rc;
 
     for (trans = handle->transactions.running; trans; trans = trans->next) {
-      if (__twopence_ssh_transaction_doio(trans) < 0)
+      if (__twopence_ssh_transaction_forward_output(trans, &trans->stdout, "stdout") < 0
+       || __twopence_ssh_transaction_forward_output(trans, &trans->stderr, "stderr") < 0)
         return 0;
 
       SSH_TRACE("eof=%d/%d/%d\n", trans->stdin.eof, trans->stdout.eof, trans->stderr.eof);
@@ -646,14 +614,8 @@ __twopence_ssh_poll(struct twopence_ssh_target *handle)
       }
     }
 
-    event = ssh_event_new();
-
-    for (trans = handle->transactions.running; trans; trans = trans->next)
-      __twopence_ssh_poll_add_transaction(event, trans);
-
     SSH_TRACE("polling for events; timeout=%d\n", timeout);
     rc = ssh_event_dopoll(event, timeout);
-    ssh_event_free(event);
 
     SSH_TRACE("ssh_event_dopoll() = %d\n", rc);
     if (rc == SSH_ERROR)
@@ -870,6 +832,7 @@ __twopence_ssh_command_ssh
   }
 
   __twopence_ssh_transaction_add_running(handle, trans);
+  __twopence_ssh_transaction_enable_poll(handle->event, trans);
 
   if (cmd->background)
     return trans->pid;
@@ -1134,6 +1097,9 @@ __twopence_ssh_init(const char *hostname, unsigned int port)
 
   // Register the SSH session template and return the handle
   handle->template = template;
+
+  handle->event = ssh_event_new();
+
   return (struct twopence_target *) handle;
 };
 
@@ -1363,6 +1329,8 @@ static void
 twopence_ssh_end(struct twopence_target *opaque_handle)
 {
   struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
+
+  ssh_event_free(handle->event);
 
   ssh_free(handle->template);
   free(handle);

@@ -805,6 +805,7 @@ twopence_iostream_poll(twopence_iostream_t *stream, struct pollfd *pfd, int mask
   /* We can only do POLLIN for now */
   if (mask & POLLOUT)
     return -1;
+  pfd->events = mask;
 
   /* Find the first non-EOF substream and fill in the pollfd */
   for (i = 0; i < stream->count; ++i) {
@@ -813,14 +814,46 @@ twopence_iostream_poll(twopence_iostream_t *stream, struct pollfd *pfd, int mask
     if (substream->ops == NULL)
       continue;
 
-    if (substream->ops->poll == NULL)
+    if (substream->ops->getfd == NULL)
       return 0;
 
-    return substream->ops->poll(substream, pfd, mask);
+    pfd->fd = substream->ops->getfd(substream);
+    if (pfd->fd >= 0)
+      return 0;
+
+    return -1;
   }
 
   /* All substreams are EOF, so no polling */
   return 0;
+}
+
+int
+twopence_iostream_getfd(twopence_iostream_t *stream)
+{
+  unsigned int i;
+
+  if (stream == NULL)
+    return -1;
+
+  if (stream->eof || stream->count == 0)
+    return -1;
+
+  /* Find the first non-EOF substream and fill in the pollfd */
+  for (i = 0; i < stream->count; ++i) {
+    twopence_substream_t *substream = stream->substream[i];
+
+    if (substream->ops == NULL)
+      continue;
+
+    if (substream->ops->getfd == NULL)
+      return -1;
+
+    return substream->ops->getfd(substream);
+  }
+
+  /* All substreams are EOF */
+  return -1;
 }
 
 /*
@@ -1024,14 +1057,6 @@ twopence_substream_buffer_size(twopence_substream_t *src)
 }
 
 int
-twopence_substream_buffer_poll(twopence_substream_t *src, struct pollfd *pfd, int mask)
-{
-  /* Returning a negative value means "error", returning 0 means "we don't support
-   * polling, so please try to read/write immediately */
-  return 0;
-}
-
-int
 twopence_substream_buffer_set_blocking(twopence_substream_t *src, bool blocking)
 {
   /* always succeeds */
@@ -1042,7 +1067,6 @@ static twopence_io_ops_t twopence_buffer_io = {
 	.read		= twopence_substream_buffer_read,
 	.write		= twopence_substream_buffer_write,
 	.set_blocking	= twopence_substream_buffer_set_blocking,
-	.poll		= twopence_substream_buffer_poll,
 	.filesize	= twopence_substream_buffer_size,
 };
 
@@ -1130,14 +1154,9 @@ twopence_substream_file_set_blocking(twopence_substream_t *src, bool blocking)
 }
 
 int
-twopence_substream_file_poll(twopence_substream_t *src, struct pollfd *pfd, int mask)
+twopence_substream_file_getfd(twopence_substream_t *src)
 {
-  if (src->fd < 0)
-    return -1;
-
-  pfd->fd = src->fd;
-  pfd->events = mask;
-  return 1;
+  return src->fd;
 }
 
 static twopence_io_ops_t twopence_file_io = {
@@ -1145,7 +1164,7 @@ static twopence_io_ops_t twopence_file_io = {
 	.read	= twopence_substream_file_read,
 	.write	= twopence_substream_file_write,
 	.set_blocking = twopence_substream_file_set_blocking,
-	.poll	= twopence_substream_file_poll,
+	.getfd	= twopence_substream_file_getfd,
 	.filesize = twopence_substream_file_size,
 };
 
