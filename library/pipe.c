@@ -206,7 +206,7 @@ __twopence_pipe_stdin_read_eof(twopence_transaction_t *trans, twopence_trans_cha
 {
   int rc;
 
-  if ((rc = twopence_sock_xmit(trans->client_sock, twopence_protocol_build_eof_packet(&trans->ps))) < 0)
+  if ((rc = twopence_sock_xmit(trans->socket, twopence_protocol_build_eof_packet(&trans->ps))) < 0)
     twopence_transaction_set_error(trans, rc);
 }
 
@@ -401,7 +401,7 @@ __twopence_pipe_inject_read_eof(twopence_transaction_t *trans, twopence_trans_ch
 {
   int rc;
 
-  if ((rc = twopence_sock_xmit(trans->client_sock, twopence_protocol_build_eof_packet(&trans->ps))) < 0)
+  if ((rc = twopence_sock_xmit(trans->socket, twopence_protocol_build_eof_packet(&trans->ps))) < 0)
     twopence_transaction_set_error(trans, rc);
 }
 

@@ -43,7 +43,7 @@ struct twopence_transaction {
 	bool			(*recv)(twopence_transaction_t *, const twopence_hdr_t *hdr, twopence_buf_t *);
 
 	twopence_protocol_state_t ps;
-	twopence_sock_t *	client_sock;
+	twopence_sock_t *	socket;
 
 	/* These are really server side only (for command execution) */
 	pid_t			pid;

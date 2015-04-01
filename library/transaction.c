@@ -184,7 +184,7 @@ twopence_transaction_new(twopence_sock_t *transport, unsigned int type, const tw
 	trans->ps = *ps;
 	trans->id = ps->xid;
 	trans->type = type;
-	trans->client_sock = transport;
+	trans->socket = transport;
 
 	twopence_debug("%s: created new transaction", twopence_transaction_describe(trans));
 	return trans;
@@ -193,7 +193,7 @@ twopence_transaction_new(twopence_sock_t *transport, unsigned int type, const tw
 void
 twopence_transaction_free(twopence_transaction_t *trans)
 {
-	/* Do not free trans->client_sock, we don't own it */
+	/* Do not free trans->socket, we don't own it */
 
 	twopence_transaction_channel_list_close(&trans->local_sink, 0);
 	twopence_transaction_channel_list_close(&trans->local_source, 0);
@@ -271,7 +271,7 @@ twopence_transaction_send_extract(twopence_transaction_t *trans, const char *use
 	twopence_buf_t *bp;
 
 	bp = twopence_protocol_build_extract_packet(&trans->ps, user, remote_name);
-	if (twopence_sock_xmit(trans->client_sock, bp) < 0)
+	if (twopence_sock_xmit(trans->socket, bp) < 0)
 		return TWOPENCE_SEND_COMMAND_ERROR;
 	return 0;
 }
@@ -282,7 +282,7 @@ twopence_transaction_send_inject(twopence_transaction_t *trans, const char *user
 	twopence_buf_t *bp;
 
 	bp = twopence_protocol_build_inject_packet(&trans->ps, user, remote_name, remote_mode);
-	if (twopence_sock_xmit(trans->client_sock, bp) < 0)
+	if (twopence_sock_xmit(trans->socket, bp) < 0)
 		return TWOPENCE_SEND_COMMAND_ERROR;
 	return 0;
 }
@@ -293,7 +293,7 @@ twopence_transaction_send_command(twopence_transaction_t *trans, const char *use
 	twopence_buf_t *bp;
 
 	bp = twopence_protocol_build_command_packet(&trans->ps, user, linux_command, timeout);
-	if (twopence_sock_xmit(trans->client_sock, bp) < 0)
+	if (twopence_sock_xmit(trans->socket, bp) < 0)
 		return TWOPENCE_SEND_COMMAND_ERROR;
 	return 0;
 }
@@ -481,7 +481,7 @@ twopence_transaction_channel_forward(twopence_transaction_t *trans, twopence_tra
 	twopence_iostream_t *stream = channel->stream;
 
 	if (!channel->plugged && stream != NULL) {
-		while (twopence_sock_xmit_queue_allowed(trans->client_sock) && !twopence_iostream_eof(stream)) {
+		while (twopence_sock_xmit_queue_allowed(trans->socket) && !twopence_iostream_eof(stream)) {
 			twopence_buf_t *bp;
 			int count;
 
@@ -544,7 +544,7 @@ twopence_transaction_channel_doio(twopence_transaction_t *trans, twopence_trans_
 
 			twopence_debug2("%s: %u bytes from local source %c", twopence_transaction_describe(trans), count, channel->id);
 			twopence_protocol_push_header_ps(bp, &trans->ps, channel->id);
-			twopence_sock_queue_xmit(trans->client_sock, bp);
+			twopence_sock_queue_xmit(trans->socket, bp);
 
 			twopence_transaction_channel_trace_io(trans);
 		}
@@ -576,7 +576,7 @@ twopence_transaction_fill_poll(twopence_transaction_t *trans, struct pollfd *pfd
 
 	/* If the client socket's write queue is already bursting with data,
 	 * refrain from queuing more until some of it has been drained */
-	if (twopence_sock_xmit_queue_allowed(trans->client_sock)) {
+	if (twopence_sock_xmit_queue_allowed(trans->socket)) {
 		twopence_trans_channel_t *source;
 
 		for (source = trans->local_source; source; source = source->next) {
@@ -675,7 +675,7 @@ twopence_transaction_send_client(twopence_transaction_t *trans, twopence_buf_t *
 		return;
 
 	twopence_debug("%s: sending packet type %c, payload=%u\n", twopence_transaction_describe(trans), h->type, ntohs(h->len) - TWOPENCE_PROTO_HEADER_SIZE);
-	twopence_sock_queue_xmit(trans->client_sock, bp);
+	twopence_sock_queue_xmit(trans->socket, bp);
 }
 
 void
