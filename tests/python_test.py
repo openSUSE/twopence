@@ -493,6 +493,67 @@ else:
 	testCaseException()
 testCaseReport()
 
+testCaseBegin("wait for a specific process")
+if target.type != "ssh":
+    testCaseSkip("background execution only available in ssh plugin right now")
+else:
+    try:
+	cmd1 = twopence.Command("sleep 2", background = 1);
+	target.run(cmd1);
+	print "cmd1: %s (pid %d)" % (cmd1.commandline, cmd1.pid)
+
+	cmd2 = twopence.Command("sleep 4", background = 1);
+	target.run(cmd2);
+	print "cmd2: %s (pid %d)" % (cmd2.commandline, cmd2.pid)
+
+	# Now wait for the second command, which actually takes
+	# longer.
+	status = target.wait(cmd2.pid);
+	if not(status):
+		testCaseFail("command failed")
+	elif status.command == cmd2:
+		print "finished command:", status.command.commandline
+	else:
+		testCaseFail("target.wait() returned the wrong command")
+
+	status = target.wait();
+	if not(status):
+		testCaseFail("command failed")
+	else:
+		print "finished command:", status.command.commandline
+    except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("combine foreground and background process")
+if target.type != "ssh":
+    testCaseSkip("background execution only available in ssh plugin right now")
+else:
+    try:
+	cmd1 = twopence.Command("sleep 2", background = 1);
+	target.run(cmd1);
+	print "cmd1: %s (pid %d)" % (cmd1.commandline, cmd1.pid)
+
+	cmd2 = twopence.Command("sleep 4", background = 0);
+	print "cmd2: %s (foreground)" % cmd2.commandline
+
+	status = target.run(cmd2);
+	if not(status):
+		testCaseFail("command failed")
+	elif status.command == cmd1:
+		testCaseFail("target.wait() returned the wrong command")
+	else:
+		print "finished foreground command"
+
+	status = target.wait();
+	if not(status):
+		testCaseFail("command failed")
+	else:
+		print "finished command:", status.command.commandline
+    except:
+	testCaseException()
+testCaseReport()
+
 # There's a "line timeout" in the ssh target plugin that wreaks havoc with the regular
 # timeout handling.
 # If that problem is still present, the following will result in a python exception
