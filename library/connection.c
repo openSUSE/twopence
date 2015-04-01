@@ -154,17 +154,23 @@ twopence_conn_add_transaction_done(twopence_conn_t *conn, twopence_transaction_t
 }
 
 twopence_transaction_t *
-twopence_conn_reap_transaction(twopence_conn_t *conn, const twopence_transaction_t *wait_for)
+twopence_conn_reap_transaction(twopence_conn_t *conn, int wait_for_xid)
 {
 	twopence_transaction_t *rover;
 
 	for (rover = conn->done_transactions.head; rover != NULL; rover = rover->next) {
-		if (wait_for == NULL || rover == wait_for) {
+		if (wait_for_xid == 0 || rover->id == wait_for_xid) {
 			twopence_transaction_unlink(rover);
 			return rover;
 		}
 	}
 	return NULL;
+}
+
+bool
+twopence_conn_has_pending_transactions(const twopence_conn_t *conn)
+{
+	return conn->transactions.head != NULL;
 }
 
 /*

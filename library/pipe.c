@@ -256,21 +256,47 @@ __twopence_pipe_end_transaction(twopence_conn_t *conn, twopence_transaction_t *t
 	twopence_conn_add_transaction_done(conn, trans);
 }
 
+static void
+__twopence_pipe_transaction_add_running(struct twopence_pipe_target *handle, twopence_transaction_t *trans)
+{
+	twopence_conn_add_transaction(handle->connection, trans);
+}
+
+static twopence_transaction_t *
+__twopence_pipe_get_completed_transaction(struct twopence_pipe_target *handle, int xid)
+{
+	return twopence_conn_reap_transaction(handle->connection, xid);
+}
+
+int
+__twopence_pipe_doio(struct twopence_pipe_target *handle)
+{
+	twopence_pollinfo_t poll_info;
+	struct pollfd pfd[16];
+
+	twopence_debug("%s()", __func__);
+	twopence_pollinfo_init(&poll_info, pfd, 16);
+	twopence_conn_fill_poll(handle->connection, &poll_info);
+
+	twopence_pollinfo_poll(&poll_info);
+	if (twopence_conn_doio(handle->connection) < 0)
+		return TWOPENCE_PROTOCOL_ERROR;
+
+	return 0;
+}
+
 static int
 __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transaction_t *trans, twopence_status_t *status)
 {
-	twopence_conn_add_transaction(handle->connection, trans);
+	int xid = trans->id;
+	int rc;
 
-	while (twopence_conn_reap_transaction(handle->connection, trans) == NULL) {
-		twopence_pollinfo_t poll_info;
-		struct pollfd pfd[16];
-
-		twopence_pollinfo_init(&poll_info, pfd, 16);
-		twopence_conn_fill_poll(handle->connection, &poll_info);
-
-		twopence_pollinfo_poll(&poll_info);
-		if (twopence_conn_doio(handle->connection) < 0)
-			goto protocol_error;
+	while (twopence_conn_reap_transaction(handle->connection, xid) == NULL) {
+		if ((rc = __twopence_pipe_doio(handle)) < 0) {
+			/* Kill the connection? */
+			twopence_transaction_unlink(trans);
+			return rc;
+		}
 	}
 
 	*status = trans->client.status_ret;
@@ -278,11 +304,6 @@ __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transac
 		return trans->client.exception;
 
 	return 0;
-
-protocol_error:
-	/* kill the connection? */
-	twopence_transaction_unlink(trans);
-	return TWOPENCE_PROTOCOL_ERROR;
 }
 
 ///////////////////////////// Middle layer //////////////////////////////////////
@@ -444,6 +465,16 @@ __twopence_pipe_command(struct twopence_pipe_target *handle, twopence_command_t 
   twopence_pipe_transaction_attach_stdout(trans, cmd);
   twopence_pipe_transaction_attach_stderr(trans, cmd);
 
+  __twopence_pipe_transaction_add_running(handle, trans);
+
+  /* If we've been asked to run the command in the background,
+   * return its XID now. */
+  if (cmd->background) {
+    twopence_debug("backgrounding transaction %d (return pid %d)",
+		    twopence_transaction_describe(trans), trans->id);
+    return trans->id;
+  }
+
   handle->current_transaction = trans;
   rc = __twopence_transaction_run(handle, trans, status_ret);
   handle->current_transaction = NULL;
@@ -489,6 +520,8 @@ int __twopence_pipe_inject_file
       twopence_transaction_set_dot_stream(trans, twopence_target_stream(&handle->base, TWOPENCE_STDOUT));
   }
 
+  __twopence_pipe_transaction_add_running(handle, trans);
+
   rc = __twopence_transaction_run(handle, trans, status);
 
 out:
@@ -531,6 +564,8 @@ int _twopence_extract_virtio_serial
     if (xfer->print_dots)
       twopence_transaction_set_dot_stream(trans, twopence_target_stream(&handle->base, TWOPENCE_STDOUT));
   }
+
+  __twopence_pipe_transaction_add_running(handle, trans);
 
   rc = __twopence_transaction_run(handle, trans, status);
 
@@ -590,12 +625,47 @@ twopence_pipe_run_test
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
-  /* Background execution of commands currently not supported on this plugin */
-  if (cmd->background)
-    return TWOPENCE_PARAMETER_ERROR;
-
   handle->base.current.io = cmd->iostream;
   return __twopence_pipe_command(handle, cmd, status_ret);
+}
+
+/*
+ * Wait for a remote command to finish
+ */
+int
+twopence_pipe_wait(struct twopence_target *opaque_handle, int want_pid, twopence_status_t *status)
+{
+  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
+  twopence_transaction_t *trans = NULL;
+  int rc;
+
+  twopence_debug("%s: waiting for pid %d", __func__, want_pid);
+  while (true) {
+    trans = __twopence_pipe_get_completed_transaction(handle, want_pid);
+    if (trans != NULL)
+      break;
+
+    if (!twopence_conn_has_pending_transactions(handle->connection))
+      break;
+
+    rc = __twopence_pipe_doio(handle);
+    if (rc < 0)
+      return rc;
+  }
+
+  if (trans == NULL)
+    return 0;
+
+  twopence_debug("%s: returning status for transaction %s", __func__, twopence_transaction_describe(trans));
+  if (trans->client.exception < 0) {
+    rc = trans->client.exception;
+  } else {
+    *status = trans->client.status_ret;
+    rc = trans->id;
+  }
+
+  twopence_transaction_free(trans);
+  return rc;
 }
 
 /*
