@@ -407,12 +407,34 @@ Target_wait(PyObject *self, PyObject *args, PyObject *kwds)
 	struct twopence_target *handle;
 	twopence_Target *tgtObject = (twopence_Target *) self;
 	struct backgroundedCommand *bg, **pos;
-	PyObject *result;
+	PyObject *argObject = NULL, *result;
 	twopence_status_t status;
-	int pid;
+	int pid = 0;
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i", kwlist, &pid))
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O", kwlist, &argObject))
 		return NULL;
+
+	if (argObject == NULL) {
+		pid = 0;
+	} else if (PyInt_Check(argObject)) {
+		pid = PyInt_AsLong(argObject);
+	} else if (Command_Check(argObject)) {
+		pid = ((twopence_Command *) argObject)->pid;
+		if (pid == 0) {
+			PyErr_SetString(PyExc_ValueError,
+				"target.wait(): no running command matching this argument");
+			return NULL;
+		}
+	} else {
+		PyErr_SetString(PyExc_TypeError,
+				"target.wait(): Invalid argument type");
+		return NULL;
+	}
+
+	if (pid < 0) {
+		PyErr_SetString(PyExc_ValueError, "target.wait(): pid must not be negative");
+		return NULL;
+	}
 
 	if ((handle = Target_handle(self)) == NULL)
 		return NULL;

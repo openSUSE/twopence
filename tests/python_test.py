@@ -508,7 +508,7 @@ else:
 
 	# Now wait for the second command, which actually takes
 	# longer.
-	status = target.wait(cmd2.pid);
+	status = target.wait(cmd2);
 	if not(status):
 		testCaseFail("command failed")
 	elif status.command == cmd2:
