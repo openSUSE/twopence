@@ -465,7 +465,6 @@ try:
 except:
 	testCaseException()
 testCaseReport()
-sys.exit(1)
 
 # There's a "line timeout" in the ssh target plugin that wreaks havoc with the regular
 # timeout handling.
