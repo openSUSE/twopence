@@ -31,6 +31,7 @@ typedef struct twopence_connection_pool twopence_conn_pool_t;
 
 typedef const struct semantics twopence_conn_semantics_t;
 struct semantics {
+	int		(*doio)(twopence_conn_pool_t *, twopence_conn_t *);
 	bool		(*process_request)(twopence_transaction_t *, twopence_buf_t *);
 	void		(*end_transaction)(twopence_conn_t *, twopence_transaction_t *);
 };
@@ -43,6 +44,7 @@ extern bool			twopence_conn_process_packet(twopence_conn_t *conn, twopence_buf_t
 extern bool			twopence_conn_process(twopence_conn_t *conn);
 extern twopence_transaction_t *	twopence_conn_transaction_new(twopence_conn_t *, unsigned int type, const twopence_protocol_state_t *);
 extern int			twopence_conn_xmit_packet(twopence_conn_t *, twopence_buf_t *);
+extern twopence_sock_t *	twopence_conn_accept(twopence_conn_t *);
 extern bool			twopence_conn_is_closed(const twopence_conn_t *);
 
 extern void			twopence_conn_add_transaction(twopence_conn_t *conn, twopence_transaction_t *trans);

@@ -743,7 +743,11 @@ twopence_pipe_end(struct twopence_target *opaque_handle)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
+  twopence_debug("%s()", __func__);
   if (handle->connection != NULL) {
+    /* The connection may still be attached to twopence_pipe_connection_pool,
+     * but fortunately, twopence_conn_free() takes care of this.
+     */
     twopence_conn_free(handle->connection);
     handle->connection = NULL;
   }

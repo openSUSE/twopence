@@ -487,6 +487,27 @@ twopence_sock_xmit_queue_allowed(const twopence_sock_t *sock)
 	return true;
 }
 
+twopence_sock_t *
+twopence_sock_accept(twopence_sock_t *sock)
+{
+	int sock_fd;
+
+	if (sock->fd < 0)
+		return NULL;
+
+	if (sock->poll_data == NULL || !(sock->poll_data->events & POLLIN))
+		return NULL;
+
+	sock_fd = accept(sock->fd, NULL, NULL);
+	if (sock_fd < 0) {
+		if (errno != EAGAIN)
+			twopence_log_error("failed to accept incoming connection on socket: %m");
+		return NULL;
+	}
+
+	return twopence_sock_new(sock_fd);
+}
+
 static bool
 __socket_try_shutdown(twopence_sock_t *sock)
 {

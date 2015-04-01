@@ -50,6 +50,7 @@ struct pollfd;
 #define TWOPENCE_UNSUPPORTED_FUNCTION_ERROR -15
 #define TWOPENCE_PROTOCOL_ERROR             -16
 #define TWOPENCE_INTERNAL_ERROR		    -17
+#define TWOPENCE_TRANSPORT_ERROR	    -18
 
 struct twopence_target;
 

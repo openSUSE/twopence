@@ -28,6 +28,7 @@
 #define DEFAULT_COMMAND_TIMEOUT	12	/* seconds */
 
 extern void		server_run(twopence_sock_t *);
+extern void		server_listen(twopence_sock_t *);
 
 #define AUDIT(fmt, args...) \
 	do { \

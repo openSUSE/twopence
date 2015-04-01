@@ -341,8 +341,7 @@ int main(int argc, char *argv[])
 	opt_daemon = false;
       }
 
-      service_connection(serial_fd);
-      close(serial_fd);
+      server_run(twopence_sock_new(serial_fd));
     } while (!opt_oneshot);
   } else
   if (!strcmp(opt_port_type, "unix")) {
@@ -358,18 +357,7 @@ int main(int argc, char *argv[])
     }
 
     do {
-      int sock_fd, retries = 0;
-
-      while ((sock_fd = accept_unix_connection(listen_fd)) < 0) {
-        if (++retries > 100) {
-          twopence_log_error("... giving up.\n");
-	  exit(TWOPENCE_SERVER_SOCKET_ERROR);
-	}
-        continue;
-      }
-
-      service_connection(sock_fd);
-      close(sock_fd);
+      server_listen(twopence_sock_new(listen_fd));
     } while (!opt_oneshot);
   } else {
     fprintf(stderr, "serial port type %s not yet implemented\n", opt_port_type);
@@ -377,12 +365,6 @@ int main(int argc, char *argv[])
   }
 
   return 0;
-}
-
-void
-service_connection(int serial_fd)
-{
-  server_run(twopence_sock_new(serial_fd));
 }
 
 void

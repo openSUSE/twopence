@@ -134,6 +134,14 @@ twopence_conn_xmit_packet(twopence_conn_t *conn, twopence_buf_t *bp)
 	return twopence_sock_xmit(conn->client_sock, bp);
 }
 
+twopence_sock_t *
+twopence_conn_accept(twopence_conn_t *conn)
+{
+	if (conn->client_sock == NULL)
+		return NULL;
+	return twopence_sock_accept(conn->client_sock);
+}
+
 unsigned int
 twopence_conn_fill_poll(twopence_conn_t *conn, twopence_pollinfo_t *pinfo)
 {
@@ -358,7 +366,7 @@ twopence_conn_doio(twopence_conn_t *conn)
 		if (twopence_sock_doio(sock) < 0) {
 			twopence_log_error("I/O error on socket: %m\n");
 			twopence_conn_close(conn);
-			return -1;
+			return TWOPENCE_TRANSPORT_ERROR;
 		}
 
 		/* See if we have received one or more complete packets */
@@ -381,7 +389,7 @@ twopence_conn_doio(twopence_conn_t *conn)
 
 		if (twopence_sock_is_dead(sock)) {
 			twopence_conn_close(conn);
-			return -1;
+			return 0;
 		}
 	}
 
@@ -487,8 +495,18 @@ twopence_conn_pool_poll(twopence_conn_pool_t *pool)
 	(void) twopence_pollinfo_ppoll(&poll_info, &mask);
 
 	for (conn = pool->connections.head; conn; conn = conn->next) {
-		if (twopence_conn_doio(conn) < 0) {
-			twopence_log_error("%s: error when processing IO, closing connection", __func__);
+		int rc;
+
+		/* This is really just for accepting incoming connections on a listening
+		 * socket. */
+		if (conn->semantics && conn->semantics->doio) {
+			rc = conn->semantics->doio(pool, conn);
+		} else {
+			rc = twopence_conn_doio(conn);
+		}
+
+		if (rc < 0) {
+			twopence_log_error("%s: error when processing IO, closing connection: %s", __func__, twopence_strerror(rc));
 			twopence_conn_close(conn);
 		}
 	}

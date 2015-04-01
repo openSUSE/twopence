@@ -494,6 +494,8 @@ twopence_strerror(int rc)
       return "Twopence custom protocol error";
     case TWOPENCE_INTERNAL_ERROR:
       return "Internal error";
+    case TWOPENCE_TRANSPORT_ERROR:
+      return "Error sending or receiving data on socket";
   }
   return "Unknow error";
 }

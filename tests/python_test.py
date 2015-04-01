@@ -569,6 +569,45 @@ else:
 	testCaseException()
 testCaseReport()
 
+crossTargetConcurrencySupport = backgroundingSupported
+if target.type != "virtio":
+    crossTargetConcurrencySupport = False
+
+testCaseBegin("run concurrent processes on multiple targets")
+if not(crossTargetConcurrencySupport):
+    testCaseSkip("cross-target concurrency not available for %s plugin right now" % target.type)
+else:
+    try:
+	# Just open a second connection to the same server
+	target2 = twopence.Target(targetSpec);
+
+	cmd1 = twopence.Command("sh -c 'for x in `seq 1 20`; do echo -n A; sleep 0.2; done'", background = 1);
+	target.run(cmd1);
+	print "cmd1: %s (pid %d)" % (cmd1.commandline, cmd1.pid)
+
+	cmd2 = twopence.Command("sh -c 'for x in `seq 1 20`; do echo -n B; sleep 0.2; done'", background = 1);
+	target.run(cmd2);
+	print "cmd2: %s (pid %d)" % (cmd2.commandline, cmd2.pid)
+
+	status = target.wait();
+	print "\n"
+
+	if not(status):
+		testCaseFail("command failed")
+	else:
+		print "finished command:", status.command.commandline
+
+	status = target.wait();
+	if not(status):
+		testCaseFail("command failed")
+	else:
+		print "finished command:", status.command.commandline
+
+	target2 = None
+    except:
+	testCaseException()
+testCaseReport()
+
 # There's a "line timeout" in the ssh target plugin that wreaks havoc with the regular
 # timeout handling.
 # If that problem is still present, the following will result in a python exception

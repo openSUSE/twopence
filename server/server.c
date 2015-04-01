@@ -50,6 +50,9 @@
 
 #include "server.h"
 
+
+static twopence_conn_t *	server_new_connection(twopence_sock_t *, twopence_conn_semantics_t *);
+
 static struct passwd *
 server_get_user(const char *username, int *status)
 {
@@ -713,15 +716,42 @@ static twopence_conn_semantics_t	server_ops = {
 	.process_request	= server_process_request,
 };
 
+/*
+ * Sockets in listen mode.
+ */
+int
+server_listen_doio(twopence_conn_pool_t *poll, twopence_conn_t *conn)
+{
+	twopence_sock_t *sock;
+
+	sock = twopence_conn_accept(conn);
+	if (sock != NULL) {
+		twopence_debug("Accepted incoming connection");
+		twopence_conn_pool_add_connection(poll, server_new_connection(sock, &server_ops));
+	}
+	return 0;
+}
+
+static twopence_conn_semantics_t	listen_ops = {
+	.doio			= server_listen_doio,
+};
+
 static void
 child_handler(int sig)
 {
 }
 
-void
-server_run(twopence_sock_t *sock)
+static twopence_conn_t *
+server_new_connection(twopence_sock_t *sock, twopence_conn_semantics_t *semantics)
 {
 	static unsigned int global_client_id = 1;
+
+	return twopence_conn_new(semantics,  sock, global_client_id++);
+}
+
+static void
+__server_run(twopence_conn_t *conn)
+{
 	twopence_conn_pool_t *pool;
 	struct sigaction sa;
 	sigset_t mask, omask;
@@ -741,9 +771,24 @@ server_run(twopence_sock_t *sock)
 
 	pool = twopence_conn_pool_new();
 
-	twopence_conn_pool_add_connection(pool, twopence_conn_new(&server_ops, sock, global_client_id++));
+	twopence_conn_pool_add_connection(pool, conn);
 	while (twopence_conn_pool_poll(pool))
 		;
 
 	sigprocmask(SIG_SETMASK, &omask, NULL);
+
+	/* FIXME: */
+	/* twopence_conn_pool_free(pool); */
+}
+
+void
+server_run(twopence_sock_t *sock)
+{
+	__server_run(server_new_connection(sock, &server_ops));
+}
+
+void
+server_listen(twopence_sock_t *sock)
+{
+	__server_run(server_new_connection(sock, &listen_ops));
 }
