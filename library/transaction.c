@@ -237,7 +237,9 @@ twopence_transaction_describe(const twopence_transaction_t *trans)
 void
 twopence_transaction_set_error(twopence_transaction_t *trans, int rc)
 {
+	twopence_debug("%s: set client side error to %d", twopence_transaction_describe(trans), rc);
 	trans->client.exception = rc;
+	trans->done = true;
 }
 
 unsigned int

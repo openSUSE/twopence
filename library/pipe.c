@@ -668,7 +668,7 @@ __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transac
 			if (nfds < max && twopence_sock_fill_poll(sock, pfd + nfds))
 				nfds++;
 
-			nfds += twopence_transaction_fill_poll(trans, pfd, max);
+			nfds += twopence_transaction_fill_poll(trans, pfd + nfds, max - nfds);
 
 			/* FIXME: timeout handling */
 			poll(pfd, nfds, -1);
@@ -718,6 +718,8 @@ __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transac
 				if (twopence_buf_tailroom_max(bp) < TWOPENCE_PROTO_MAX_PACKET)
 					twopence_buf_compact(bp);
 			}
+
+			twopence_transaction_doio(trans);
 		}
 
 	}
@@ -772,6 +774,7 @@ __twopence_pipe_command_process_packet(struct twopence_pipe_target *handle, twop
 /*
  * Callback function that handles incoming packets for a sendfile transaction.
  */
+#if 0
 static int
 __twopence_pipe_inject_process_packet(struct twopence_pipe_target *handle, twopence_pipe_transaction_t *trans,
 		const twopence_hdr_t *hdr, twopence_buf_t *payload)
@@ -803,6 +806,53 @@ __twopence_pipe_inject_process_packet(struct twopence_pipe_target *handle, twope
     return TWOPENCE_RECEIVE_FILE_ERROR;
   }
   return 0;
+}
+#endif
+
+/*
+ * Callback function that handles incoming packets for a sendfile transaction.
+ */
+static bool
+__twopence_pipe_inject_recv(twopence_transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
+{
+  twopence_trans_channel_t *source;
+
+  switch (hdr->type) {
+  case TWOPENCE_PROTO_TYPE_MAJOR:
+    if (!twopence_protocol_dissect_int(payload, &trans->client.status_ret.major))
+      goto recv_file_error;
+
+    if (trans->client.status_ret.major != 0)
+      goto recv_file_error;
+
+    /* Unplug the local source file so that we can start the transfer */
+    if ((source = trans->local_source) != NULL)
+      twopence_transaction_channel_set_plugged(source, false);
+    break;
+
+  case TWOPENCE_PROTO_TYPE_MINOR:
+    if (!twopence_protocol_dissect_int(payload, &trans->client.status_ret.minor))
+      goto recv_file_error;
+    trans->done = true;
+    break;
+
+  default:
+    goto recv_file_error;
+  }
+  return true;
+
+recv_file_error:
+  twopence_transaction_set_error(trans, TWOPENCE_RECEIVE_FILE_ERROR);
+  return true;
+}
+
+static void
+__twopence_pipe_inject_read_eof(twopence_transaction_t *trans, twopence_trans_channel_t *source)
+{
+  int rc;
+
+  if ((rc = twopence_sock_xmit(trans->client_sock, twopence_protocol_build_eof_packet(&trans->ps))) < 0)
+    twopence_transaction_set_error(trans, rc);
 }
 
 /*
@@ -840,7 +890,6 @@ __twopence_pipe_extract_recv(twopence_transaction_t *trans, const twopence_hdr_t
     /* Remote error occurred, usually when trying to open the file */
     (void) twopence_protocol_dissect_int(payload, &trans->client.status_ret.major);
     twopence_transaction_set_error(trans, TWOPENCE_RECEIVE_FILE_ERROR);
-    trans->done = true;
     break;
 
   case TWOPENCE_PROTO_TYPE_EOF:
@@ -942,42 +991,55 @@ __twopence_pipe_command
 int __twopence_pipe_inject_file
   (struct twopence_pipe_target *handle, twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
-  twopence_pipe_transaction_t trans;
-  twopence_pipe_stream_t *pstream;
+  twopence_transaction_t *trans;
+  twopence_trans_channel_t *channel;
   twopence_buf_t *bp;
-  int link_fd;
+  int fd;
   int rc;
 
   // Check that the username is valid
   if (_twopence_invalid_username(xfer->user))
     return TWOPENCE_PARAMETER_ERROR;
+  if (xfer->local_stream == NULL)
+    return TWOPENCE_PARAMETER_ERROR;
 
   // Open communication link
-  link_fd = __twopence_pipe_open_link(handle);
-  if (link_fd < 0)
+  if (__twopence_pipe_open_link(handle) < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
-  twopence_pipe_transaction_init(&trans, handle);
-  trans.process_packet = __twopence_pipe_inject_process_packet;
+  trans = twopence_pipe_transaction_new(handle, TWOPENCE_PROTO_TYPE_INJECT);
+  trans->recv = __twopence_pipe_inject_recv;
+
+#ifdef later
   trans.print_dots = xfer->print_dots;
+#endif
 
   // Prepare command to send to the remote host
-  bp = twopence_protocol_build_inject_packet(&trans.ps, xfer->user, xfer->remote.name, xfer->remote.mode);
+  bp = twopence_protocol_build_inject_packet(&trans->ps, xfer->user, xfer->remote.name, xfer->remote.mode);
 
   // Send command
   if (__twopence_pipe_send(handle, bp) < 0)
     return TWOPENCE_SEND_COMMAND_ERROR;
 
-  pstream = twopence_pipe_transaction_attach_source(&trans, xfer->local_stream, TWOPENCE_PROTO_TYPE_DATA);
-  if (pstream)
-    pstream->plugged = true;
+  if ((fd = twopence_iostream_getfd(xfer->local_stream)) >= 0) {
+    channel = twopence_transaction_attach_local_source(trans, fd, TWOPENCE_PROTO_TYPE_DATA);
+    if (channel) {
+      twopence_transaction_channel_set_callback_read_eof(channel, __twopence_pipe_inject_read_eof);
+      twopence_transaction_channel_set_plugged(channel, true);
+    }
+  } else {
+    /* Unable to use polling. Just send all data right away */
+    return -100;
+  }
 
-  rc = __twopence_pipe_transaction_run(&trans, status);
+  rc = __twopence_transaction_run(handle, trans, status);
 
+#ifdef later
   if (trans.print_dots && trans.total_data != 0)
     __twopence_pipe_output(trans.handle, '\n');
+#endif
 
-  twopence_pipe_transaction_destroy(&trans);
+  twopence_transaction_free(trans);
   return rc;
 }
 
@@ -1001,7 +1063,6 @@ int _twopence_extract_virtio_serial
     return TWOPENCE_OPEN_SESSION_ERROR;
 
   trans = twopence_pipe_transaction_new(handle, TWOPENCE_PROTO_TYPE_EXTRACT);
-
   trans->recv = __twopence_pipe_extract_recv;
 
 #ifdef later
