@@ -500,7 +500,7 @@ socket_is_dead(twopence_sock_t *sock)
 	return sock->read_eof && sock->write_eof == SHUTDOWN_SENT;
 }
 
-static const char *
+const char *
 socket_state_desc(const twopence_sock_t *sock)
 {
 	if (sock->read_eof) {

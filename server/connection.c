@@ -381,7 +381,7 @@ connection_pool_poll(connection_pool_t *pool)
 
 		maxfds ++;	/* One socket for the client */
 		if ((trans = conn->current_transaction) != NULL)
-			maxfds += 1 + TRANSACTION_MAX_SOURCES;
+			maxfds += transaction_num_channels(trans);
 	}
 
 	pfd = alloca(maxfds * sizeof(*pfd));

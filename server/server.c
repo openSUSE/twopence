@@ -514,26 +514,16 @@ server_extract_file_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopen
 bool
 server_extract_file_send(transaction_t *trans)
 {
-	twopence_sock_t *sock;
-	twopence_buf_t *bp;
+	transaction_channel_t *source;
+
+	if ((source = trans->local_source) == NULL)
+		return false;
 
 	twopence_debug("%s()\n", __func__);
-	if (trans->num_local_sources == 0)
-		return false;
-	if ((sock = trans->local_source[0]) == NULL)
-		return false;
-
-	bp = socket_take_recvbuf(sock);
-	if (bp != NULL) {
-		/* Add a header to the packet and send it out */
-		twopence_protocol_push_header_ps(bp, &trans->ps, TWOPENCE_PROTO_TYPE_DATA);
-		transaction_send_client(trans, bp);
-	}
-
-	if (socket_is_read_eof(sock)) {
+	if (transaction_channel_is_read_eof(source)) {
 		twopence_debug("EOF on extracted file");
 		transaction_send_client(trans, twopence_protocol_build_eof_packet(&trans->ps));
-		transaction_close_source(trans, 0);
+		transaction_close_source(trans, TWOPENCE_PROTO_TYPE_DATA);
 		trans->done = true;
 	}
 	return true;
@@ -551,7 +541,7 @@ server_extract_file(transaction_t *trans, const char *username, const char *file
 		return false;
 	}
 
-	if (!transaction_attach_local_source(trans, fd)) {
+	if (transaction_attach_local_source(trans, fd, TWOPENCE_PROTO_TYPE_DATA) < 0) {
 		/* Something is wrong */
 		transaction_fail(trans, EIO);
 		close(fd);
@@ -567,33 +557,18 @@ server_extract_file(transaction_t *trans, const char *username, const char *file
 bool
 server_run_command_send(transaction_t *trans)
 {
-	unsigned int i;
-	twopence_sock_t *sock;
+	transaction_channel_t *channel;
 	int status;
 	pid_t pid;
 	bool pending_output;
 
 	pending_output = false;
-	for (i = 0; i < trans->num_local_sources; ++i) {
-		twopence_buf_t *bp;
-
-		if (!(sock = trans->local_source[i]))
-			continue;
-
-		bp = socket_take_recvbuf(sock);
-		if (bp != NULL) {
-			twopence_debug("read %u bytes from command fd %d\n", twopence_buf_count(bp), i + 1);
-			twopence_protocol_push_header_ps(bp, &trans->ps, TWOPENCE_PROTO_TYPE_STDOUT + i);
-
-			socket_queue_xmit(trans->client_sock, bp);
-			socket_post_recvbuf(sock, twopence_protocol_command_buffer_new());
-		}
-
-		if (socket_is_dead(sock))
-			transaction_close_source(trans, i);
-		else
-			pending_output = true;
-	}
+	if ((channel = transaction_find_source(trans, TWOPENCE_PROTO_TYPE_STDOUT)) != NULL
+	 && !transaction_channel_is_read_eof(channel))
+		pending_output = true;
+	if ((channel = transaction_find_source(trans, TWOPENCE_PROTO_TYPE_STDERR)) != NULL
+	 && !transaction_channel_is_read_eof(channel))
+		pending_output = true;
 
 	if (trans->pid) {
 		pid = waitpid(trans->pid, &status, WNOHANG);
@@ -647,12 +622,9 @@ server_run_command_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopenc
 		 * it has to say, not even "aargh".
 		 */
 		if (trans->pid && !trans->done) {
-			int n;
-
 			kill(trans->pid, SIGKILL);
 			transaction_close_sink(trans);
-			for (n = 0; n < TRANSACTION_MAX_SOURCES; ++n)
-				transaction_close_source(trans, n);
+			transaction_close_source(trans, 0); /* ID zero means all */
 		}
 		break;
 
@@ -682,11 +654,13 @@ server_run_command(transaction_t *trans, const char *username, unsigned int time
 		goto failed;
 	nattached++;
 
-	while (nattached < 3) {
-		if (!transaction_attach_local_source(trans, command_fds[nattached]))
-			goto failed;
-		nattached++;
-	}
+	if (transaction_attach_local_source(trans, command_fds[1], TWOPENCE_PROTO_TYPE_STDOUT) < 0)
+		goto failed;
+	nattached++;
+
+	if (transaction_attach_local_source(trans, command_fds[2], TWOPENCE_PROTO_TYPE_STDERR) < 0)
+		goto failed;
+	nattached++;
 
 	trans->recv = server_run_command_recv;
 	trans->send = server_run_command_send;

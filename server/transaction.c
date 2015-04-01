@@ -56,10 +56,11 @@ struct transaction_channel {
 	twopence_sock_t *	socket;
 };
 
-static transaction_channel_t *	transaction_channel_from_fd(int);
+static transaction_channel_t *	transaction_channel_from_fd(int fd, int flags);
 static void			transaction_channel_free(transaction_channel_t *);
 static bool			transaction_channel_write_data(transaction_channel_t *, twopence_buf_t *);
 static bool			transaction_channel_write_eof(transaction_channel_t *);
+extern void			transaction_channel_list_free(transaction_channel_t **);
 
 /*
  * Command handling
@@ -81,20 +82,26 @@ transaction_new(twopence_sock_t *client, unsigned int type, const twopence_proto
 void
 transaction_free(transaction_t *trans)
 {
-	unsigned int i;
-
 	/* Do not free trans->client_sock, we don't own it */
 
-	transaction_close_sink(trans);
+	transaction_channel_list_free(&trans->local_sink);
+	transaction_channel_list_free(&trans->local_source);
 
-	for (i = 0; i < trans->num_local_sources; ++i) {
-		twopence_sock_t *sock = trans->local_source[i];
-
-		if (sock)
-			twopence_sock_free(sock);
-	}
 	memset(trans, 0, sizeof(*trans));
 	free(trans);
+}
+
+unsigned int
+transaction_num_channels(const transaction_t *trans)
+{
+	transaction_channel_t *channel;
+	unsigned int count = 0;
+
+	for (channel = trans->local_sink; channel; channel = channel->next)
+		count++;
+	for (channel = trans->local_source; channel; channel = channel->next)
+		count++;
+	return count;
 }
 
 int
@@ -105,7 +112,7 @@ transaction_attach_local_sink(transaction_t *trans, int fd, unsigned char id)
 	/* Make I/O to this file descriptor non-blocking */
 	fcntl(fd, F_SETFL, O_NONBLOCK);
 
-	sink = transaction_channel_from_fd(fd);
+	sink = transaction_channel_from_fd(fd, O_WRONLY);
 	sink->id = id;
 
 	sink->next = trans->local_sink;
@@ -126,12 +133,12 @@ transaction_close_sink(transaction_t *trans)
 }
 
 transaction_channel_t *
-transaction_channel_from_fd(int fd)
+transaction_channel_from_fd(int fd, int flags)
 {
 	transaction_channel_t *sink;
 	twopence_sock_t *sock;
 
-	sock = twopence_sock_new_flags(fd, O_WRONLY);
+	sock = twopence_sock_new_flags(fd, flags);
 
 	sink = calloc(1, sizeof(*sink));
 	sink->socket = sock;
@@ -142,10 +149,37 @@ transaction_channel_from_fd(int fd)
 void
 transaction_channel_free(transaction_channel_t *sink)
 {
+	twopence_debug("%s(%c)", __func__, sink->id);
 	if (sink->socket)
 		twopence_sock_free(sink->socket);
 	sink->socket = NULL;
 	free(sink);
+}
+
+void
+transaction_channel_list_free(transaction_channel_t **list)
+{
+	transaction_channel_t *channel;
+
+	while ((channel = *list) != NULL) {
+		*list = channel->next;
+		transaction_channel_free(channel);
+	}
+}
+
+void
+transaction_channel_list_purge(transaction_channel_t **list)
+{
+	transaction_channel_t *channel;
+
+	while ((channel = *list) != NULL) {
+		if (channel->socket && socket_is_dead(channel->socket)) {
+			*list = channel->next;
+			transaction_channel_free(channel);
+		} else {
+			list = &channel->next;
+		}
+	}
 }
 
 /*
@@ -180,13 +214,43 @@ transaction_channel_write_eof(transaction_channel_t *sink)
 	return false;
 }
 
+bool
+transaction_channel_is_read_eof(const transaction_channel_t *channel)
+{
+	twopence_sock_t *sock = channel->socket;
+
+	if (sock)
+		return socket_is_read_eof(sock);
+	return false;
+}
+
 int
 transaction_channel_poll(transaction_channel_t *sink, struct pollfd *pfd)
 {
 	twopence_sock_t *sock = sink->socket;
 
 	if (sock && !socket_is_dead(sock)) {
+		twopence_buf_t *bp;
+
 		socket_prepare_poll(sock);
+
+		/* If needed, post a new receive buffer to the socket.
+		 * Note: this is a NOP for sink channels, as their socket
+		 * already has read_eof set, so that a recvbuf is never
+		 * posted to it.
+		 */
+		if (!socket_is_read_eof(sock) && (bp = socket_get_recvbuf(sock)) == NULL) {
+			/* When we receive data from a command's output stream, or from
+			 * a file that is being extracted, we do not want to copy
+			 * the entire packet - instead, we reserve some room for the
+			 * protocol header, which we just tack on once we have the data.
+			 */
+			bp = twopence_buf_new(TWOPENCE_PROTO_MAX_PACKET);
+			twopence_buf_reserve_head(bp, TWOPENCE_PROTO_HEADER_SIZE);
+
+			socket_post_recvbuf(sock, bp);
+		}
+
 		if (socket_fill_poll(sock, pfd))
 			return 1;
 	}
@@ -194,64 +258,55 @@ transaction_channel_poll(transaction_channel_t *sink, struct pollfd *pfd)
 	return 0;
 }
 
-int
-transaction_channel_doio(transaction_t *trans, transaction_channel_t *sink)
+static void
+transaction_channel_doio(transaction_t *trans, transaction_channel_t *channel)
 {
-	twopence_sock_t *sock = sink->socket;
+	twopence_sock_t *sock = channel->socket;
 
 	if (sock) {
 		if (twopence_sock_doio(sock) < 0) {
 			transaction_fail(trans, errno);
 			socket_mark_dead(sock);
 		}
-
-		if (socket_is_dead(sock))
-			return -1;
 	}
+}
 
+int
+transaction_attach_local_source(transaction_t *trans, int fd, unsigned char channel_id)
+{
+	transaction_channel_t *source;
+
+	/* Make I/O to this file descriptor non-blocking */
+	fcntl(fd, F_SETFL, O_NONBLOCK);
+
+	source = transaction_channel_from_fd(fd, O_RDONLY);
+	source->id = channel_id;
+
+	source->next = trans->local_source;
+	trans->local_source = source;
 	return 0;
 }
 
-twopence_sock_t *
-transaction_attach_local_source(transaction_t *trans, int fd)
-{
-	twopence_sock_t *sock;
-
-	if (trans->num_local_sources >= TRANSACTION_MAX_SOURCES) {
-		twopence_log_error("%s: too many local sources\n", __func__);
-		return NULL;
-	}
-	sock = twopence_sock_new_flags(fd, O_RDONLY);
-	trans->local_source[trans->num_local_sources++] = sock;
-	return sock;
-}
-
 void
-transaction_close_source(transaction_t *trans, unsigned int i)
+transaction_close_source(transaction_t *trans, unsigned char id)
 {
-	twopence_sock_t *sock;
+	transaction_channel_t **pos, *channel;
 
-	if (i < trans->num_local_sources && trans->local_source[i]) {
-		sock = trans->local_source[i];
-
-		twopence_debug("closing command output fd %d%s\n", i + 1, socket_is_read_eof(sock)? ", EOF" : "");
-		twopence_sock_free(sock);
-		trans->local_source[i] = NULL;
+	twopence_debug("%s(%c)\n", __func__, id);
+	for (pos = &trans->local_source; (channel = *pos) != NULL; pos = &channel->next) {
+		if (id == 0 || channel->id == id) {
+			twopence_debug("closing source channel %c\n", id);
+			*pos = channel->next;
+			transaction_channel_free(channel);
+			return;
+		}
 	}
 }
 
 int
 transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max)
 {
-	unsigned int nfds = 0, i;
-	twopence_sock_t *sock;
-
-#if 0
-	if (nfds < max
-	 && (sock = trans->client_sock) != NULL
-	 && socket_fill_poll(sock, pfd + nfds))
-		nfds++;
-#endif
+	unsigned int nfds = 0;
 
 	if (trans->local_sink != NULL) {
 		transaction_channel_t *sink;
@@ -265,79 +320,69 @@ transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max
 	/* If the client socket's write queue is already bursting with data,
 	 * refrain from queuing more until some of it has been drained */
 	if (socket_xmit_queue_allowed(trans->client_sock)) {
-		for (i = 0; i < trans->num_local_sources; ++i) {
-			if ((sock = trans->local_source[i]) == NULL)
-				continue;
+		transaction_channel_t *source;
 
-			socket_prepare_poll(sock);
-			if (nfds < max) {
-				twopence_buf_t *bp;
-
-				/* If needed, post a new receive buffer to the socket. */
-				bp = socket_post_recvbuf_if_needed(sock, TWOPENCE_PROTO_MAX_PACKET);
-				if (bp != NULL) {
-					/* When we receive data from a command's output stream, or from
-					 * a file that is being extracted, we do not want to copy
-					 * the entire packet - instead, we reserve some room for the
-					 * protocol header, which we just tack on once we have the data.
-					 */
-					twopence_buf_reserve_head(bp, TWOPENCE_PROTO_HEADER_SIZE);
-				}
-				if (socket_fill_poll(sock, pfd + nfds))
-					nfds++;
-			}
+		for (source = trans->local_source; source; source = source->next) {
+			if (nfds < max && transaction_channel_poll(source, pfd + nfds))
+				nfds++;
 		}
 	}
 
 	return nfds;
 }
 
+int
+transaction_send_data(transaction_t *trans)
+{
+	transaction_channel_t *channel;
+
+	for (channel = trans->local_source; channel; channel = channel->next) {
+		twopence_sock_t *sock;
+
+		if ((sock = channel->socket) != NULL) {
+			twopence_buf_t *bp;
+
+			if ((bp = socket_take_recvbuf(sock)) != NULL) {
+				twopence_protocol_push_header_ps(bp, &trans->ps, channel->id);
+				socket_queue_xmit(trans->client_sock, bp);
+			}
+
+			/* For file extractions, we want to send an EOF packet
+			 * when the file has been transmitted in its entirety.
+			 * This condition is checked for in server_extract_file_send.
+			 */
+		}
+	}
+
+	return true;
+}
+
 void
 transaction_doio(transaction_t *trans)
 {
-	unsigned int n;
+	transaction_channel_t *channel;
 
 	twopence_debug2("transaction_doio()\n");
-	if (trans->local_sink != NULL) {
-		transaction_channel_t *sink, **pos;
+	for (channel = trans->local_sink; channel; channel = channel->next)
+		transaction_channel_doio(trans, channel);
+	transaction_channel_list_purge(&trans->local_sink);
 
-		pos = &trans->local_sink;
-		while ((sink = *pos) != NULL) {
-			if (transaction_channel_doio(trans, sink) < 0) {
-				*pos = sink->next;
-				transaction_channel_free(sink);
-			} else {
-				pos = &sink->next;
-			}
-		}
-	}
+	for (channel = trans->local_source; channel; channel = channel->next)
+		transaction_channel_doio(trans, channel);
 
-	for (n = 0; n < trans->num_local_sources; ++n) {
-		twopence_sock_t *sock;
+	/* FIXME: this should be wrapped into transaction_channel_doio */
+	transaction_send_data(trans);
 
-		sock = trans->local_source[n];
-
-		if (!sock)
-			continue;
-
-		if (twopence_sock_doio(sock) < 0) {
-			transaction_fail(trans, errno);
-			socket_mark_dead(sock);
-		}
-	}
-
+	twopence_debug2("transaction_doio(): calling trans->send()\n");
 	if (trans->send)
 		trans->send(trans);
 
-	for (n = 0; n < trans->num_local_sources; ++n) {
-		twopence_sock_t *sock;
-
-		sock = trans->local_source[n];
-
-		if (sock && socket_is_dead(sock))
-			transaction_close_source(trans, n);
-	}
-
+	/* Purge the source list *after* calling trans->send().
+	 * This is because server_extract_file_send needs to detect
+	 * the EOF condition on the source file and send an EOF packet.
+	 * Once we wrap this inside the transaction_channel handling,
+	 * then this requirement goes away. */
+	transaction_channel_list_purge(&trans->local_source);
 }
 
 inline void
@@ -425,7 +470,7 @@ transaction_send_timeout(transaction_t *trans)
  * Find the local sink corresponding to the given id.
  * For now, the "id" is a packet type, such as '0' or 'd'
  */
-static transaction_channel_t *
+transaction_channel_t *
 transaction_find_sink(transaction_t *trans, unsigned char id)
 {
 	transaction_channel_t *sink;
@@ -433,6 +478,18 @@ transaction_find_sink(transaction_t *trans, unsigned char id)
 	for (sink = trans->local_sink; sink; sink = sink->next) {
 		if (sink->id == id)
 			return sink;
+	}
+	return NULL;
+}
+
+transaction_channel_t *
+transaction_find_source(transaction_t *trans, unsigned char id)
+{
+	transaction_channel_t *channel;
+
+	for (channel = trans->local_source; channel; channel = channel->next) {
+		if (channel->id == id)
+			return channel;
 	}
 	return NULL;
 }
@@ -458,23 +515,4 @@ transaction_write_eof(transaction_t *trans)
 
 	for (sink = trans->local_sink; sink; sink = sink->next)
 		transaction_channel_write_eof(sink);
-}
-
-int
-transaction_process(transaction_t *trans)
-{
-	unsigned int i;
-	twopence_sock_t *sock;
-
-	for (i = 0; i < trans->num_local_sources; ++i) {
-		twopence_buf_t *bp;
-
-		sock = trans->local_source[i];
-		if (sock && (bp = socket_take_recvbuf(sock)) != NULL) {
-			twopence_protocol_push_header_ps(bp, &trans->ps, TWOPENCE_PROTO_TYPE_STDOUT + i);
-			socket_queue_xmit(trans->client_sock, bp);
-		}
-	}
-
-	return true;
 }

@@ -44,7 +44,6 @@ struct semantics {
 
 typedef struct transaction_channel transaction_channel_t;
 
-#define TRANSACTION_MAX_SOURCES	4
 struct transaction {
 	unsigned int		type;
 	unsigned int		id;
@@ -65,16 +64,16 @@ struct transaction {
 	transaction_channel_t *	local_sink;
 
 	unsigned int		num_local_sources;
-	twopence_sock_t *	local_source[TRANSACTION_MAX_SOURCES];
-	twopence_sock_t *	local_source_stderr;
+	transaction_channel_t *	local_source;
 };
 
 extern transaction_t *	transaction_new(twopence_sock_t *client, unsigned int type, const twopence_protocol_state_t *ps);
 extern void		transaction_free(transaction_t *trans);
 extern int		transaction_attach_local_sink(transaction_t *trans, int fd, unsigned char channel);
 extern void		transaction_close_sink(transaction_t *trans);
-extern twopence_sock_t *	transaction_attach_local_source(transaction_t *trans, int fd);
-extern void		transaction_close_source(transaction_t *trans, unsigned int i);
+extern int		transaction_attach_local_source(transaction_t *trans, int fd, unsigned char channel);
+extern void		transaction_close_source(transaction_t *trans, unsigned char id);
+extern unsigned int	transaction_num_channels(const transaction_t *trans);
 extern int		transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max);
 extern void		transaction_doio(transaction_t *trans);
 extern inline void	transaction_send_client(transaction_t *trans, twopence_buf_t *bp);
@@ -87,6 +86,9 @@ extern void		transaction_fail2(transaction_t *trans, int major, int minor);
 extern void		transaction_send_major(transaction_t *trans, unsigned int code);
 extern void		transaction_send_minor(transaction_t *trans, unsigned int code);
 extern void		transaction_send_timeout(transaction_t *trans);
+extern transaction_channel_t *transaction_find_sink(transaction_t *trans, unsigned char channel);
+extern transaction_channel_t *transaction_find_source(transaction_t *trans, unsigned char channel);
+extern bool		transaction_channel_is_read_eof(const transaction_channel_t *);
 
 extern connection_t *	connection_new(semantics_t *semantics, twopence_sock_t *client_sock, unsigned int client_id);
 extern void		connection_free(connection_t *conn);

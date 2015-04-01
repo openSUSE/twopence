@@ -52,4 +52,6 @@ extern void		socket_post_recvbuf(twopence_sock_t *sock, twopence_buf_t *bp);
 extern twopence_buf_t *	socket_take_recvbuf(twopence_sock_t *);
 extern twopence_buf_t *	socket_get_recvbuf(twopence_sock_t *);
 
+extern const char *	socket_state_desc(const twopence_sock_t *sock);
+
 #endif /* SOCKET_H */
