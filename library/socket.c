@@ -32,6 +32,7 @@
 #include <assert.h>
 
 #include "twopence.h"
+#include "protocol.h"
 #include "socket.h"
 
 
@@ -152,7 +153,7 @@ twopence_queue_dequeue(twopence_queue_t *queue)
 }
 
 static twopence_sock_t *
-__twopence_socket_new(int fd)
+__twopence_socket_new(int fd, int oflags)
 {
 	twopence_sock_t *sock;
 	int f;
@@ -160,9 +161,9 @@ __twopence_socket_new(int fd)
 	sock = calloc(1, sizeof(*sock));
 	sock->fd = fd;
 
-	/* Set to nonblocking IO */
+	/* Set flags (usually for nonblocking IO) */
 	if ((f = fcntl(fd, F_GETFL)) < 0
-	 || fcntl(fd, F_SETFL, f | O_NONBLOCK) < 0) {
+	 || fcntl(fd, F_SETFL, f | oflags) < 0) {
 		twopence_log_error("socket_new: trouble setting socket to nonblocking I/O: %m\n");
 		/* Continue anyway */
 	}
@@ -174,15 +175,15 @@ __twopence_socket_new(int fd)
 twopence_sock_t *
 twopence_sock_new(int fd)
 {
-	return __twopence_socket_new(fd);
+	return __twopence_socket_new(fd, O_NONBLOCK);
 }
 
 twopence_sock_t *
-socket_new_flags(int fd, int oflags)
+twopence_sock_new_flags(int fd, int oflags)
 {
 	twopence_sock_t *sock;
 
-	sock = __twopence_socket_new(fd);
+	sock = __twopence_socket_new(fd, oflags & ~O_ACCMODE);
 	switch (oflags & O_ACCMODE) {
 	case O_RDONLY:
 		sock->write_eof = SHUTDOWN_SENT;
@@ -321,10 +322,14 @@ socket_send_buffer(twopence_sock_t *sock, twopence_buf_t *bp)
 static int
 __socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp, int direct)
 {
-	int n = 0;
+	int n = 0, f;
+
+	f = fcntl(sock->fd, F_GETFL);
+	if (direct == 2)
+		fcntl(sock->fd, F_SETFL, f & ~O_NONBLOCK);
 
 	if (sock->write_eof) {
-		twopence_log_error("%s: attempt to queue data after write shutdown\n", __func__);
+		twopence_log_error("%s: attempt to queue data after write shutdown", __func__);
 		goto out_drop_buffer;
 	}
 
@@ -361,11 +366,14 @@ __socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp, int direct)
 	/* If there's data left in this buffer, queue it to the socket */
 	if (twopence_buf_count(bp) != 0) {
 		twopence_queue_append(&sock->xmit_queue, twopence_packet_new(bp));
-		return 0;
+		goto out;
 	}
 
 out_drop_buffer:
 	twopence_buf_free(bp);
+
+out:
+	fcntl(sock->fd, F_SETFL, f);
 	return n;
 }
 

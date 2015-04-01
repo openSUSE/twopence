@@ -22,6 +22,7 @@
 #define PIPE_H
 
 #include "protocol.h"
+#include "socket.h"
 
 /* Base class for all targets using the twopence pipe protocol */
 struct twopence_pipe_target {
@@ -30,9 +31,11 @@ struct twopence_pipe_target {
   unsigned long link_timeout;
   const struct twopence_pipe_ops *link_ops;
 
-  int link_fd;
+  /* This holds the fd of the serial port/the socket or whatever else we use to
+   * communicate with the server. */
+  twopence_sock_t *		link_sock;
 
-  twopence_protocol_state_t ps;
+  twopence_protocol_state_t	ps;
 
   /* "foreground" transaction. This is the transaction that gets
    * cancelled when twopence_interrupt() is called. */
@@ -41,9 +44,7 @@ struct twopence_pipe_target {
 
 
 struct twopence_pipe_ops {
-  int		(*open)(struct twopence_pipe_target *);
-  int		(*recv)(struct twopence_pipe_target *, int, char *buffer, size_t count);
-  int		(*send)(struct twopence_pipe_target *, int, const char *buffer, size_t count);
+  twopence_sock_t *		(*open)(struct twopence_pipe_target *);
 };
 
 extern void	twopence_pipe_target_init(struct twopence_pipe_target *, int plugin_type, const struct twopence_plugin *,

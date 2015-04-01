@@ -90,7 +90,7 @@ transaction_attach_local_sink(transaction_t *trans, int fd)
 		twopence_log_error("%s: duplicate local sink\n", __func__);
 		return NULL;
 	}
-	sock = socket_new_flags(fd, O_WRONLY);
+	sock = twopence_sock_new_flags(fd, O_WRONLY);
 	trans->local_sink = sock;
 	return sock;
 }
@@ -114,7 +114,7 @@ transaction_attach_local_source(transaction_t *trans, int fd)
 		twopence_log_error("%s: too many local sources\n", __func__);
 		return NULL;
 	}
-	sock = socket_new_flags(fd, O_RDONLY);
+	sock = twopence_sock_new_flags(fd, O_RDONLY);
 	trans->local_source[trans->num_local_sources++] = sock;
 	return sock;
 }

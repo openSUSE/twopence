@@ -64,26 +64,16 @@ __twopence_virtio_init(struct twopence_virtio_target *handle, const char *sockna
  *
  * Returns the file descriptor if successful, or -1 if failed
  */
-static int
+static twopence_sock_t *
 __twopence_virtio_open(struct twopence_pipe_target *pipe_handle)
 {
   struct twopence_virtio_target *handle = (struct twopence_virtio_target *) pipe_handle;
-  int socket_fd, flags;
+  int socket_fd;
 
   // Create the file descriptor
   socket_fd = socket(PF_LOCAL, SOCK_STREAM, AF_UNIX);
   if (socket_fd <= 0)
-    return -1;
-
-  // Make it non-blocking and not inheritable
-  flags = fcntl(socket_fd, F_GETFL, 0);
-  if (flags == -1) return -1;
-  if (fcntl(socket_fd, F_SETFL, flags | O_NONBLOCK) == -1)
-    return -1;
-  flags = fcntl(socket_fd, F_GETFD);
-  if (flags == -1) return -1;
-  if (fcntl(socket_fd, F_SETFD, flags | FD_CLOEXEC) == -1)
-    return -1;
+    return NULL;
 
   // Open the connection
   if (connect(socket_fd,
@@ -91,38 +81,15 @@ __twopence_virtio_open(struct twopence_pipe_target *pipe_handle)
               sizeof(struct sockaddr_un)))
   {
     close(socket_fd);
-    return -1;
+    return NULL;
   }
 
-  return socket_fd;
-}
-
-/*
- * Receive a maximum amount of bytes from the socket into a buffer
- *
- * Returns the number of bytes received, -1 otherwise
- */
-static int
-__twopence_virtio_recv(struct twopence_pipe_target *pipe_handle, int socket_fd, char *buffer, size_t size)
-{
-  return recv(socket_fd, buffer, size, MSG_DONTWAIT);
-}
-
-/*
- * Send a number of bytes in a buffer to the socket
- *
- * Returns the number of bytes sent, or -1 in case of error
- */
-static int
-__twopence_virtio_send(struct twopence_pipe_target *pipe_handle, int socket_fd, const char *buffer, size_t size)
-{
-  return send(socket_fd, buffer, size, 0);
+  /* Note, we do not pass O_NONBLOCK here, but we do set O_CLOEXEC */
+  return twopence_sock_new_flags(socket_fd, O_RDWR | O_CLOEXEC);
 }
 
 const struct twopence_pipe_ops twopence_virtio_link_ops = {
   .open = __twopence_virtio_open,
-  .recv = __twopence_virtio_recv,
-  .send = __twopence_virtio_send,
 };
 
 ///////////////////////////// Public interface //////////////////////////////////

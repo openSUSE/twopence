@@ -52,7 +52,7 @@ twopence_pipe_target_init(struct twopence_pipe_target *target, int plugin_type, 
   target->base.ops = plugin_ops;
   target->link_timeout = LINE_TIMEOUT;
   target->link_ops = link_ops;
-  target->link_fd = -1;
+  target->link_sock = NULL;
 }
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
@@ -117,119 +117,43 @@ _twopence_invalid_username(const char *username)
 static int
 __twopence_pipe_open_link(struct twopence_pipe_target *handle)
 {
-  if (handle->link_fd < 0) {
-    handle->link_fd = handle->link_ops->open(handle);
+  if (handle->link_sock == NULL) {
+    /* The socket we are given should be set up for blocking I/O */
+    handle->link_sock = handle->link_ops->open(handle);
+    if (handle->link_sock == NULL)
+      return TWOPENCE_OPEN_SESSION_ERROR;
+
     if (__twopence_pipe_handshake(handle) < 0) {
-      close(handle->link_fd);
-      handle->link_fd = -1;
+      twopence_sock_free(handle->link_sock);
+      handle->link_sock = NULL;
+      return TWOPENCE_OPEN_SESSION_ERROR;
     }
   }
-  return handle->link_fd;
-}
 
-static inline int
-__twopence_pipe_poll(int link_fd, int events, unsigned long timeout)
-{
-  struct pollfd pfd;
-  int n;
-
-  /* It's not quite clear why we're not just using blocking input here. --okir
-   *
-   * Well, it is blocking input. Quoting "man 2 poll":
-   *     If none of the events requested (and no error) has occurred for any of
-   *     the file descriptors, then poll() blocks until one of the events occurs.
-   * or did you mean something else? --ebischoff
-   */
-  pfd.fd = link_fd;
-  pfd.events = events;
-
-  n = poll(&pfd, 1, timeout);
-  if ((n == 1) && !(pfd.revents & events))
-    n = 0;
-
-  return n;
-}
-
-static int
-__twopence_pipe_recvbuf(struct twopence_pipe_target *handle, int link_fd, char *buffer, size_t size)
-{
-  size_t received = 0;
-
-  memset(buffer, 0, size);
-
-  while (received < size) {
-    int n, rc;
-
-    n = __twopence_pipe_poll(link_fd, POLLIN, handle->link_timeout);
-    if (n < 0) {
-      perror("poll error");
-      return TWOPENCE_PROTOCOL_ERROR;
-    }
-
-    if (n == 0) {
-      fprintf(stderr, "timeout on link");
-      return TWOPENCE_PROTOCOL_ERROR;
-    }
-
-    /* Read some data from the link */
-    rc = handle->link_ops->recv(handle, link_fd, buffer + received, size - received);
-    if (rc < 0)
-      return rc;
-
-    if (rc == 0) {
-      fprintf(stderr, "unexpected EOF on link");
-      return TWOPENCE_PROTOCOL_ERROR;
-    }
-
-    received += rc;
-  }
-
-  return received;
-}
-
-static int
-__twopence_pipe_sendbuf(struct twopence_pipe_target *handle, int link_fd, const char *buffer, size_t count)
-{
-  size_t sent = 0;
-
-  while (sent < count) {
-    int n, rc;
-
-    n = __twopence_pipe_poll(link_fd, POLLOUT, handle->link_timeout);
-    if (n < 0) {
-      perror("poll error");
-      return TWOPENCE_PROTOCOL_ERROR;
-    }
-
-    if (n == 0) {
-      fprintf(stderr, "timeout on link");
-      return TWOPENCE_PROTOCOL_ERROR;
-    }
-
-    rc = handle->link_ops->send(handle, link_fd, buffer + sent, count - sent);
-    if (rc < 0)
-      return rc;
-
-    sent += rc;
-  }
-
-  return sent;
+  return 0;
 }
 
 /*
- * For now, this is just a simple wrapper around __twopence_pipe_sendbuf.
- * But down the road, this will become a front-end to feed packets into the
- * send loop, which will be fully multiplexed and poll based.
+ * Transmit a single buffer.
+ * This is synchronous for now
  */
 static int
 __twopence_pipe_send(struct twopence_pipe_target *handle, twopence_buf_t *bp)
 {
-  int rc;
+  int count = twopence_buf_count(bp);
+  int rc = 0;
 
-  rc = __twopence_pipe_sendbuf(handle, handle->link_fd, twopence_buf_head(bp), twopence_buf_count(bp));
-  twopence_buf_free(bp);
+  if (handle->link_sock == NULL)
+    return TWOPENCE_PROTOCOL_ERROR; /* SESSION_ERROR? */
 
-  return rc;
+  /* FIXME: heed the link timeout */
+
+  /* Transmit and free the buffer */
+  rc = twopence_sock_xmit(handle->link_sock, bp);
+  if (rc < 0)
+    return rc;
+
+  return count;
 }
 
 static int
@@ -244,37 +168,33 @@ __twopence_pipe_send_eof(struct twopence_pipe_target *handle, twopence_protocol_
 static twopence_buf_t *
 __twopence_pipe_read_packet(struct twopence_pipe_target *handle)
 {
+  twopence_sock_t *sock;
   twopence_buf_t *bp;
 
-  bp = twopence_buf_new(TWOPENCE_PROTO_MAX_PACKET);
-  while (true) {
-    int need;
+  if ((sock = handle->link_sock) == NULL)
+    return NULL;
+  bp = socket_get_recvbuf(sock);
 
-    need = twopence_protocol_buffer_need_to_recv(bp);
-    if (need == 0)
-      break;
+  /* Receive more data from the link until we have at least one
+   * complete packet.
+   * Note: we may receive more data than that.
+   */
+  while (!twopence_protocol_buffer_complete(bp)) {
+    int count;
 
-    if (need < 0)
-      goto failed;
-
-    if (need > twopence_buf_tailroom(bp)) {
-      fprintf(stderr, "Incoming packet larger than buffer (%u > %u)\n",
-		      twopence_buf_count(bp) + need,
-		      bp->size);
-      goto failed;
+    /* FIXME: heed the link timeout */
+    count = socket_recv_buffer(sock, bp);
+    if (count == 0) {
+      twopence_log_error("unexpected EOF on link");
+      return NULL;
     }
-
-    if (__twopence_pipe_recvbuf(handle, handle->link_fd, twopence_buf_tail(bp), need) < 0)
-      goto failed;
-
-    twopence_buf_advance_tail(bp, need);
+    if (count < 0) {
+      twopence_log_error("receive error on link: %m");
+      return NULL;
+    }
   }
 
   return bp;
-
-failed:
-  twopence_buf_free(bp);
-  return NULL;
 }
 
 /*
@@ -288,12 +208,11 @@ __twopence_pipe_handshake(struct twopence_pipe_target *handle)
   twopence_protocol_state_t ps;
   int rc = 0;
 
-  if (handle->link_fd < 0)
-    return TWOPENCE_PROTOCOL_ERROR;
-
   rc = __twopence_pipe_send(handle, twopence_protocol_build_hello_packet(0));
   if (rc < 0)
     return rc;
+
+  socket_post_recvbuf_if_needed(handle->link_sock, 4 * TWOPENCE_PROTO_MAX_PACKET);
 
   if ((bp = __twopence_pipe_read_packet(handle)) == NULL)
     return TWOPENCE_PROTOCOL_ERROR;
@@ -306,7 +225,6 @@ __twopence_pipe_handshake(struct twopence_pipe_target *handle)
     rc = TWOPENCE_PROTOCOL_ERROR;
   }
 
-  twopence_buf_free(bp);
   return rc;
 }
 
@@ -546,6 +464,63 @@ __twopence_pipe_forward_sink(twopence_pipe_transaction_t *trans, unsigned char c
 }
 
 static int
+__twopence_pipe_transaction_process_incoming(twopence_pipe_transaction_t *trans, twopence_buf_t *bp)
+{
+  struct twopence_pipe_target *handle = trans->handle;
+  twopence_protocol_state_t ps;
+  const twopence_hdr_t *hdr;
+  twopence_buf_t payload;
+  int rc;
+
+  /* Split the packet into header and payload */
+  hdr = twopence_protocol_dissect_ps(bp, &payload, &ps);
+  if (hdr == NULL)
+    return TWOPENCE_PROTOCOL_ERROR;
+
+  /* Sanity check: make sure this actually belongs to this transaction */
+  if (ps.cid != trans->ps.cid || ps.xid != trans->ps.xid) {
+    twopence_log_error("%s: ignoring '%c' packet with bad cid=0x%x or xid=0x%x\n",
+		    __func__, hdr->type, ps.cid, ps.xid);
+    return 0;
+  }
+
+  /* See if this is a generic data channel that we should just copy to
+   * a local data stream */
+  rc = __twopence_pipe_forward_sink(trans, hdr->type, &payload);
+
+  /* No packet that we would have known. Pass it on */
+  if (rc == 0)
+    rc = trans->process_packet(handle, trans, hdr, &payload);
+
+  return rc;
+}
+
+static int
+__twopence_pipe_transaction_poll_socket(twopence_pipe_transaction_t *trans, struct pollfd *pfd)
+{
+  struct twopence_pipe_target *handle = trans->handle;
+  twopence_sock_t *sock;
+  twopence_buf_t *bp;
+
+  if ((sock = handle->link_sock) == NULL)
+    return TWOPENCE_PROTOCOL_ERROR; /* SESSION_ERROR? */
+
+  socket_post_recvbuf_if_needed(sock, 4 * TWOPENCE_PROTO_MAX_PACKET);
+
+  bp = socket_get_recvbuf(sock);
+  if (twopence_buf_tailroom_max(bp) < TWOPENCE_PROTO_MAX_PACKET)
+    twopence_buf_compact(bp);
+
+  socket_prepare_poll(sock);
+  if (!socket_fill_poll(sock, pfd)) {
+    twopence_log_error("socket doesn't wait for anything?!");
+    return TWOPENCE_PROTOCOL_ERROR; /* SESSION_ERROR? */
+  }
+
+  return 0;
+}
+
+static int
 __twopence_pipe_transaction_doio(twopence_pipe_transaction_t *trans)
 {
   struct twopence_pipe_target *handle = trans->handle;
@@ -557,8 +532,8 @@ __twopence_pipe_transaction_doio(twopence_pipe_transaction_t *trans)
     int nfds = 0, n;
     int count, rc;
 
-    pfd[nfds].fd = handle->link_fd;
-    pfd[nfds].events = POLLIN;
+    if ((rc = __twopence_pipe_transaction_poll_socket(trans, pfd + nfds)) < 0)
+      return rc;
     nfds++;
 
     /*
@@ -601,39 +576,18 @@ __twopence_pipe_transaction_doio(twopence_pipe_transaction_t *trans)
     }
 
     if (pfd[0].revents & POLLIN) {
-      /* Incoming data on the link. Read the complete frame right away (blocking until we have it) */
-      twopence_protocol_state_t ps;
-      const twopence_hdr_t *hdr;
-      twopence_buf_t *bp, payload;
+      /* Incoming data on the link. */
+      twopence_buf_t *bp;
 
       bp = __twopence_pipe_read_packet(handle);
       if (bp == NULL)
         return TWOPENCE_PROTOCOL_ERROR;
 
-      /* Split the packet into header and payload */
-      hdr = twopence_protocol_dissect_ps(bp, &payload, &ps);
-      if (hdr == NULL)
-        return TWOPENCE_PROTOCOL_ERROR;
-
-      /* Sanity check: make sure this actually belongs to this transaction */
-      if (ps.cid != trans->ps.cid || ps.xid != trans->ps.xid) {
-	fprintf(stderr, "%s: ignoring '%c' packet with bad cid=0x%x or xid=0x%x\n",
-			__func__, hdr->type, ps.cid, ps.xid);
-        twopence_buf_free(bp);
-	continue;
+      while (twopence_protocol_buffer_complete(bp)) {
+        rc = __twopence_pipe_transaction_process_incoming(trans, bp);
+	if (rc < 0)
+          return rc;
       }
-
-      /* See if this is a generic data channel that we should just copy to
-       * a local data stream */
-      rc = __twopence_pipe_forward_sink(trans, hdr->type, &payload);
-
-      /* No packet that we would have known. Pass it on */
-      if (rc == 0)
-        rc = trans->process_packet(handle, trans, hdr, &payload);
-
-      twopence_buf_free(bp);
-      if (rc < 0)
-        return rc;
     }
 
     if (nfds > 1 && (pfd[1].revents & (POLLIN|POLLHUP))) {
@@ -946,7 +900,7 @@ int _twopence_interrupt_virtio_serial
     return 0;
 
   /* If the link is not open, there's nothing to interrupt */
-  if (handle->link_fd < 0)
+  if (handle->link_sock == NULL)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
   if (__twopence_pipe_send(handle, twopence_protocol_build_simple_packet_ps(&trans->ps, TWOPENCE_PROTO_TYPE_INTR)) < 0)
@@ -1055,9 +1009,9 @@ twopence_pipe_end(struct twopence_target *opaque_handle)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
-  if (handle->link_fd >= 0) {
-    close(handle->link_fd);
-    handle->link_fd = -1;
+  if (handle->link_sock != NULL) {
+    twopence_sock_free(handle->link_sock);
+    handle->link_sock = NULL;
   }
 
   free(handle);

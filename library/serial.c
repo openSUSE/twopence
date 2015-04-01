@@ -63,7 +63,7 @@ __twopence_serial_init(struct twopence_serial_target *handle, const char *devnam
 // Open the UNIX character device
 //
 // Returns the file descriptor if successful, or -1 if failed
-static int
+static twopence_sock_t *
 __twopence_serial_open(struct twopence_pipe_target *pipe_handle)
 {
   struct twopence_serial_target *handle = (struct twopence_serial_target *) pipe_handle;
@@ -71,9 +71,9 @@ __twopence_serial_open(struct twopence_pipe_target *pipe_handle)
   struct termios tio;
 
   // Create the file descriptor
-  device_fd = open(handle->device_path, O_RDWR | O_NONBLOCK | O_CLOEXEC | O_NOCTTY);
+  device_fd = open(handle->device_path, O_RDWR | O_CLOEXEC | O_NOCTTY);
   if (device_fd <= 0)
-    return -1;
+    return NULL;
 
   // Set up serial line
   if (isatty(device_fd))
@@ -83,37 +83,19 @@ __twopence_serial_open(struct twopence_pipe_target *pipe_handle)
     tio.c_iflag = 0;
     tio.c_oflag = 0;
     tio.c_lflag = 0;
-    if (cfsetspeed(&tio, B115200) < 0)
-      return -1;
-    if (tcsetattr(device_fd, TCSANOW, &tio) < 0)
-      return -1;
+    if (cfsetspeed(&tio, B115200) < 0
+     || tcsetattr(device_fd, TCSANOW, &tio) < 0) {
+      close(device_fd);
+      return NULL;
+    }
   }
 
-  return device_fd;
-}
-
-// Receive a maximum amount of bytes from the device into a buffer
-//
-// Returns the number of bytes received, -1 otherwise
-static int
-__twopence_serial_recv(struct twopence_pipe_target *pipe_handle, int device_fd, char *buffer, size_t size)
-{
-  return read(device_fd, buffer, size);
-}
-
-// Send a number of bytes in a buffer to the device
-//
-// Returns the number of bytes sent, or -1 in case of error
-static int
-__twopence_serial_send(struct twopence_pipe_target *pipe_handle, int device_fd, const char *buffer, size_t size)
-{
-  return write(device_fd, buffer, size);
+  /* Note, we do not pass O_NONBLOCK here */
+  return twopence_sock_new_flags(device_fd, O_RDWR);
 }
 
 const struct twopence_pipe_ops twopence_serial_link_ops = {
   .open = __twopence_serial_open,
-  .recv = __twopence_serial_recv,
-  .send = __twopence_serial_send,
 };
 
 ///////////////////////////// Public interface //////////////////////////////////
