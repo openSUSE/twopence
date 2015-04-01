@@ -371,6 +371,38 @@ transaction_doio(transaction_t *trans)
 	transaction_channel_list_purge(&trans->local_source);
 }
 
+/*
+ * This function is called from connection_doio when we have an incoming packet
+ * for this transaction
+ */
+void
+transaction_recv_packet(transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
+{
+	transaction_channel_t *sink;
+
+	if (trans->done) {
+		/* Coming late to the party, huh? */
+		return;
+	}
+
+	if (trans->recv == NULL) {
+		twopence_log_error("Unexpected packet type '%c' in transaction context\n", hdr->type);
+		transaction_fail(trans, EPROTO);
+		return;
+	}
+
+	sink = transaction_find_sink(trans, hdr->type);
+	if (sink != NULL) {
+		twopence_debug("received %u bytes of data\n", twopence_buf_count(payload));
+		if (sink && !transaction_channel_write_data(sink, payload))
+			transaction_fail(trans, errno);
+		return;
+	}
+
+	trans->recv(trans, hdr, payload);
+}
+
+
 inline void
 transaction_send_client(transaction_t *trans, twopence_buf_t *bp)
 {

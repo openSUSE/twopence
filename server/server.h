@@ -76,6 +76,7 @@ extern void			transaction_close_source(transaction_t *trans, unsigned char id);
 extern unsigned int		transaction_num_channels(const transaction_t *trans);
 extern int			transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max);
 extern void			transaction_doio(transaction_t *trans);
+extern void			transaction_recv_packet(transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload);
 extern inline void		transaction_send_client(transaction_t *trans, twopence_buf_t *bp);
 extern void			transaction_send_status(transaction_t *trans, twopence_status_t *st);
 extern void			transaction_write_data(transaction_t *trans, twopence_buf_t *payload, unsigned char channel);

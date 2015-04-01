@@ -450,12 +450,6 @@ bool
 server_inject_file_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
 {
 	switch (hdr->type) {
-	case TWOPENCE_PROTO_TYPE_DATA:
-		twopence_debug("inject: received %u bytes of data\n", twopence_buf_count(payload));
-		transaction_write_data(trans, payload, hdr->type);
-		/* FIXME: how do we propagate write errors to the client? */
-		break;
-
 	case TWOPENCE_PROTO_TYPE_EOF:
 		twopence_debug("inject: received EOF\n");
 		transaction_send_minor(trans, 0);
@@ -586,12 +580,6 @@ bool
 server_run_command_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
 {
 	switch (hdr->type) {
-	case TWOPENCE_PROTO_TYPE_STDIN:
-		/* queue the buffer for output to the local command */
-		//transaction_queue_stdin(trans, twopence_buf_clone(payload));
-		transaction_write_data(trans, payload, hdr->type);
-		break;
-
 	case TWOPENCE_PROTO_TYPE_EOF:
 		transaction_write_eof(trans);
 		break;

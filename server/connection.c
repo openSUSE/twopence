@@ -185,14 +185,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 		 * the default one. */
 		trans = connection_find_transaction(conn, ps.xid);
 		if (trans != NULL) {
-			if (trans->done) {
-				/* Coming late to the party, uh? */
-			} else if (trans->recv == NULL) {
-				twopence_log_error("Unexpected packet type '%c' in transaction context\n", hdr->type);
-				transaction_fail(trans, EPROTO);
-			} else {
-				trans->recv(trans, hdr, &payload);
-			}
+			transaction_recv_packet(trans, hdr, &payload);
 		} else {
 			semantics_t *semantics = conn->semantics;
 			transaction_t *trans = NULL;
