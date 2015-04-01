@@ -646,6 +646,8 @@ __twopence_ssh_command_ssh
   if (trans == NULL)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
+  handle->transactions.foreground = trans;
+
   // We need a SSH channel to get the results
   channel = ssh_channel_new(session);
   if (channel == NULL)
@@ -728,6 +730,7 @@ __twopence_ssh_command_ssh
 
   // Terminate the channel
   __twopence_ssh_transaction_free(trans);
+  handle->transactions.foreground = NULL;
 
   return rc;
 }
