@@ -46,6 +46,21 @@
 
 #include "server.h"
 
+
+struct transaction_channel {
+	struct transaction_channel *next;
+
+	unsigned char		id;		/* corresponds to a packet type (eg '0' or 'd') */
+	bool			sync;		/* if true, all writes are fully synchronous */
+
+	twopence_sock_t *	socket;
+};
+
+static transaction_channel_t *	transaction_channel_from_fd(int);
+static void			transaction_channel_free(transaction_channel_t *);
+static bool			transaction_channel_write_data(transaction_channel_t *, twopence_buf_t *);
+static bool			transaction_channel_write_eof(transaction_channel_t *);
+
 /*
  * Command handling
  */
@@ -69,8 +84,9 @@ transaction_free(transaction_t *trans)
 	unsigned int i;
 
 	/* Do not free trans->client_sock, we don't own it */
-	if (trans->local_sink)
-		twopence_sock_free(trans->local_sink);
+
+	transaction_close_sink(trans);
+
 	for (i = 0; i < trans->num_local_sources; ++i) {
 		twopence_sock_t *sock = trans->local_source[i];
 
@@ -81,28 +97,119 @@ transaction_free(transaction_t *trans)
 	free(trans);
 }
 
-twopence_sock_t *
-transaction_attach_local_sink(transaction_t *trans, int fd)
+int
+transaction_attach_local_sink(transaction_t *trans, int fd, unsigned char id)
 {
-	twopence_sock_t *sock;
+	transaction_channel_t *sink;
 
-	if (trans->local_sink) {
-		twopence_log_error("%s: duplicate local sink\n", __func__);
-		return NULL;
-	}
-	sock = twopence_sock_new_flags(fd, O_WRONLY);
-	trans->local_sink = sock;
-	return sock;
+	/* Make I/O to this file descriptor non-blocking */
+	fcntl(fd, F_SETFL, O_NONBLOCK);
+
+	sink = transaction_channel_from_fd(fd);
+	sink->id = id;
+
+	sink->next = trans->local_sink;
+	trans->local_sink = sink;
+	return 0;
 }
 
 void
 transaction_close_sink(transaction_t *trans)
 {
-	if (trans->local_sink) {
-		twopence_debug("closing command input fd\n");
-		twopence_sock_free(trans->local_sink);
-		trans->local_sink = NULL;
+	while (trans->local_sink) {
+		transaction_channel_t *sink = trans->local_sink;
+
+		twopence_debug("closing sink for id %c\n", sink->id);
+		trans->local_sink = sink->next;
+		transaction_channel_free(sink);
 	}
+}
+
+transaction_channel_t *
+transaction_channel_from_fd(int fd)
+{
+	transaction_channel_t *sink;
+	twopence_sock_t *sock;
+
+	sock = twopence_sock_new_flags(fd, O_WRONLY);
+
+	sink = calloc(1, sizeof(*sink));
+	sink->socket = sock;
+
+	return sink;
+}
+
+void
+transaction_channel_free(transaction_channel_t *sink)
+{
+	if (sink->socket)
+		twopence_sock_free(sink->socket);
+	sink->socket = NULL;
+	free(sink);
+}
+
+/*
+ * Write data to the sink.
+ * Note that the buffer is a temporary one on the stack, so if we
+ * want to enqueue it to the socket, it has to be cloned first.
+ * This is taken care of by twopence_sock_xmit_shared()
+ */
+bool
+transaction_channel_write_data(transaction_channel_t *sink, twopence_buf_t *payload)
+{
+	twopence_sock_t *sock;
+
+	/* If there's no socket attached, silently discard the data */
+	if ((sock = sink->socket) == NULL)
+		return true;
+
+	twopence_debug("About to write %u bytes of data to local sink\n", twopence_buf_count(payload));
+	if (twopence_sock_xmit_shared(sock, payload) < 0)
+		return false;
+
+	return true;
+}
+
+bool
+transaction_channel_write_eof(transaction_channel_t *sink)
+{
+	twopence_sock_t *sock = sink->socket;
+
+	if (sock && socket_shutdown_write(sock))
+		return true;
+	return false;
+}
+
+int
+transaction_channel_poll(transaction_channel_t *sink, struct pollfd *pfd)
+{
+	twopence_sock_t *sock = sink->socket;
+
+	if (sock && !socket_is_dead(sock)) {
+		socket_prepare_poll(sock);
+		if (socket_fill_poll(sock, pfd))
+			return 1;
+	}
+
+	return 0;
+}
+
+int
+transaction_channel_doio(transaction_t *trans, transaction_channel_t *sink)
+{
+	twopence_sock_t *sock = sink->socket;
+
+	if (sock) {
+		if (twopence_sock_doio(sock) < 0) {
+			transaction_fail(trans, errno);
+			socket_mark_dead(sock);
+		}
+
+		if (socket_is_dead(sock))
+			return -1;
+	}
+
+	return 0;
 }
 
 twopence_sock_t *
@@ -146,10 +253,13 @@ transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max
 		nfds++;
 #endif
 
-	if ((sock = trans->local_sink) != NULL) {
-		socket_prepare_poll(sock);
-		if (nfds < max && socket_fill_poll(sock, pfd + nfds))
-			nfds++;
+	if (trans->local_sink != NULL) {
+		transaction_channel_t *sink;
+
+		for (sink = trans->local_sink; sink; sink = sink->next) {
+			if (nfds < max && transaction_channel_poll(sink, pfd + nfds))
+				nfds++;
+		}
 	}
 
 	/* If the client socket's write queue is already bursting with data,
@@ -185,21 +295,26 @@ transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max
 void
 transaction_doio(transaction_t *trans)
 {
-	twopence_sock_t *sock;
 	unsigned int n;
 
 	twopence_debug2("transaction_doio()\n");
-	if ((sock = trans->local_sink) != NULL) {
-		if (twopence_sock_doio(sock) < 0) {
-			transaction_fail(trans, errno);
-			socket_mark_dead(sock);
-		}
+	if (trans->local_sink != NULL) {
+		transaction_channel_t *sink, **pos;
 
-		if (socket_is_dead(sock))
-			transaction_close_sink(trans);
+		pos = &trans->local_sink;
+		while ((sink = *pos) != NULL) {
+			if (transaction_channel_doio(trans, sink) < 0) {
+				*pos = sink->next;
+				transaction_channel_free(sink);
+			} else {
+				pos = &sink->next;
+			}
+		}
 	}
 
 	for (n = 0; n < trans->num_local_sources; ++n) {
+		twopence_sock_t *sock;
+
 		sock = trans->local_source[n];
 
 		if (!sock)
@@ -215,6 +330,8 @@ transaction_doio(transaction_t *trans)
 		trans->send(trans);
 
 	for (n = 0; n < trans->num_local_sources; ++n) {
+		twopence_sock_t *sock;
+
 		sock = trans->local_source[n];
 
 		if (sock && socket_is_dead(sock))
@@ -305,65 +422,42 @@ transaction_send_timeout(transaction_t *trans)
 }
 
 /*
- * Command transaction: we have received data from the client,
- * and are asked to feed it to the command's standard input.
- *
+ * Find the local sink corresponding to the given id.
+ * For now, the "id" is a packet type, such as '0' or 'd'
  */
-void
-transaction_queue_stdin(transaction_t *trans, twopence_buf_t *bp)
+static transaction_channel_t *
+transaction_find_sink(transaction_t *trans, unsigned char id)
 {
-	twopence_sock_t *sock;
+	transaction_channel_t *sink;
 
-	if ((sock = trans->local_sink) == NULL) {
-		twopence_buf_free(bp);
-		return;
+	for (sink = trans->local_sink; sink; sink = sink->next) {
+		if (sink->id == id)
+			return sink;
 	}
-
-	socket_queue_xmit(sock, bp);
+	return NULL;
 }
 
 /*
- * File upload transaction: we have received data from the client,
- * and are asked to write it to a local file.
- *
- * The client has advised us about the maximum number of bytes
- * he will send; we stop after that amount and finish the
- * transation.
+ * We have received data from the client, and are asked to write it to a local file,
+ * or to the command's stdin
  */
-bool
-transaction_write_data(transaction_t *trans, twopence_buf_t *payload)
+void
+transaction_write_data(transaction_t *trans, twopence_buf_t *payload, unsigned char id)
 {
-	unsigned int count;
-	twopence_sock_t *sock;
-	int n;
+	transaction_channel_t *sink;
 
-	if ((sock = trans->local_sink) == NULL || !socket_xmit_queue_allowed(sock)) {
-		/* FIXME: send status to client */
-		return false;
-	}
-
-	count = twopence_buf_count(payload);
-
-	twopence_debug("About to write %u bytes of data to local sink\n", count);
-	if ((n = twopence_sock_write(sock, payload, count)) < 0) {
+	sink = transaction_find_sink(trans, id);
+	if (sink && !transaction_channel_write_data(sink, payload))
 		transaction_fail(trans, errno);
-		trans->done = true;
-		return true;
-	}
-	assert(n == count);
-
-	return true;
 }
 
-bool
+void
 transaction_write_eof(transaction_t *trans)
 {
-	twopence_sock_t *sock;
+	transaction_channel_t *sink;
 
-	if ((sock = trans->local_sink) == NULL)
-		return false;
-
-	return socket_shutdown_write(sock);
+	for (sink = trans->local_sink; sink; sink = sink->next)
+		transaction_channel_write_eof(sink);
 }
 
 int

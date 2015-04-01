@@ -42,6 +42,8 @@ struct semantics {
 
 #define DEFAULT_COMMAND_TIMEOUT	12	/* seconds */
 
+typedef struct transaction_channel transaction_channel_t;
+
 #define TRANSACTION_MAX_SOURCES	4
 struct transaction {
 	unsigned int		type;
@@ -60,7 +62,7 @@ struct transaction {
 	pid_t			pid;
 	int			status;
 
-	twopence_sock_t *	local_sink;
+	transaction_channel_t *	local_sink;
 
 	unsigned int		num_local_sources;
 	twopence_sock_t *	local_source[TRANSACTION_MAX_SOURCES];
@@ -69,7 +71,7 @@ struct transaction {
 
 extern transaction_t *	transaction_new(twopence_sock_t *client, unsigned int type, const twopence_protocol_state_t *ps);
 extern void		transaction_free(transaction_t *trans);
-extern twopence_sock_t *	transaction_attach_local_sink(transaction_t *trans, int fd);
+extern int		transaction_attach_local_sink(transaction_t *trans, int fd, unsigned char channel);
 extern void		transaction_close_sink(transaction_t *trans);
 extern twopence_sock_t *	transaction_attach_local_source(transaction_t *trans, int fd);
 extern void		transaction_close_source(transaction_t *trans, unsigned int i);
@@ -77,9 +79,8 @@ extern int		transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsi
 extern void		transaction_doio(transaction_t *trans);
 extern inline void	transaction_send_client(transaction_t *trans, twopence_buf_t *bp);
 extern void		transaction_send_status(transaction_t *trans, twopence_status_t *st);
-extern void		transaction_queue_stdin(transaction_t *trans, twopence_buf_t *bp);
-extern bool		transaction_write_data(transaction_t *trans, twopence_buf_t *payload);
-extern bool		transaction_write_eof(transaction_t *trans);
+extern void		transaction_write_data(transaction_t *trans, twopence_buf_t *payload, unsigned char channel);
+extern void		transaction_write_eof(transaction_t *trans);
 extern int		transaction_process(transaction_t *trans);
 extern void		transaction_fail(transaction_t *, int);
 extern void		transaction_fail2(transaction_t *trans, int major, int minor);

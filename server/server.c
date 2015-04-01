@@ -452,14 +452,14 @@ server_inject_file_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopenc
 	switch (hdr->type) {
 	case TWOPENCE_PROTO_TYPE_DATA:
 		twopence_debug("inject: received %u bytes of data\n", twopence_buf_count(payload));
-		transaction_write_data(trans, payload);
+		transaction_write_data(trans, payload, hdr->type);
 		/* FIXME: how do we propagate write errors to the client? */
 		break;
 
 	case TWOPENCE_PROTO_TYPE_EOF:
 		twopence_debug("inject: received EOF\n");
 		transaction_send_minor(trans, 0);
-		socket_shutdown_write(trans->local_sink);
+		transaction_write_eof(trans);
 		trans->done = true;
 		break;
 
@@ -483,7 +483,7 @@ server_inject_file(transaction_t *trans, const char *username, const char *filen
 		return false;
 	}
 
-	if (!transaction_attach_local_sink(trans, fd)) {
+	if (transaction_attach_local_sink(trans, fd, TWOPENCE_PROTO_TYPE_DATA) < 0) {
 		/* Something is wrong */
 		close(fd);
 		return false;
@@ -633,7 +633,8 @@ server_run_command_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopenc
 	switch (hdr->type) {
 	case TWOPENCE_PROTO_TYPE_STDIN:
 		/* queue the buffer for output to the local command */
-		transaction_queue_stdin(trans, twopence_buf_clone(payload));
+		//transaction_queue_stdin(trans, twopence_buf_clone(payload));
+		transaction_write_data(trans, payload, hdr->type);
 		break;
 
 	case TWOPENCE_PROTO_TYPE_EOF:
@@ -677,7 +678,7 @@ server_run_command(transaction_t *trans, const char *username, unsigned int time
 		return false;
 	}
 
-	if (!transaction_attach_local_sink(trans, command_fds[0]))
+	if (transaction_attach_local_sink(trans, command_fds[0], TWOPENCE_PROTO_TYPE_STDIN) < 0)
 		goto failed;
 	nattached++;
 

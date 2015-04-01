@@ -319,13 +319,26 @@ socket_send_buffer(twopence_sock_t *sock, twopence_buf_t *bp)
 	return n;
 }
 
+/*
+ * These flags indicate the desired degree of "sync" behavior.
+ *  none:	 fully async, just append to queue
+ *  trytowrite:	 opportunistic: write data directly if we can, otherwise queue
+ *  synchronous: fully synchronous, write out the buffer before returning
+ *
+ * Independent of the above
+ *  unshare:     create a clone of the buffer object before queuing it
+ */
+#define TWOPENCE_SOCK_XMIT_TRYTOWRITE	0x0001
+#define TWOPENCE_SOCK_XMIT_SYNCHRONOUS	0x0002
+#define TWOPENCE_SOCK_XMIT_CLONEBUF	0x0004
+
 static int
-__socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp, int direct)
+__socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp, int flags)
 {
 	int n = 0, f;
 
 	f = fcntl(sock->fd, F_GETFL);
-	if (direct == 2)
+	if (flags & TWOPENCE_SOCK_XMIT_SYNCHRONOUS)
 		fcntl(sock->fd, F_SETFL, f & ~O_NONBLOCK);
 
 	if (sock->write_eof) {
@@ -333,12 +346,7 @@ __socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp, int direct)
 		goto out_drop_buffer;
 	}
 
-	/* direct indicates the desired degree of "sync" behavior.
-	 * 0: fully async, just append to queue
-	 * 1: opportunistic: write data directly if we can, otherwise queue
-	 * 2: fully synchronous, write out the buffer before returning
-	 */
-	if (direct > 1) {
+	if (flags & TWOPENCE_SOCK_XMIT_SYNCHRONOUS) {
 		/* Flush out all queued packets first */
 		while (twopence_queue_head(&sock->xmit_queue) != NULL) {
 			n = socket_send_queued(sock);
@@ -349,28 +357,32 @@ __socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp, int direct)
 
 	/* If nothing is queued to the socket, we might as well try to
 	 * send this data directly. */
-	if (direct && twopence_queue_empty(&sock->xmit_queue)) {
-		if (direct == 1) {
-			/* opportunistic - write some */
-			(void) socket_send_buffer(sock, bp);
-		} else {
+	if (twopence_queue_empty(&sock->xmit_queue)) {
+		if (flags & TWOPENCE_SOCK_XMIT_SYNCHRONOUS) {
 			/* fully synchronous */
 			while (twopence_buf_count(bp) != 0) {
 				n = socket_send_buffer(sock, bp);
 				if (n < 0)
 					goto out_drop_buffer;
 			}
+		} else
+		if (flags & TWOPENCE_SOCK_XMIT_TRYTOWRITE) {
+			/* opportunistic - write some */
+			(void) socket_send_buffer(sock, bp);
 		}
 	}
 
 	/* If there's data left in this buffer, queue it to the socket */
 	if (twopence_buf_count(bp) != 0) {
+		if (flags & TWOPENCE_SOCK_XMIT_CLONEBUF)
+			bp = twopence_buf_clone(bp);
 		twopence_queue_append(&sock->xmit_queue, twopence_packet_new(bp));
 		goto out;
 	}
 
 out_drop_buffer:
-	twopence_buf_free(bp);
+	if (!(flags & TWOPENCE_SOCK_XMIT_CLONEBUF))
+		twopence_buf_free(bp);
 
 out:
 	fcntl(sock->fd, F_SETFL, f);
@@ -380,13 +392,19 @@ out:
 void
 socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp)
 {
-	__socket_queue_xmit(sock, bp, 1);
+	__socket_queue_xmit(sock, bp, TWOPENCE_SOCK_XMIT_TRYTOWRITE);
+}
+
+int
+twopence_sock_xmit_shared(twopence_sock_t *sock, twopence_buf_t *bp)
+{
+	return __socket_queue_xmit(sock, bp, TWOPENCE_SOCK_XMIT_TRYTOWRITE | TWOPENCE_SOCK_XMIT_CLONEBUF);
 }
 
 int
 twopence_sock_xmit(twopence_sock_t *sock, twopence_buf_t *bp)
 {
-	return __socket_queue_xmit(sock, bp, 2);
+	return __socket_queue_xmit(sock, bp, TWOPENCE_SOCK_XMIT_SYNCHRONOUS);
 }
 
 int
