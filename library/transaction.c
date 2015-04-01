@@ -176,12 +176,11 @@ twopence_transaction_channel_list_close(twopence_trans_channel_t **list, unsigne
  * twopence transactions as used by our own on-the-wire protocol
  */
 twopence_transaction_t *
-twopence_transaction_new_ex(twopence_sock_t *transport, unsigned int type, const twopence_protocol_state_t *ps, size_t size)
+twopence_transaction_new(twopence_sock_t *transport, unsigned int type, const twopence_protocol_state_t *ps)
 {
 	twopence_transaction_t *trans;
 
-	assert(size >= sizeof(*trans));
-	trans = calloc(1, size);
+	trans = calloc(1, sizeof(*trans));
 	trans->ps = *ps;
 	trans->id = ps->xid;
 	trans->type = type;
@@ -189,12 +188,6 @@ twopence_transaction_new_ex(twopence_sock_t *transport, unsigned int type, const
 
 	twopence_debug("%s: created new transaction", twopence_transaction_describe(trans));
 	return trans;
-}
-
-twopence_transaction_t *
-twopence_transaction_new(twopence_sock_t *client, unsigned int type, const twopence_protocol_state_t *ps)
-{
-	return twopence_transaction_new_ex(client, type, ps, sizeof(twopence_transaction_t));
 }
 
 void

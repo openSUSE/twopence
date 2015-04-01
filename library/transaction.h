@@ -61,7 +61,6 @@ struct twopence_transaction {
 	} client;
 };
 
-extern twopence_transaction_t *	twopence_transaction_new_ex(twopence_sock_t *, unsigned int, const twopence_protocol_state_t *, size_t);
 extern twopence_transaction_t *	twopence_transaction_new(twopence_sock_t *client, unsigned int type, const twopence_protocol_state_t *ps);
 extern void			twopence_transaction_free(twopence_transaction_t *trans);
 extern const char *		twopence_transaction_describe(const twopence_transaction_t *);
