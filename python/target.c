@@ -173,7 +173,10 @@ Target_getattr(twopence_Target *self, char *name)
 		}
 		return PyString_FromString(self->name);
 	}
-	
+	if (!strcmp(name, "type")) {
+		return PyString_FromString(self->handle->ops->name);
+	}
+
 	if (self->attrs
 	 && (value = PyDict_GetItemString(self->attrs, name)) != NULL) {
 		Py_INCREF(value);
