@@ -602,24 +602,6 @@ send_file_error:
   goto out;
 }
 
-// Send a file in chunks to the link
-//
-// Returns 0 if everything went fine, or a negative error code if failed
-int _twopence_send_file
-  (struct twopence_pipe_target *handle, int file_fd, int link_fd)
-{
-  twopence_iostream_t *file_stream;
-  int rc;
-
-  rc = twopence_iostream_wrap_fd(file_fd, false, &file_stream);
-  if (rc < 0)
-    return TWOPENCE_LOCAL_FILE_ERROR;
-
-  rc = _twopence_send_file_iostream(handle, file_stream, link_fd);
-  twopence_iostream_free(file_stream);
-  return rc;
-}
-
 // Receive a file in chunks from the link and write it to a file
 //
 // Returns 0 if everything went fine, or a negative error code if failed
