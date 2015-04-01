@@ -63,7 +63,7 @@ extern int		socket_recv_buffer(socket_t *sock, twopence_buf_t *bp);
 extern int		socket_write(socket_t *sock, twopence_buf_t *bp, unsigned int count);
 extern int		socket_send_buffer(socket_t *sock, twopence_buf_t *bp);
 extern void		socket_queue_xmit(socket_t *sock, twopence_buf_t *bp);
-extern void		socket_send_or_queue(socket_t *sock, twopence_buf_t *bp);
+extern int		socket_xmit(socket_t *sock, twopence_buf_t *bp);
 extern int		socket_send_queued(socket_t *sock);
 extern unsigned int	socket_xmit_queue_bytes(socket_t *sock);
 extern bool		socket_xmit_queue_allowed(const socket_t *sock);

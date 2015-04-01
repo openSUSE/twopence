@@ -60,7 +60,7 @@ struct socket {
 	unsigned int	bytes_sent;
 
 	queue_t		xmit_queue;
-	twopence_buf_t *	recv_buf;
+	twopence_buf_t *recv_buf;
 
 	bool		read_eof;
 	unsigned char	write_eof;
@@ -326,40 +326,67 @@ socket_send_buffer(socket_t *sock, twopence_buf_t *bp)
 	return n;
 }
 
-void
-socket_queue_xmit(socket_t *sock, twopence_buf_t *bp)
+static int
+__socket_queue_xmit(socket_t *sock, twopence_buf_t *bp, int direct)
 {
-	packet_t *pkt;
+	int n = 0;
 
 	if (sock->write_eof) {
 		fprintf(stderr, "%s: attempt to queue data after write shutdown\n", __func__);
-		twopence_buf_free(bp);
-		return;
+		goto out_drop_buffer;
 	}
 
-	pkt = packet_new(bp);
-	queue_append(&sock->xmit_queue, pkt);
-}
-
-void
-socket_send_or_queue(socket_t *sock, twopence_buf_t *bp)
-{
-	packet_t *pkt;
-
-	if (sock->write_eof) {
-		fprintf(stderr, "%s: attempt to queue data after write shutdown\n", __func__);
-		return;
+	/* direct indicates the desired degree of "sync" behavior.
+	 * 0: fully async, just append to queue
+	 * 1: opportunistic: write data directly if we can, otherwise queue
+	 * 2: fully synchronous, write out the buffer before returning
+	 */
+	if (direct > 1) {
+		/* Flush out all queued packets first */
+		while (queue_head(&sock->xmit_queue) != NULL) {
+			n = socket_send_queued(sock);
+			if (n < 0)
+				goto out_drop_buffer;
+		}
 	}
 
 	/* If nothing is queued to the socket, we might as well try to
 	 * send this data directly. */
-	if (queue_empty(&sock->xmit_queue))
-		(void) socket_send_buffer(sock, bp);
-
-	if (twopence_buf_count(bp) != 0) {
-		pkt = packet_new(twopence_buf_clone(bp));
-		queue_append(&sock->xmit_queue, pkt);
+	if (direct && queue_empty(&sock->xmit_queue)) {
+		if (direct == 1) {
+			/* opportunistic - write some */
+			(void) socket_send_buffer(sock, bp);
+		} else {
+			/* fully synchronous */
+			while (twopence_buf_count(bp) != 0) {
+				n = socket_send_buffer(sock, bp);
+				if (n < 0)
+					goto out_drop_buffer;
+			}
+		}
 	}
+
+	/* If there's data left in this buffer, queue it to the socket */
+	if (twopence_buf_count(bp) != 0) {
+		queue_append(&sock->xmit_queue, packet_new(bp));
+		return 0;
+	}
+
+out_drop_buffer:
+	twopence_buf_free(bp);
+	return n;
+}
+
+void
+socket_queue_xmit(socket_t *sock, twopence_buf_t *bp)
+{
+	__socket_queue_xmit(sock, bp, 1);
+}
+
+int
+socket_xmit(socket_t *sock, twopence_buf_t *bp)
+{
+	return __socket_queue_xmit(sock, bp, 2);
 }
 
 int
