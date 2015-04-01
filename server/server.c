@@ -447,7 +447,7 @@ failed:
 }
 
 static void
-server_inject_file_write_eof(transaction_t *trans, transaction_channel_t *channel)
+server_inject_file_write_eof(transaction_t *trans, twopence_trans_channel_t *channel)
 {
 	transaction_send_minor(trans, 0);
 	transaction_write_eof(trans);
@@ -457,7 +457,7 @@ server_inject_file_write_eof(transaction_t *trans, transaction_channel_t *channe
 bool
 server_inject_file(transaction_t *trans, const char *username, const char *filename, size_t filemode)
 {
-	transaction_channel_t *sink;
+	twopence_trans_channel_t *sink;
 	int status;
 	int fd;
 
@@ -484,7 +484,7 @@ server_inject_file(transaction_t *trans, const char *username, const char *filen
 }
 
 void
-server_extract_file_source_read_eof(transaction_t *trans, transaction_channel_t *channel)
+server_extract_file_source_read_eof(transaction_t *trans, twopence_trans_channel_t *channel)
 {
 	transaction_send_client(trans, twopence_protocol_build_eof_packet(&trans->ps));
 	trans->done = true;
@@ -493,7 +493,7 @@ server_extract_file_source_read_eof(transaction_t *trans, transaction_channel_t 
 bool
 server_extract_file(transaction_t *trans, const char *username, const char *filename)
 {
-	transaction_channel_t *source;
+	twopence_trans_channel_t *source;
 	int status;
 	int fd;
 
@@ -520,7 +520,7 @@ server_extract_file(transaction_t *trans, const char *username, const char *file
 bool
 server_run_command_send(transaction_t *trans)
 {
-	transaction_channel_t *channel;
+	twopence_trans_channel_t *channel;
 	int status;
 	pid_t pid;
 	bool pending_output;
@@ -566,7 +566,7 @@ server_run_command_send(transaction_t *trans)
 }
 
 static void
-server_run_command_stdin_eof(transaction_t *trans, transaction_channel_t *sink)
+server_run_command_stdin_eof(transaction_t *trans, twopence_trans_channel_t *sink)
 {
 	/* Nothing to be done. */
 }
@@ -598,7 +598,7 @@ server_run_command_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopenc
 bool
 server_run_command(transaction_t *trans, const char *username, unsigned int timeout, const char *cmdline)
 {
-	transaction_channel_t *sink;
+	twopence_trans_channel_t *sink;
 	int status;
 	int command_fds[3];
 	int nattached = 0;

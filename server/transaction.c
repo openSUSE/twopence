@@ -47,8 +47,8 @@
 #include "server.h"
 
 
-struct transaction_channel {
-	struct transaction_channel *next;
+struct twopence_trans_channel {
+	struct twopence_trans_channel *next;
 
 	unsigned char		id;		/* corresponds to a packet type (eg '0' or 'd') */
 	bool			sync;		/* if true, all writes are fully synchronous */
@@ -56,18 +56,18 @@ struct transaction_channel {
 	twopence_sock_t *	socket;
 
 	struct {
-	    void		(*read_eof)(transaction_t *, transaction_channel_t *);
-	    void		(*write_eof)(transaction_t *, transaction_channel_t *);
+	    void		(*read_eof)(transaction_t *, twopence_trans_channel_t *);
+	    void		(*write_eof)(transaction_t *, twopence_trans_channel_t *);
 	} callbacks;
 };
 
 /*
  * Transaction channel primitives
  */
-static transaction_channel_t *
+static twopence_trans_channel_t *
 transaction_channel_from_fd(int fd, int flags)
 {
-	transaction_channel_t *sink;
+	twopence_trans_channel_t *sink;
 	twopence_sock_t *sock;
 
 	sock = twopence_sock_new_flags(fd, flags);
@@ -79,7 +79,7 @@ transaction_channel_from_fd(int fd, int flags)
 }
 
 static void
-transaction_channel_free(transaction_channel_t *sink)
+transaction_channel_free(twopence_trans_channel_t *sink)
 {
 	twopence_debug("%s(%c)", __func__, sink->id);
 	if (sink->socket)
@@ -89,7 +89,7 @@ transaction_channel_free(transaction_channel_t *sink)
 }
 
 bool
-transaction_channel_is_read_eof(const transaction_channel_t *channel)
+transaction_channel_is_read_eof(const twopence_trans_channel_t *channel)
 {
 	twopence_sock_t *sock = channel->socket;
 
@@ -99,21 +99,21 @@ transaction_channel_is_read_eof(const transaction_channel_t *channel)
 }
 
 void
-transaction_channel_set_callback_read_eof(transaction_channel_t *channel, void (*fn)(transaction_t *, transaction_channel_t *))
+transaction_channel_set_callback_read_eof(twopence_trans_channel_t *channel, void (*fn)(transaction_t *, twopence_trans_channel_t *))
 {
 	channel->callbacks.read_eof = fn;
 }
 
 void
-transaction_channel_set_callback_write_eof(transaction_channel_t *channel, void (*fn)(transaction_t *, transaction_channel_t *))
+transaction_channel_set_callback_write_eof(twopence_trans_channel_t *channel, void (*fn)(transaction_t *, twopence_trans_channel_t *))
 {
 	channel->callbacks.write_eof = fn;
 }
 
 static void
-transaction_channel_list_purge(transaction_channel_t **list)
+transaction_channel_list_purge(twopence_trans_channel_t **list)
 {
-	transaction_channel_t *channel;
+	twopence_trans_channel_t *channel;
 
 	while ((channel = *list) != NULL) {
 		if (channel->socket && twopence_sock_is_dead(channel->socket)) {
@@ -126,9 +126,9 @@ transaction_channel_list_purge(transaction_channel_t **list)
 }
 
 static void
-transaction_channel_list_close(transaction_channel_t **list, unsigned char id)
+transaction_channel_list_close(twopence_trans_channel_t **list, unsigned char id)
 {
-	transaction_channel_t *channel;
+	twopence_trans_channel_t *channel;
 
 	while ((channel = *list) != NULL) {
 		if (id == 0 || channel->id == id) {
@@ -198,7 +198,7 @@ transaction_describe(const transaction_t *trans)
 unsigned int
 transaction_num_channels(const transaction_t *trans)
 {
-	transaction_channel_t *channel;
+	twopence_trans_channel_t *channel;
 	unsigned int count = 0;
 
 	for (channel = trans->local_sink; channel; channel = channel->next)
@@ -208,10 +208,10 @@ transaction_num_channels(const transaction_t *trans)
 	return count;
 }
 
-transaction_channel_t *
+twopence_trans_channel_t *
 transaction_attach_local_sink(transaction_t *trans, int fd, unsigned char id)
 {
-	transaction_channel_t *sink;
+	twopence_trans_channel_t *sink;
 
 	/* Make I/O to this file descriptor non-blocking */
 	fcntl(fd, F_SETFL, O_NONBLOCK);
@@ -231,10 +231,10 @@ transaction_close_sink(transaction_t *trans, unsigned char id)
 	transaction_channel_list_close(&trans->local_sink, id);
 }
 
-transaction_channel_t *
+twopence_trans_channel_t *
 transaction_attach_local_source(transaction_t *trans, int fd, unsigned char channel_id)
 {
-	transaction_channel_t *source;
+	twopence_trans_channel_t *source;
 
 	/* Make I/O to this file descriptor non-blocking */
 	fcntl(fd, F_SETFL, O_NONBLOCK);
@@ -261,7 +261,7 @@ transaction_close_source(transaction_t *trans, unsigned char id)
  * This is taken care of by twopence_sock_xmit_shared()
  */
 static bool
-transaction_channel_write_data(transaction_channel_t *sink, twopence_buf_t *payload)
+transaction_channel_write_data(twopence_trans_channel_t *sink, twopence_buf_t *payload)
 {
 	twopence_sock_t *sock;
 
@@ -277,7 +277,7 @@ transaction_channel_write_data(transaction_channel_t *sink, twopence_buf_t *payl
 }
 
 static void
-transaction_channel_write_eof(transaction_channel_t *sink)
+transaction_channel_write_eof(twopence_trans_channel_t *sink)
 {
 	twopence_sock_t *sock = sink->socket;
 
@@ -286,7 +286,7 @@ transaction_channel_write_eof(transaction_channel_t *sink)
 }
 
 int
-transaction_channel_poll(transaction_channel_t *sink, struct pollfd *pfd)
+transaction_channel_poll(twopence_trans_channel_t *sink, struct pollfd *pfd)
 {
 	twopence_sock_t *sock = sink->socket;
 
@@ -320,7 +320,7 @@ transaction_channel_poll(transaction_channel_t *sink, struct pollfd *pfd)
 }
 
 static void
-transaction_channel_doio(transaction_t *trans, transaction_channel_t *channel)
+transaction_channel_doio(transaction_t *trans, twopence_trans_channel_t *channel)
 {
 	twopence_sock_t *sock = channel->socket;
 
@@ -358,7 +358,7 @@ transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max
 	unsigned int nfds = 0;
 
 	if (trans->local_sink != NULL) {
-		transaction_channel_t *sink;
+		twopence_trans_channel_t *sink;
 
 		for (sink = trans->local_sink; sink; sink = sink->next) {
 			if (nfds < max && transaction_channel_poll(sink, pfd + nfds))
@@ -369,7 +369,7 @@ transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max
 	/* If the client socket's write queue is already bursting with data,
 	 * refrain from queuing more until some of it has been drained */
 	if (twopence_sock_xmit_queue_allowed(trans->client_sock)) {
-		transaction_channel_t *source;
+		twopence_trans_channel_t *source;
 
 		for (source = trans->local_source; source; source = source->next) {
 			if (nfds < max && transaction_channel_poll(source, pfd + nfds))
@@ -383,7 +383,7 @@ transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max
 void
 transaction_doio(transaction_t *trans)
 {
-	transaction_channel_t *channel;
+	twopence_trans_channel_t *channel;
 
 	twopence_debug2("%s: transaction_doio()\n", transaction_describe(trans));
 	for (channel = trans->local_sink; channel; channel = channel->next)
@@ -400,7 +400,7 @@ transaction_doio(transaction_t *trans)
 	/* Purge the source list *after* calling trans->send().
 	 * This is because server_extract_file_send needs to detect
 	 * the EOF condition on the source file and send an EOF packet.
-	 * Once we wrap this inside the transaction_channel handling,
+	 * Once we wrap this inside the twopence_trans_channel handling,
 	 * then this requirement goes away. */
 	transaction_channel_list_purge(&trans->local_source);
 }
@@ -412,7 +412,7 @@ transaction_doio(transaction_t *trans)
 void
 transaction_recv_packet(transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
 {
-	transaction_channel_t *sink;
+	twopence_trans_channel_t *sink;
 
 	if (trans->done) {
 		/* Coming late to the party, huh? */
@@ -537,10 +537,10 @@ transaction_send_timeout(transaction_t *trans)
  * Find the local sink corresponding to the given id.
  * For now, the "id" is a packet type, such as '0' or 'd'
  */
-transaction_channel_t *
+twopence_trans_channel_t *
 transaction_find_sink(transaction_t *trans, unsigned char id)
 {
-	transaction_channel_t *sink;
+	twopence_trans_channel_t *sink;
 
 	for (sink = trans->local_sink; sink; sink = sink->next) {
 		if (sink->id == id)
@@ -549,10 +549,10 @@ transaction_find_sink(transaction_t *trans, unsigned char id)
 	return NULL;
 }
 
-transaction_channel_t *
+twopence_trans_channel_t *
 transaction_find_source(transaction_t *trans, unsigned char id)
 {
-	transaction_channel_t *channel;
+	twopence_trans_channel_t *channel;
 
 	for (channel = trans->local_source; channel; channel = channel->next) {
 		if (channel->id == id)
@@ -568,7 +568,7 @@ transaction_find_source(transaction_t *trans, unsigned char id)
 void
 transaction_write_data(transaction_t *trans, twopence_buf_t *payload, unsigned char id)
 {
-	transaction_channel_t *sink;
+	twopence_trans_channel_t *sink;
 
 	sink = transaction_find_sink(trans, id);
 	if (sink && !transaction_channel_write_data(sink, payload))
@@ -578,7 +578,7 @@ transaction_write_data(transaction_t *trans, twopence_buf_t *payload, unsigned c
 void
 transaction_write_eof(transaction_t *trans)
 {
-	transaction_channel_t *sink;
+	twopence_trans_channel_t *sink;
 
 	for (sink = trans->local_sink; sink; sink = sink->next)
 		transaction_channel_write_eof(sink);

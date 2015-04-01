@@ -42,7 +42,7 @@ struct semantics {
 
 #define DEFAULT_COMMAND_TIMEOUT	12	/* seconds */
 
-typedef struct transaction_channel transaction_channel_t;
+typedef struct twopence_trans_channel twopence_trans_channel_t;
 
 struct transaction {
 	transaction_t *		next;
@@ -63,16 +63,15 @@ struct transaction {
 	pid_t			pid;
 	int			status;
 
-	transaction_channel_t *	local_sink;
-
-	transaction_channel_t *	local_source;
+	twopence_trans_channel_t *local_sink;
+	twopence_trans_channel_t *local_source;
 };
 
 extern transaction_t *		transaction_new(twopence_sock_t *client, unsigned int type, const twopence_protocol_state_t *ps);
 extern void			transaction_free(transaction_t *trans);
 extern const char *		transaction_describe(const transaction_t *);
-extern transaction_channel_t *	transaction_attach_local_sink(transaction_t *trans, int fd, unsigned char channel);
-extern transaction_channel_t *	transaction_attach_local_source(transaction_t *trans, int fd, unsigned char channel);
+extern twopence_trans_channel_t *transaction_attach_local_sink(transaction_t *trans, int fd, unsigned char channel);
+extern twopence_trans_channel_t *transaction_attach_local_source(transaction_t *trans, int fd, unsigned char channel);
 extern void			transaction_close_sink(transaction_t *trans, unsigned char id);
 extern void			transaction_close_source(transaction_t *trans, unsigned char id);
 extern unsigned int		transaction_num_channels(const transaction_t *trans);
@@ -89,11 +88,11 @@ extern void			transaction_fail2(transaction_t *trans, int major, int minor);
 extern void			transaction_send_major(transaction_t *trans, unsigned int code);
 extern void			transaction_send_minor(transaction_t *trans, unsigned int code);
 extern void			transaction_send_timeout(transaction_t *trans);
-extern transaction_channel_t *	transaction_find_sink(transaction_t *trans, unsigned char channel);
-extern transaction_channel_t *	transaction_find_source(transaction_t *trans, unsigned char channel);
-extern bool			transaction_channel_is_read_eof(const transaction_channel_t *);
-extern void			transaction_channel_set_callback_read_eof(transaction_channel_t *, void (*fn)(transaction_t *, transaction_channel_t *));
-extern void			transaction_channel_set_callback_write_eof(transaction_channel_t *, void (*fn)(transaction_t *, transaction_channel_t *));
+extern twopence_trans_channel_t *transaction_find_sink(transaction_t *trans, unsigned char channel);
+extern twopence_trans_channel_t *transaction_find_source(transaction_t *trans, unsigned char channel);
+extern bool			transaction_channel_is_read_eof(const twopence_trans_channel_t *);
+extern void			transaction_channel_set_callback_read_eof(twopence_trans_channel_t *, void (*fn)(transaction_t *, twopence_trans_channel_t *));
+extern void			transaction_channel_set_callback_write_eof(twopence_trans_channel_t *, void (*fn)(transaction_t *, twopence_trans_channel_t *));
 
 extern connection_t *		connection_new(semantics_t *semantics, twopence_sock_t *client_sock, unsigned int client_id);
 extern void			connection_free(connection_t *conn);
