@@ -299,13 +299,11 @@ twopence_transaction_channel_flush(twopence_trans_channel_t *sink)
 	if ((sock = sink->socket) == NULL)
 		return 0;
 
-	while (twopence_sock_xmit_queue_bytes(sock) != 0) {
-		int n;
+	if (twopence_sock_xmit_queue_bytes(sock) == 0)
+		return 0;
 
-		if ((n = twopence_sock_send_queued(sock)) < 0)
-			return n;
-	}
-	return 0;
+	twopence_debug("Flushing %u bytes queued to channel %c\n", twopence_sock_xmit_queue_bytes(sock), sink->id);
+	return twopence_sock_xmit_queue_flush(sock);
 }
 
 static void
@@ -371,6 +369,8 @@ twopence_transaction_channel_doio(twopence_transaction_t *trans, twopence_trans_
 		 * to them. If that is non-empty, queue it to the transport
 		 * socket. */
 		if ((bp = twopence_sock_take_recvbuf(sock)) != NULL) {
+			twopence_debug2("%s: %u bytes from local source %c",
+					twopence_transaction_describe(trans), twopence_buf_count(bp), channel->id);
 			twopence_protocol_push_header_ps(bp, &trans->ps, channel->id);
 			twopence_sock_queue_xmit(trans->client_sock, bp);
 		}

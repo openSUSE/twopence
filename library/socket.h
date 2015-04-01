@@ -39,6 +39,7 @@ extern int		twopence_sock_xmit_shared(twopence_sock_t *sock, twopence_buf_t *bp)
 extern int		twopence_sock_send_queued(twopence_sock_t *sock);
 extern unsigned int	twopence_sock_xmit_queue_bytes(twopence_sock_t *sock);
 extern bool		twopence_sock_xmit_queue_allowed(const twopence_sock_t *sock);
+extern int		twopence_sock_xmit_queue_flush(twopence_sock_t *sock);
 extern bool		twopence_sock_shutdown_write(twopence_sock_t *sock);
 extern void		twopence_sock_mark_dead(twopence_sock_t *sock);
 extern bool		twopence_sock_is_read_eof(const twopence_sock_t *);

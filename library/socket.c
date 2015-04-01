@@ -40,6 +40,8 @@ typedef struct twopence_packet twopence_packet_t;
 typedef struct twopence_queue twopence_queue_t;
 
 struct twopence_queue {
+	unsigned int		seq_head;
+	unsigned int		seq_tail;
 	unsigned int		bytes;
 	unsigned int		max_bytes;
 
@@ -64,6 +66,7 @@ struct twopence_socket {
 struct twopence_packet {
 	twopence_packet_t *	next;
 
+	unsigned int		seq;
 	unsigned int		bytes;
 	twopence_buf_t *	buffer;
 };
@@ -122,6 +125,7 @@ twopence_queue_append(twopence_queue_t *queue, twopence_packet_t *pkt)
 	*queue->tail = pkt;
 	queue->tail = &pkt->next;
 	queue->bytes += pkt->bytes;
+	pkt->seq = queue->seq_tail++;
 }
 
 static twopence_packet_t *
@@ -142,12 +146,14 @@ twopence_queue_dequeue(twopence_queue_t *queue)
 	twopence_packet_t *pkt;
 
 	if ((pkt = queue->head) != NULL) {
+		assert(pkt->seq == queue->seq_head);
 		assert(pkt->bytes <= queue->bytes);
 		queue->bytes -= pkt->bytes;
 
 		queue->head = pkt->next;
 		if (queue->head == NULL)
 			queue->tail = &queue->head;
+		queue->seq_head++;
 	}
 	return pkt;
 }
@@ -316,6 +322,24 @@ twopence_sock_send_buffer(twopence_sock_t *sock, twopence_buf_t *bp)
 		twopence_debug2("%s(%d): wrote %u bytes\n", __func__, sock->fd, n);
 		twopence_buf_advance_head(bp, n);
 	}
+	return n;
+}
+
+int
+twopence_sock_xmit_queue_flush(twopence_sock_t *sock)
+{
+	int n = 0, f;
+
+	f = fcntl(sock->fd, F_GETFL);
+	fcntl(sock->fd, F_SETFL, f & ~O_NONBLOCK);
+
+	while (twopence_queue_head(&sock->xmit_queue) != NULL) {
+		n = twopence_sock_send_queued(sock);
+		if (n < 0)
+			break;
+	}
+
+	fcntl(sock->fd, F_SETFL, f);
 	return n;
 }
 
