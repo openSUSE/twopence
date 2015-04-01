@@ -161,7 +161,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 
 		hdr = twopence_protocol_dissect_ps(bp, &payload, &ps);
 		if (hdr == NULL) {
-			fprintf(stderr, "%s: received invalid packet\n", __func__);
+			twopence_log_error("%s: received invalid packet\n", __func__);
 			/* kill the connection? */
 			return false;
 		}
@@ -235,7 +235,6 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 				break;
 
 			default:
-				fprintf(stderr, "Unknown command code '%c' in global context\n", hdr->type);
 				twopence_debug("Unknown command code '%c' in global context\n", hdr->type);
 			}
 
