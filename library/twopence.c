@@ -1122,7 +1122,7 @@ int
 twopence_substream_file_poll(twopence_substream_t *src, struct pollfd *pfd, int mask)
 {
   if (src->fd < 0)
-    return 0;
+    return -1;
 
   pfd->fd = src->fd;
   pfd->events = mask;

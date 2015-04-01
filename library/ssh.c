@@ -74,7 +74,8 @@ struct twopence_ssh_transaction {
     int			was_blocking;
   } stdin;
 
-  struct {
+  struct twopence_ssh_output {
+    int			index;		/* For ssh_channel_read() and friends */
     twopence_iostream_t *stream;
     bool		eof;
   } stdout, stderr;
@@ -167,6 +168,7 @@ __twopence_ssh_transaction_new(struct twopence_ssh_target *handle, unsigned long
 
   trans->handle = handle;
   trans->channel = NULL;
+  trans->stdin.pfd.fd = -1;
 
   gettimeofday(&trans->command_timeout, NULL);
   trans->command_timeout.tv_sec += timeout;
@@ -202,9 +204,11 @@ __twopence_ssh_transaction_setup_stdio(twopence_ssh_transaction_t *trans,
     trans->stdin.pfd.revents = 0;
   }
 
+  trans->stdout.index = 0;
   trans->stdout.stream = stdout_stream;
-  trans->stderr.stream = stderr_stream;
 
+  trans->stderr.index = 1;
+  trans->stderr.stream = stderr_stream;
 }
 
 static void
@@ -368,16 +372,20 @@ __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
 static int
 __twopence_ssh_transaction_mark_stdin_eof(twopence_ssh_transaction_t *trans)
 {
-    trans->stdin.eof = true;
+  SSH_TRACE("%s: stdin is at EOF\n", __func__);
+  trans->stdin.eof = true;
 
-    if (__twopence_ssh_transaction_send_eof(trans) == SSH_ERROR)
-      return -1;
-    return 0;
+  if (__twopence_ssh_transaction_send_eof(trans) == SSH_ERROR)
+    return -1;
+  trans->stdin.pfd.fd = -1;
+  return 0;
 }
 
-// Read the input from the keyboard or a pipe
+/*
+ * Read data from stdin and forward it to the remote command
+ */
 static int
-__twopence_ssh_read_input(twopence_ssh_transaction_t *trans)
+__twopence_ssh_transaction_forward_stdin(twopence_ssh_transaction_t *trans)
 {
   twopence_iostream_t *stream;
   char buffer[BUFFER_SIZE];
@@ -396,7 +404,6 @@ __twopence_ssh_read_input(twopence_ssh_transaction_t *trans)
   }
   if (size == 0) {
     /* EOF from local file */
-    SSH_TRACE("%s: EOF\n", __func__);
     return __twopence_ssh_transaction_mark_stdin_eof(trans);
   }
 
@@ -404,6 +411,37 @@ __twopence_ssh_read_input(twopence_ssh_transaction_t *trans)
   written = ssh_channel_write(trans->channel, buffer, size);
   if (written != size)
     return -1;
+  return 0;
+}
+
+/*
+ * Read data from remote command and forward it to local stream
+ */
+static int
+__twopence_ssh_transaction_forward_output(twopence_ssh_transaction_t *trans, struct twopence_ssh_output *out, const char *name)
+{
+  char buffer[BUFFER_SIZE];
+  int size;
+
+  if (ssh_channel_poll(trans->channel, out->index) != 0) {
+    SSH_TRACE("%s: trying to read some data from %s\n", __func__, name);
+
+    size = ssh_channel_read_nonblocking(trans->channel, buffer, sizeof(buffer), out->index);
+    if (size == SSH_ERROR)
+      return -2;
+
+    if (size == SSH_EOF) {
+      SSH_TRACE("%s: %s is at EOF\n", __func__, name);
+      out->eof = true;
+    }
+
+    /* If there is no local stream to write it to, simply drop it on the floor */
+    if (size > 0 && out->stream) {
+      if (twopence_iostream_write(out->stream, buffer, size) < 0)
+	return -2;
+    }
+  }
+
   return 0;
 }
 
@@ -415,6 +453,60 @@ __twopence_ssh_stdin_cb(socket_t fd, int revents, void *userdata)
   SSH_TRACE("%s: revents=%d\n", __func__, revents);
   pfd->revents = revents;
   return 0;
+}
+
+static int
+__twopence_ssh_transaction_poll_stdin(twopence_ssh_transaction_t *trans)
+{
+  trans->stdin.pfd.events = 0;
+  trans->stdin.pfd.fd = -1;
+
+  while (!trans->stdin.eof) {
+    twopence_iostream_t *stream;
+    int n;
+
+    if ((stream = trans->stdin.stream) == NULL) {
+      __twopence_ssh_transaction_mark_stdin_eof(trans);
+      break;
+    }
+
+    n = twopence_iostream_poll(stream, &trans->stdin.pfd, POLLIN);
+    if (n == 0) {
+      /* twopence_iostream_poll returns 0; which means it's either a buffer object
+       * that has no open fd, or it's at EOF already.
+       * In either case, we should try reading from this stream right away. */
+      SSH_TRACE("%s: writing stdin synchronously to peer\n", __func__);
+      if (__twopence_ssh_transaction_forward_stdin(trans) < 0)
+        return -1;
+    }
+    if (n < 0) {
+      __twopence_ssh_transaction_mark_stdin_eof(trans);
+      break;
+    }
+    if (n > 0) {
+      SSH_TRACE("%s: set up stdin for polling from fd %d\n", __func__, trans->stdin.pfd.fd);
+      assert(trans->stdin.pfd.fd >= 0);
+      break;
+    }
+  }
+
+  return 0;
+}
+
+static void
+__twopence_ssh_poll_add_transaction(ssh_event event, twopence_ssh_transaction_t *trans)
+{
+  twopence_iostream_t *stream;
+
+  ssh_event_add_session(event, ssh_channel_get_session(trans->channel));
+
+  if ((stream = trans->stdin.stream) == NULL)
+    __twopence_ssh_transaction_mark_stdin_eof(trans);
+
+  if (trans->stdin.pfd.fd >= 0) {
+    SSH_TRACE("poll on fd %d\n", trans->stdin.pfd.fd);
+    ssh_event_add_fd(event, trans->stdin.pfd.fd, POLLIN, __twopence_ssh_stdin_cb, &trans->stdin.pfd);
+  }
 }
 
 static bool
@@ -434,95 +526,33 @@ __twopence_ssh_check_timeout(const struct timeval *now, const struct timeval *ex
     return true;
 }
 
-
 static int
 __twopence_ssh_poll(struct twopence_ssh_transaction *trans)
 {
   ssh_event event;
 
   fflush(stdout);
-  while (!trans->stdin.eof) {
-    twopence_iostream_t *stream;
-    int n;
 
-    if ((stream = trans->stdin.stream) == NULL) {
-      __twopence_ssh_transaction_mark_stdin_eof(trans);
-      break;
-    }
-
-    n = twopence_iostream_poll(stream, &trans->stdin.pfd, POLLIN);
-    if (n == 0) {
-      /* twopence_iostream_poll returns 0; which means it's either a buffer object
-       * that has no open fd, or it's at EOF already.
-       * In either case, we should try reading from this stream right away. */
-      SSH_TRACE("%s: writing stdin synchronously to peer\n", __func__);
-      if (__twopence_ssh_read_input(trans) < 0)
-        return -1;
-    }
-    if (n < 0) {
-      /* Close this iostream */
-      SSH_TRACE("%s: stdin is at EOF\n", __func__);
-      trans->stdin.eof = true;
-      break;
-    }
-    if (n > 0) {
-      SSH_TRACE("%s: set up stdin for polling from fd %d\n", __func__, trans->stdin.pfd.fd);
-      break;
-    }
-  }
+  if (__twopence_ssh_transaction_poll_stdin(trans) < 0)
+    return -1;
 
   do {
     struct timeval now;
-    char buffer[BUFFER_SIZE];
     int timeout;
-    int size;
     int rc;
 
     if (trans->stdin.pfd.revents & (POLLIN|POLLHUP)) {
       SSH_TRACE("%s: trying to read some data from stdin\n", __func__);
-      if (__twopence_ssh_read_input(trans) < 0)
+      if (__twopence_ssh_transaction_forward_stdin(trans) < 0)
         return -1;
-    }
-    if (trans->stdin.stream == NULL) {
-      /* We received an EOF when trying to read from the stream */
-      if (trans->stdin.pfd.fd >= 0) {
-        SSH_TRACE("%s: stdin is at EOF\n", __func__);
-        trans->stdin.pfd.fd = -1;
-      }
-      trans->stdin.stream = NULL;
-      trans->stdin.eof = true;
     }
     trans->stdin.pfd.revents = 0;
 
-    if (ssh_channel_poll(trans->channel, 0) != 0) {
-      SSH_TRACE("%s: trying to read some data from stdout\n", __func__);
-      size = ssh_channel_read_nonblocking(trans->channel, buffer, sizeof(buffer), 0);
-      if (size == SSH_ERROR)
-        return -2;
-      if (size == SSH_EOF) {
-        SSH_TRACE("%s: stdout is at EOF\n", __func__);
-	trans->stdout.eof = true;
-      }
-      if (size > 0) {
-        if (trans->stdout.stream && twopence_iostream_write(trans->stdout.stream, buffer, size) < 0)
-	  return -2;
-      }
-    }
+    if (__twopence_ssh_transaction_forward_output(trans, &trans->stdout, "stdout") < 0)
+      return -2;
 
-    if (ssh_channel_poll(trans->channel, 1) != 0) {
-      SSH_TRACE("%s: trying to read some data from stderr\n", __func__);
-      size = ssh_channel_read_nonblocking(trans->channel, buffer, sizeof(buffer), 1);
-      if (size == SSH_ERROR)
-        return -2;
-      if (size == SSH_EOF) {
-        SSH_TRACE("%s: stderr is at EOF\n", __func__);
-	trans->stderr.eof = true;
-      }
-      if (size > 0) {
-        if (trans->stderr.stream && twopence_iostream_write(trans->stderr.stream, buffer, size) < 0)
-	  return -2;
-      }
-    }
+    if (__twopence_ssh_transaction_forward_output(trans, &trans->stderr, "stderr") < 0)
+      return -2;
 
     SSH_TRACE("eof=%d/%d/%d\n", trans->stdin.eof, trans->stdout.eof, trans->stderr.eof);
     if (trans->stdout.eof && trans->stderr.eof)
@@ -535,11 +565,8 @@ __twopence_ssh_poll(struct twopence_ssh_transaction *trans)
       return -5;
 
     event = ssh_event_new();
-    ssh_event_add_session(event, ssh_channel_get_session(trans->channel));
-    if (trans->stdin.pfd.fd >= 0) {
-      SSH_TRACE("poll on fd %d\n", trans->stdin.pfd.fd);
-      ssh_event_add_fd(event, trans->stdin.pfd.fd, POLLIN, __twopence_ssh_stdin_cb, &trans->stdin.pfd);
-    }
+
+    __twopence_ssh_poll_add_transaction(event, trans);
 
     SSH_TRACE("polling for events; timeout=%d\n", timeout);
     rc = ssh_event_dopoll(event, timeout);
