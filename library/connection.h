@@ -47,7 +47,6 @@ extern int			twopence_conn_xmit_packet(twopence_conn_t *, twopence_buf_t *);
 extern void			twopence_conn_add_transaction(twopence_conn_t *conn, twopence_transaction_t *trans);
 extern void			twopence_conn_add_transaction_done(twopence_conn_t *conn, twopence_transaction_t *trans);
 extern twopence_transaction_t *	twopence_conn_reap_transaction(twopence_conn_t *conn, const twopence_transaction_t *wait_for);
-extern void			twopence_conn_remove_transaction(twopence_conn_t *conn, twopence_transaction_t *trans);
 
 extern twopence_conn_pool_t *	twopence_conn_pool_new(void);
 extern void			twopence_conn_pool_add_connection(twopence_conn_pool_t *pool, twopence_conn_t *conn);

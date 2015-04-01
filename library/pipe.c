@@ -281,7 +281,7 @@ __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transac
 
 protocol_error:
 	/* kill the connection? */
-	twopence_conn_remove_transaction(handle->connection, trans);
+	twopence_transaction_unlink(trans);
 	return TWOPENCE_PROTOCOL_ERROR;
 }
 

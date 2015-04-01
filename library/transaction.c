@@ -204,6 +204,8 @@ twopence_transaction_new(twopence_sock_t *transport, unsigned int type, const tw
 void
 twopence_transaction_free(twopence_transaction_t *trans)
 {
+	assert(trans->prev == NULL);
+
 	/* Do not free trans->socket, we don't own it */
 
 	twopence_transaction_channel_list_close(&trans->local_sink, 0);
@@ -792,4 +794,32 @@ twopence_transaction_find_source(twopence_transaction_t *trans, unsigned char id
 			return channel;
 	}
 	return NULL;
+}
+
+/*
+ * Transaction list primitives
+ */
+void
+twopence_transaction_list_insert(twopence_transaction_list_t *list, twopence_transaction_t *trans)
+{
+	twopence_transaction_t *next;
+
+	assert(trans->prev == NULL);
+
+	if ((next = list->head) != NULL)
+		next->prev = &trans->next;
+	trans->next = next;
+	trans->prev = &list->head;
+	list->head = trans;
+}
+
+void
+twopence_transaction_unlink(twopence_transaction_t *trans)
+{
+	if (trans->prev)
+		*(trans->prev) = trans->next;
+	if (trans->next)
+		trans->next->prev = trans->prev;
+	trans->prev = NULL;
+	trans->next = NULL;
 }

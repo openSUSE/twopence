@@ -29,6 +29,7 @@ typedef struct twopence_transaction twopence_transaction_t;
 typedef struct twopence_trans_channel twopence_trans_channel_t;
 
 struct twopence_transaction {
+	twopence_transaction_t **prev;
 	twopence_transaction_t *next;
 
 	unsigned int		type;
@@ -63,6 +64,10 @@ struct twopence_transaction {
 		unsigned int		dots_printed;
 	} client;
 };
+
+typedef struct twopence_transaction_list {
+	twopence_transaction_t *head;
+} twopence_transaction_list_t;
 
 extern twopence_transaction_t *	twopence_transaction_new(twopence_sock_t *client, unsigned int type, const twopence_protocol_state_t *ps);
 extern void			twopence_transaction_free(twopence_transaction_t *trans);
@@ -101,5 +106,14 @@ extern void			twopence_transaction_channel_set_callback_read_eof(twopence_trans_
 extern void			twopence_transaction_channel_set_callback_write_eof(twopence_trans_channel_t *, void (*fn)(twopence_transaction_t *, twopence_trans_channel_t *));
 extern void			twopence_transaction_channel_set_plugged(twopence_trans_channel_t *, bool);
 extern int			twopence_transaction_channel_flush(twopence_trans_channel_t *);
+
+extern void			twopence_transaction_list_insert(twopence_transaction_list_t *, twopence_transaction_t *);
+extern void			twopence_transaction_unlink(twopence_transaction_t *);
+
+static inline bool
+twopence_transaction_list_empty(const twopence_transaction_list_t *list)
+{
+	return list->head == NULL;
+}
 
 #endif /* TRANSACTION_H */

@@ -56,8 +56,8 @@ struct twopence_connection {
 	unsigned int			client_id;
 
 	/* We may want to have concurrent transactions later on */
-	twopence_transaction_t *	transactions;
-	twopence_transaction_t *	done_transactions;
+	twopence_transaction_list_t	transactions;
+	twopence_transaction_list_t	done_transactions;
 };
 
 twopence_conn_t *
@@ -87,8 +87,8 @@ twopence_conn_free(twopence_conn_t *conn)
 	twopence_transaction_t *trans;
 
 	twopence_conn_close(conn);
-	while ((trans = conn->transactions) != NULL) {
-		conn->transactions = trans->next;
+	while ((trans = conn->transactions.head) != NULL) {
+		twopence_transaction_unlink(trans);
 		twopence_transaction_free(trans);
 	}
 	free(conn);
@@ -118,7 +118,7 @@ twopence_conn_fill_poll(twopence_conn_t *conn, twopence_pollinfo_t *pinfo)
 		return 0;
 	}
 
-	for (trans = conn->transactions; trans; trans = trans->next) {
+	for (trans = conn->transactions.head; trans; trans = trans->next) {
 		if ((rc = twopence_transaction_fill_poll(trans, pinfo)) < 0) {
 			/* most likely a timeout */
 			twopence_transaction_set_error(trans, rc);
@@ -144,43 +144,27 @@ twopence_conn_fill_poll(twopence_conn_t *conn, twopence_pollinfo_t *pinfo)
 void
 twopence_conn_add_transaction(twopence_conn_t *conn, twopence_transaction_t *trans)
 {
-	trans->next = conn->transactions;
-	conn->transactions = trans;
+	twopence_transaction_list_insert(&conn->transactions, trans);
 }
 
 void
 twopence_conn_add_transaction_done(twopence_conn_t *conn, twopence_transaction_t *trans)
 {
-	trans->next = conn->done_transactions;
-	conn->done_transactions = trans;
+	twopence_transaction_list_insert(&conn->done_transactions, trans);
 }
 
 twopence_transaction_t *
 twopence_conn_reap_transaction(twopence_conn_t *conn, const twopence_transaction_t *wait_for)
 {
-	twopence_transaction_t **pos, *rover;
+	twopence_transaction_t *rover;
 
-	for (pos = &conn->done_transactions; (rover = *pos) != NULL; pos = &rover->next) {
+	for (rover = conn->done_transactions.head; rover != NULL; rover = rover->next) {
 		if (wait_for == NULL || rover == wait_for) {
-			*pos = rover->next;
-			rover->next = NULL;
+			twopence_transaction_unlink(rover);
 			return rover;
 		}
 	}
 	return NULL;
-}
-
-void
-twopence_conn_remove_transaction(twopence_conn_t *conn, twopence_transaction_t *trans)
-{
-	twopence_transaction_t **pos, *rover;
-
-	for (pos = &conn->transactions; (rover = *pos) != NULL; pos = &rover->next) {
-		if (rover == trans) {
-			*pos = rover->next;
-			break;
-		}
-	}
 }
 
 /*
@@ -191,7 +175,7 @@ twopence_conn_find_transaction(twopence_conn_t *conn, uint16_t xid)
 {
 	twopence_transaction_t *trans;
 
-	for (trans = conn->transactions; trans; trans = trans->next) {
+	for (trans = conn->transactions.head; trans; trans = trans->next) {
 		if (trans->id == xid)
 			return trans;
 	}
@@ -329,7 +313,7 @@ twopence_conn_process_incoming(twopence_conn_t *conn)
 int
 twopence_conn_doio(twopence_conn_t *conn)
 {
-	twopence_transaction_t **pos, *trans;
+	twopence_transaction_t *trans, *next;
 	twopence_sock_t *sock;
 
 	if ((sock = conn->client_sock) != NULL) {
@@ -353,7 +337,7 @@ twopence_conn_doio(twopence_conn_t *conn)
 			 * can close it.
 			 */
 			if (twopence_sock_xmit_queue_bytes(sock) == 0
-			 && conn->transactions == NULL)
+			 && twopence_transaction_list_empty(&conn->transactions))
 				twopence_sock_mark_dead(sock);
 		}
 
@@ -363,12 +347,12 @@ twopence_conn_doio(twopence_conn_t *conn)
 		}
 	}
 
-	for (pos = &conn->transactions; (trans = *pos) != NULL; ) {
-		twopence_transaction_doio(trans);
+	for (trans = conn->transactions.head; trans != NULL; trans = next) {
+		next = trans->next;
 
+		twopence_transaction_doio(trans);
 		if (trans->done) {
-			*pos = trans->next;
-			trans->next = NULL;
+			twopence_transaction_unlink(trans);
 
 			/* In the server, we're no longer interested in the transaction once
 			 * we're finished with it. On the client side, we do not dispose of it
@@ -380,8 +364,6 @@ twopence_conn_doio(twopence_conn_t *conn)
 				twopence_debug("%s: transaction done, free it", twopence_transaction_describe(trans));
 				twopence_transaction_free(trans);
 			}
-		} else {
-			pos = &trans->next;
 		}
 	}
 
@@ -424,7 +406,7 @@ twopence_conn_pool_poll(twopence_conn_pool_t *pool)
 		twopence_transaction_t *trans;
 
 		maxfds ++;	/* One socket for the client */
-		for (trans = conn->transactions; trans; trans = trans->next)
+		for (trans = conn->transactions.head; trans; trans = trans->next)
 			maxfds += twopence_transaction_num_channels(trans);
 	}
 
