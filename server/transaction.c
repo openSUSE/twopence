@@ -54,6 +54,10 @@ struct transaction_channel {
 	bool			sync;		/* if true, all writes are fully synchronous */
 
 	twopence_sock_t *	socket;
+
+	struct {
+	    void		(*read_eof)(transaction_t *, transaction_channel_t *);
+	} callbacks;
 };
 
 /*
@@ -91,6 +95,12 @@ transaction_channel_is_read_eof(const transaction_channel_t *channel)
 	if (sock)
 		return twopence_sock_is_read_eof(sock);
 	return false;
+}
+
+void
+transaction_channel_set_callback_read_eof(transaction_channel_t *channel, void (*fn)(transaction_t *, transaction_channel_t *))
+{
+	channel->callbacks.read_eof = fn;
 }
 
 static void
@@ -300,8 +310,11 @@ transaction_channel_doio(transaction_t *trans, transaction_channel_t *channel)
 
 		/* For file extractions, we want to send an EOF packet
 		 * when the file has been transmitted in its entirety.
-		 * This condition is checked for in server_extract_file_send.
 		 */
+		if (twopence_sock_is_read_eof(sock) && channel->callbacks.read_eof) {
+			channel->callbacks.read_eof(trans, channel);
+			channel->callbacks.read_eof = NULL;
+		}
 	}
 }
 

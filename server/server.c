@@ -511,27 +511,24 @@ server_extract_file_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopen
 	return true;
 }
 
+void
+server_extract_file_source_read_eof(transaction_t *trans, transaction_channel_t *channel)
+{
+	twopence_debug("EOF on extracted file");
+	transaction_send_client(trans, twopence_protocol_build_eof_packet(&trans->ps));
+	trans->done = true;
+}
+
 bool
 server_extract_file_send(transaction_t *trans)
 {
-	transaction_channel_t *source;
-
-	if ((source = trans->local_source) == NULL)
-		return false;
-
-	twopence_debug("%s()\n", __func__);
-	if (transaction_channel_is_read_eof(source)) {
-		twopence_debug("EOF on extracted file");
-		transaction_send_client(trans, twopence_protocol_build_eof_packet(&trans->ps));
-		transaction_close_source(trans, TWOPENCE_PROTO_TYPE_DATA);
-		trans->done = true;
-	}
 	return true;
 }
 
 bool
 server_extract_file(transaction_t *trans, const char *username, const char *filename)
 {
+	transaction_channel_t *source;
 	int status;
 	int fd;
 
@@ -547,6 +544,9 @@ server_extract_file(transaction_t *trans, const char *username, const char *file
 		close(fd);
 		return false;
 	}
+
+	source = transaction_find_source(trans, TWOPENCE_PROTO_TYPE_DATA);
+	transaction_channel_set_callback_read_eof(source, server_extract_file_source_read_eof);
 
 	trans->recv = server_extract_file_recv;
 	trans->send = server_extract_file_send;
