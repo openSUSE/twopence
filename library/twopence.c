@@ -785,6 +785,9 @@ twopence_iostream_poll(twopence_iostream_t *stream, struct pollfd *pfd, int mask
 {
   unsigned int i;
 
+  if (stream == NULL)
+    return -1;
+
   if (stream->eof || stream->count == 0)
     return 0;
 

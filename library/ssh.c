@@ -67,9 +67,14 @@ struct twopence_ssh_transaction {
   struct {
     twopence_iostream_t *stream;
     struct pollfd	pfd;
+    bool		eof;
+    int			was_blocking;
   } stdin;
 
-  bool			at_eof[3];
+  struct {
+    twopence_iostream_t *stream;
+    bool		eof;
+  } stdout, stderr;
 
   struct timeval	command_timeout;
 
@@ -150,19 +155,36 @@ __twopence_ssh_transaction_close_channel(twopence_ssh_transaction_t *trans)
 
 static twopence_ssh_transaction_t *
 __twopence_ssh_transaction_new(struct twopence_ssh_target *handle,
-		twopence_iostream_t *stdin_stream, unsigned long timeout)
+		twopence_iostream_t *stdin_stream,
+		twopence_iostream_t *stdout_stream,
+		twopence_iostream_t *stderr_stream,
+		unsigned long timeout)
 {
   twopence_ssh_transaction_t *trans;
+  int was_blocking;
+
+  /* Set stdin to non-blocking IO */
+  was_blocking = twopence_iostream_set_blocking(stdin_stream, false);
+  if (was_blocking < 0)
+    return NULL;
 
   trans = calloc(1, sizeof(*trans));
-  if (trans == NULL)
+  if (trans == NULL) {
+    twopence_iostream_set_blocking(trans->stdin.stream, was_blocking);
     return NULL;
+  }
 
   trans->handle = handle;
   trans->channel = NULL;
+
+  /* Set up stdin. TBD: Backgrounded commands should not be connected to stdin */
   trans->stdin.stream = stdin_stream;
+  trans->stdin.was_blocking = was_blocking;
   trans->stdin.pfd.fd = -1;
   trans->stdin.pfd.revents = 0;
+
+  trans->stdout.stream = stdout_stream;
+  trans->stderr.stream = stderr_stream;
 
   gettimeofday(&trans->command_timeout, NULL);
   trans->command_timeout.tv_sec += timeout;
@@ -173,6 +195,12 @@ __twopence_ssh_transaction_new(struct twopence_ssh_target *handle,
 void
 __twopence_ssh_transaction_free(struct twopence_ssh_transaction *trans)
 {
+  twopence_iostream_t *stream;
+
+  /* Reset stdin to previous behavior */
+  if ((stream = trans->stdin.stream) != NULL)
+    twopence_iostream_set_blocking(stream, trans->stdin.was_blocking);
+
   __twopence_ssh_transaction_close_channel(trans);
   free(trans);
 }
@@ -218,6 +246,7 @@ __twopence_ssh_exit_signal_callback(ssh_session session, ssh_channel channel, co
   };
   int signo;
 
+  SSH_TRACE("%s(%s)\n", __func__, signal);
   for (signo = 0; signo < NSIG; ++signo) {
     const char *name = signames[signo];
 
@@ -249,19 +278,27 @@ __twopence_ssh_init_callbacks(twopence_ssh_transaction_t *trans)
 
 ///////////////////////////// Middle layer //////////////////////////////////////
 
+static int
+__twopence_ssh_transaction_mark_stdin_eof(twopence_ssh_transaction_t *trans)
+{
+    trans->stdin.eof = true;
+
+    if (__twopence_ssh_transaction_send_eof(trans) == SSH_ERROR)
+      return -1;
+    return 0;
+}
+
 // Read the input from the keyboard or a pipe
 static int
-__twopence_ssh_read_input(struct twopence_ssh_transaction *trans)
+__twopence_ssh_read_input(twopence_ssh_transaction_t *trans)
 {
   twopence_iostream_t *stream;
   char buffer[BUFFER_SIZE];
   int size, written;
 
   stream = trans->stdin.stream;
-  if (stream == NULL || twopence_iostream_eof(stream)) {
-    trans->stdin.stream = NULL;
-    return 0;
-  }
+  if (stream == NULL || twopence_iostream_eof(stream))
+    return __twopence_ssh_transaction_mark_stdin_eof(trans);
 
   // Read from stdin
   size = twopence_iostream_read(stream, buffer, BUFFER_SIZE);
@@ -273,14 +310,11 @@ __twopence_ssh_read_input(struct twopence_ssh_transaction *trans)
   if (size == 0) {
     /* EOF from local file */
     SSH_TRACE("%s: EOF\n", __func__);
-    if (__twopence_ssh_transaction_send_eof(trans) == SSH_ERROR)
-      return -1;
-    trans->stdin.stream = NULL;
-    return 0;
+    return __twopence_ssh_transaction_mark_stdin_eof(trans);
   }
+
   SSH_TRACE("%s: writing %d bytes to command\n", __func__, size);
-  written = ssh_channel_write          // Data, forward it to the remote host
-    (trans->channel, buffer, size);
+  written = ssh_channel_write(trans->channel, buffer, size);
   if (written != size)
     return -1;
   return 0;
@@ -317,16 +351,21 @@ __twopence_ssh_check_timeout(const struct timeval *now, const struct timeval *ex
 static int
 __twopence_ssh_poll(struct twopence_ssh_transaction *trans)
 {
-  twopence_iostream_t *stream;
   ssh_event event;
 
   fflush(stdout);
-  while ((stream = trans->stdin.stream) != NULL) {
+  while (!trans->stdin.eof) {
+    twopence_iostream_t *stream;
     int n;
+
+    if ((stream = trans->stdin.stream) == NULL) {
+      __twopence_ssh_transaction_mark_stdin_eof(trans);
+      break;
+    }
 
     n = twopence_iostream_poll(stream, &trans->stdin.pfd, POLLIN);
     if (n == 0) {
-      /* Buffer iostreams return 0; which means it's either a buffer object
+      /* twopence_iostream_poll returns 0; which means it's either a buffer object
        * that has no open fd, or it's at EOF already.
        * In either case, we should try reading from this stream right away. */
       SSH_TRACE("%s: writing stdin synchronously to peer\n", __func__);
@@ -336,7 +375,7 @@ __twopence_ssh_poll(struct twopence_ssh_transaction *trans)
     if (n < 0) {
       /* Close this iostream */
       SSH_TRACE("%s: stdin is at EOF\n", __func__);
-      trans->at_eof[0] = true;
+      trans->stdin.eof = true;
       break;
     }
     if (n > 0) {
@@ -364,7 +403,7 @@ __twopence_ssh_poll(struct twopence_ssh_transaction *trans)
         trans->stdin.pfd.fd = -1;
       }
       trans->stdin.stream = NULL;
-      trans->at_eof[0] = true;
+      trans->stdin.eof = true;
     }
     trans->stdin.pfd.revents = 0;
 
@@ -375,10 +414,10 @@ __twopence_ssh_poll(struct twopence_ssh_transaction *trans)
         return -2;
       if (size == SSH_EOF) {
         SSH_TRACE("%s: stdout is at EOF\n", __func__);
-	trans->at_eof[1] = true;
+	trans->stdout.eof = true;
       }
       if (size > 0) {
-        if (twopence_target_write(&trans->handle->base, TWOPENCE_STDOUT, buffer, size) < 0)
+        if (trans->stdout.stream && twopence_iostream_write(trans->stdout.stream, buffer, size) < 0)
 	  return -2;
       }
     }
@@ -390,16 +429,16 @@ __twopence_ssh_poll(struct twopence_ssh_transaction *trans)
         return -2;
       if (size == SSH_EOF) {
         SSH_TRACE("%s: stderr is at EOF\n", __func__);
-	trans->at_eof[2] = true;
+	trans->stderr.eof = true;
       }
       if (size > 0) {
-        if (twopence_target_write(&trans->handle->base, TWOPENCE_STDERR, buffer, size) < 0)
+        if (trans->stderr.stream && twopence_iostream_write(trans->stderr.stream, buffer, size) < 0)
 	  return -2;
       }
     }
 
-    SSH_TRACE("eof=%d/%d/%d\n", trans->at_eof[0], trans->at_eof[1], trans->at_eof[2]);
-    if (trans->at_eof[1] && trans->at_eof[2])
+    SSH_TRACE("eof=%d/%d/%d\n", trans->stdin.eof, trans->stdout.eof, trans->stderr.eof);
+    if (trans->stdout.eof && trans->stderr.eof)
       break;
 
     gettimeofday(&now, NULL);
@@ -560,18 +599,14 @@ __twopence_ssh_command_ssh
   ssh_session session = handle->session;
   twopence_ssh_transaction_t *trans = NULL;
   ssh_channel channel;
-  int was_blocking;
   int rc;
 
   trans = __twopence_ssh_transaction_new(handle,
-			  twopence_target_stream(&handle->base, TWOPENCE_STDIN),
-			  cmd->timeout);
+		  &cmd->iostream[TWOPENCE_STDIN],
+		  &cmd->iostream[TWOPENCE_STDOUT],
+		  &cmd->iostream[TWOPENCE_STDERR],
+		  cmd->timeout);
   if (trans == NULL)
-    return TWOPENCE_OPEN_SESSION_ERROR;
-
-  // Tune stdin so it is nonblocking
-  was_blocking = twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, false);
-  if (was_blocking < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
   // We need a SSH channel to get the results
@@ -579,7 +614,6 @@ __twopence_ssh_command_ssh
   if (channel == NULL)
   {
     __twopence_ssh_transaction_free(trans);
-    twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
   trans->channel = channel;
@@ -587,7 +621,6 @@ __twopence_ssh_command_ssh
   if (ssh_channel_open_session(channel) != SSH_OK)
   {
     __twopence_ssh_transaction_free(trans);
-    twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
 
@@ -599,7 +632,6 @@ __twopence_ssh_command_ssh
     if (ssh_channel_request_pty(channel) != SSH_OK)
     {
       __twopence_ssh_transaction_free(trans);
-      twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
       return TWOPENCE_OPEN_SESSION_ERROR;
     }
     trans->use_tty = true;
@@ -609,12 +641,14 @@ __twopence_ssh_command_ssh
   if (ssh_channel_request_exec(channel, cmd->command) != SSH_OK)
   {
     __twopence_ssh_transaction_free(trans);
-    twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
 
   // Read "standard output", "standard error", and remote error code
   rc = __twopence_ssh_poll(trans);
+
+  /* If we haven't done so, send the EOF now. */
+  __twopence_ssh_transaction_send_eof(trans);
 
   /* FIXME: might be better to return useful status values from
    * __twopence_ssh_poll() in the first place. Currently we
@@ -624,13 +658,14 @@ __twopence_ssh_command_ssh
   switch (rc)
   {
     case 0:
+      status_ret->minor = ssh_channel_get_exit_status(channel);
+      if (status_ret->minor == SSH_ERROR)
+        __twopence_ssh_transaction_close_channel(trans);
       if (trans->exit_signal) {
 	// mimic the behavior of the test server for now.
 	// in the long run, better reporting would be great.
 	status_ret->major = EFAULT;
 	status_ret->minor = trans->exit_signal;
-      } else {
-        status_ret->minor = ssh_channel_get_exit_status(channel);
       }
       break;
 
@@ -662,10 +697,8 @@ __twopence_ssh_command_ssh
   }
 
   // Terminate the channel
-  __twopence_ssh_transaction_send_eof(trans);
   __twopence_ssh_transaction_free(trans);
 
-  twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
   return rc;
 }
 
@@ -968,7 +1001,11 @@ twopence_ssh_run_test
   /* 'major' makes no sense for SSH and 'minor' defaults to 0 */
   memset(status_ret, 0, sizeof(*status_ret));
 
-  handle->base.current.io = cmd->iostream;
+  /* We no longer use the handle's current.io, but move that to the
+   * transaction object. This is a precondition to having multiple
+   * concurrent commands.
+   */
+  handle->base.current.io = NULL;
 
   // Connect to the remote host
   if (__twopence_ssh_connect_ssh(handle, cmd->user?: "root") < 0)
