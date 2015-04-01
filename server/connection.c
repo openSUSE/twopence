@@ -105,7 +105,7 @@ connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
 
 	sock = conn->client_sock;
 	if (sock && socket_is_dead(sock)) {
-		TRACE("connection: client socket is dead, closing\n");
+		twopence_debug("connection: client socket is dead, closing\n");
 		conn->client_sock = NULL;
 		twopence_sock_free(sock);
 		return 0;
@@ -121,7 +121,7 @@ connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
 		socket_post_recvbuf_if_needed(sock, TWOPENCE_PROTO_MAX_PACKET);
 
 		if (socket_xmit_queue_bytes(sock))
-			TRACE("socket %d: xmit queue=%u bytes\n", twopence_sock_id(sock), socket_xmit_queue_bytes(sock));
+			twopence_debug("socket %d: xmit queue=%u bytes\n", twopence_sock_id(sock), socket_xmit_queue_bytes(sock));
 		if (nfds < max && socket_fill_poll(sock, pfd + nfds))
 			nfds++;
 	}
@@ -142,7 +142,7 @@ connection_find_transaction(connection_t *conn, uint16_t xid)
 		return NULL;
 
 	if (trans->id != xid) {
-		TRACE("ignoring packet with mismatched transaction id");
+		twopence_debug("ignoring packet with mismatched transaction id");
 		return NULL;
 	}
 
@@ -165,7 +165,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 			/* kill the connection? */
 			return false;
 		}
-		TRACE("connection_process_packet cid=%u xid=%u type=%c len=%u\n",
+		twopence_debug("connection_process_packet cid=%u xid=%u type=%c len=%u\n",
 				ps.cid, ps.xid, hdr->type, twopence_buf_count(&payload));
 
 		if (hdr->type == TWOPENCE_PROTO_TYPE_HELLO) {
@@ -176,7 +176,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 		}
 
 		if (conn->client_id != ps.cid) {
-			TRACE("ignoring packet with mismatched client id");
+			twopence_debug("ignoring packet with mismatched client id");
 			continue;
 		}
 
@@ -204,7 +204,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 				if (!twopence_protocol_dissect_string(&payload, username, sizeof(username))
 				 || !twopence_protocol_dissect_uint(&payload, &filemode)
 				 || !twopence_protocol_dissect_string(&payload, filename, sizeof(filename))) {
-					TRACE("cannot parse packet\n");
+					twopence_debug("cannot parse packet\n");
 					break;
 				}
 
@@ -226,7 +226,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 				 || !twopence_protocol_dissect_uint(&payload, &timeout)
 				 || !twopence_protocol_dissect_string_delim(&payload, command, sizeof(command), '\n')
 				 || command[0] == '\0') {
-					TRACE("Failed to parse COMMAND packet\n");
+					twopence_debug("Failed to parse COMMAND packet\n");
 					break;
 				}
 
@@ -240,11 +240,11 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 
 			default:
 				fprintf(stderr, "Unknown command code '%c' in global context\n", hdr->type);
-				TRACE("Unknown command code '%c' in global context\n", hdr->type);
+				twopence_debug("Unknown command code '%c' in global context\n", hdr->type);
 			}
 
 			if (trans == NULL) {
-				TRACE("unable to create transaction, send EPROTO error\n");
+				twopence_debug("unable to create transaction, send EPROTO error\n");
 				socket_queue_xmit(conn->client_sock,
 					 twopence_protocol_build_uint_packet_ps(&ps, TWOPENCE_PROTO_TYPE_MAJOR, EPROTO));
 			} else {
@@ -298,7 +298,7 @@ connection_doio(connection_t *conn)
 
 	if ((sock = conn->client_sock) != NULL) {
 		if (twopence_sock_doio(sock) < 0) {
-			TRACE("I/O error on socket: %m\n");
+			twopence_debug("I/O error on socket: %m\n");
 			connection_close(conn);
 			return;
 		}
@@ -330,12 +330,12 @@ connection_doio(connection_t *conn)
 		transaction_doio(trans);
 
 		if (trans->done) {
-			TRACE("current transaction done, free it\n");
+			twopence_debug("current transaction done, free it\n");
 			conn->current_transaction = NULL;
 			transaction_free(trans);
 		} else
 		if (sock && socket_is_read_eof(sock)) {
-			TRACE("Client closed socket while transaction was in process. Terminate it\n");
+			twopence_debug("Client closed socket while transaction was in process. Terminate it\n");
 			conn->current_transaction = NULL;
 			transaction_free(trans);
 			connection_close(conn);
@@ -398,7 +398,7 @@ connection_pool_poll(connection_pool_t *pool)
 				connection_free(conn);
 				continue;
 			}
-			TRACE("connection doesn't wait for anything?!\n");
+			twopence_debug("connection doesn't wait for anything?!\n");
 		}
 		connp = &conn->next;
 
@@ -406,12 +406,12 @@ connection_pool_poll(connection_pool_t *pool)
 	}
 
 	if (pool->connections == NULL) {
-		TRACE("All connections closed\n");
+		twopence_debug("All connections closed\n");
 		return false;
 	}
 
 	if (nfds == 0) {
-		TRACE("No events to wait for?!\n");
+		twopence_debug("No events to wait for?!\n");
 	}
 
 	/* Query the current sigprocmask, and allow SIGCHLD while we're polling */

@@ -99,14 +99,6 @@ extern bool		connection_pool_poll(connection_pool_t *pool);
 
 extern void		server_run(twopence_sock_t *);
 
-#define __TRACE(level, fmt...) \
-	do { \
-		if (twopence_debug_level >= level) \
-			twopence_trace(fmt); \
-	} while (0)
-#define TRACE(fmt...)	twopence_debug(fmt)
-#define TRACE2(fmt...)	twopence_debug2(fmt)
-
 #define AUDIT(fmt, args...) \
 	do { \
 		if (server_audit) { \

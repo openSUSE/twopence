@@ -209,7 +209,7 @@ socket_new_flags(int fd, int oflags)
 void
 twopence_sock_free(twopence_sock_t *sock)
 {
-	TRACE("%s(%d)\n", __func__, sock->fd);
+	twopence_debug("%s(%d)\n", __func__, sock->fd);
 	if (sock->fd >= 0)
 		close(sock->fd);
 
@@ -233,7 +233,7 @@ socket_recv_buffer(twopence_sock_t *sock, twopence_buf_t *bp)
 
 	count = twopence_buf_tailroom(bp);
 	if (count == 0) {
-		TRACE("%s: no tailroom in buffer", __func__);
+		twopence_debug("%s: no tailroom in buffer", __func__);
 		errno = ENOBUFS;
 		return -1;
 	}
@@ -249,7 +249,7 @@ socket_recv_buffer(twopence_sock_t *sock, twopence_buf_t *bp)
 	if (n > 0)
 		twopence_buf_advance_tail(bp, n);
 	else if (n < 0)
-		TRACE("%s: recv() returns error: %m", __func__);
+		twopence_debug("%s: recv() returns error: %m", __func__);
 	return n;
 }
 
@@ -320,7 +320,7 @@ socket_send_buffer(twopence_sock_t *sock, twopence_buf_t *bp)
 
 	n = twopence_sock_write(sock, bp, twopence_buf_count(bp));
 	if (n > 0) {
-		TRACE2("%s(%d): wrote %u bytes\n", __func__, sock->fd, n);
+		twopence_debug2("%s(%d): wrote %u bytes\n", __func__, sock->fd, n);
 		twopence_buf_advance_head(bp, n);
 	}
 	return n;
@@ -584,7 +584,7 @@ socket_fill_poll(twopence_sock_t *sock, struct pollfd *pfd)
 	if (pfd->events == 0)
 		return false;
 
-	TRACE2("%s(fd=%d, %s%s): events=%s\n", __func__, sock->fd, socket_state_desc(sock), socket_queue_desc(sock), poll_bit_string(pfd->events));
+	twopence_debug2("%s(fd=%d, %s%s): events=%s\n", __func__, sock->fd, socket_state_desc(sock), socket_queue_desc(sock), poll_bit_string(pfd->events));
 	sock->poll_data = pfd;
 	pfd->fd = sock->fd;
 	return true;
@@ -602,7 +602,7 @@ twopence_sock_doio(twopence_sock_t *sock)
 	sock->poll_data = NULL;
 
 	if (pfd->revents != 0)
-		TRACE2("twopence_sock_doio(%d, pfd=<fd=%d, revents=%s)\n", sock->fd, pfd->fd, poll_bit_string(pfd->revents));
+		twopence_debug2("twopence_sock_doio(%d, pfd=<fd=%d, revents=%s)\n", sock->fd, pfd->fd, poll_bit_string(pfd->revents));
 
 	if (pfd->revents & POLLOUT) {
 		if ((n = socket_send_queued(sock)) < 0)
@@ -619,7 +619,7 @@ twopence_sock_doio(twopence_sock_t *sock)
 			tailroom = twopence_buf_tailroom(sock->recv_buf);
 		if (tailroom != 0) {
 			n = socket_recv_buffer(sock, sock->recv_buf);
-			TRACE2("socket_recv_buffer returns %d\n", n);
+			twopence_debug2("socket_recv_buffer returns %d\n", n);
 			if (n < 0)
 				return n;
 			if (n == 0)

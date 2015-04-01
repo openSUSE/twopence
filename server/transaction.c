@@ -54,7 +54,7 @@ transaction_new(twopence_sock_t *client, unsigned int type, const twopence_proto
 {
 	transaction_t *trans;
 
-	TRACE("%s('%c', %u)\n", __func__, type, ps->xid);
+	twopence_debug("%s('%c', %u)\n", __func__, type, ps->xid);
 	trans = calloc(1, sizeof(*trans));
 	trans->ps = *ps;
 	trans->id = ps->xid;
@@ -99,7 +99,7 @@ void
 transaction_close_sink(transaction_t *trans)
 {
 	if (trans->local_sink) {
-		TRACE("closing command input fd\n");
+		twopence_debug("closing command input fd\n");
 		twopence_sock_free(trans->local_sink);
 		trans->local_sink = NULL;
 	}
@@ -127,7 +127,7 @@ transaction_close_source(transaction_t *trans, unsigned int i)
 	if (i < trans->num_local_sources && trans->local_source[i]) {
 		sock = trans->local_source[i];
 
-		TRACE("closing command output fd %d%s\n", i + 1, socket_is_read_eof(sock)? ", EOF" : "");
+		twopence_debug("closing command output fd %d%s\n", i + 1, socket_is_read_eof(sock)? ", EOF" : "");
 		twopence_sock_free(sock);
 		trans->local_source[i] = NULL;
 	}
@@ -188,7 +188,7 @@ transaction_doio(transaction_t *trans)
 	twopence_sock_t *sock;
 	unsigned int n;
 
-	TRACE2("transaction_doio()\n");
+	twopence_debug2("transaction_doio()\n");
 	if ((sock = trans->local_sink) != NULL) {
 		if (twopence_sock_doio(sock) < 0) {
 			transaction_fail(trans, errno);
@@ -228,16 +228,16 @@ transaction_send_client(transaction_t *trans, twopence_buf_t *bp)
 {
 	const twopence_hdr_t *h = (const twopence_hdr_t *) twopence_buf_head(bp);
 
-	TRACE("%s()\n", __func__);
+	twopence_debug("%s()\n", __func__);
 	if (h)
-		TRACE("%s: sending packet type %c, payload=%u\n", __func__, h->type, ntohs(h->len) - TWOPENCE_PROTO_HEADER_SIZE);
+		twopence_debug("%s: sending packet type %c, payload=%u\n", __func__, h->type, ntohs(h->len) - TWOPENCE_PROTO_HEADER_SIZE);
 	socket_queue_xmit(trans->client_sock, bp);
 }
 
 void
 transaction_send_major(transaction_t *trans, unsigned int code)
 {
-	TRACE("%s(id=%d, %d)\n", __func__, trans->id, code);
+	twopence_debug("%s(id=%d, %d)\n", __func__, trans->id, code);
 	assert(!trans->major_sent);
 	transaction_send_client(trans, twopence_protocol_build_uint_packet_ps(&trans->ps, TWOPENCE_PROTO_TYPE_MAJOR, code));
 	trans->major_sent = true;
@@ -246,7 +246,7 @@ transaction_send_major(transaction_t *trans, unsigned int code)
 void
 transaction_send_minor(transaction_t *trans, unsigned int code)
 {
-	TRACE("%s(id=%d, %d)\n", __func__, trans->id, code);
+	twopence_debug("%s(id=%d, %d)\n", __func__, trans->id, code);
 	assert(!trans->minor_sent);
 	transaction_send_client(trans, twopence_protocol_build_uint_packet_ps(&trans->ps, TWOPENCE_PROTO_TYPE_MINOR, code));
 	trans->minor_sent = true;
@@ -276,7 +276,7 @@ transaction_fail(transaction_t *trans, int code)
 		transaction_send_minor(trans, code);
 		return;
 	}
-	TRACE("%s: already sent major and minor status\n", __func__);
+	twopence_debug("%s: already sent major and minor status\n", __func__);
 	abort();
 }
 
@@ -344,7 +344,7 @@ transaction_write_data(transaction_t *trans, twopence_buf_t *payload)
 
 	count = twopence_buf_count(payload);
 
-	TRACE("About to write %u bytes of data to local sink\n", count);
+	twopence_debug("About to write %u bytes of data to local sink\n", count);
 	if ((n = twopence_sock_write(sock, payload, count)) < 0) {
 		transaction_fail(trans, errno);
 		trans->done = true;
