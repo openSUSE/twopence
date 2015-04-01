@@ -117,9 +117,9 @@ wait_for_virtio_host(int serial_fd)
 
     n = poll(&pfd, 1, 500);
     if (n < 0) {
-      perror("poll on serial fd");
+      twopence_log_error("poll on serial fd: %m");
       if (nfail >= 10) {
-	fprintf(stderr, "Giving up.\n");
+	twopence_log_error("Giving up.\n");
 	exit(1);
       }
 
@@ -134,7 +134,7 @@ wait_for_virtio_host(int serial_fd)
 	return;
 
       if (nloop++ == 0 && !server_audit)
-        fprintf(stderr, "Waiting for someone to connect to host side socket\n");
+        twopence_log_error("Waiting for someone to connect to host side socket\n");
       usleep(500000);
     }
   }
@@ -362,7 +362,7 @@ int main(int argc, char *argv[])
 
       while ((sock_fd = accept_unix_connection(listen_fd)) < 0) {
         if (++retries > 100) {
-          fprintf(stderr, "... giving up.\n");
+          twopence_log_error("... giving up.\n");
 	  exit(TWOPENCE_SERVER_SOCKET_ERROR);
 	}
         continue;
@@ -392,7 +392,7 @@ server_daemonize(void)
 
   pid = fork();
   if (pid < 0) {
-    perror("test_server: unable to fork");
+    twopence_log_error("test_server: unable to fork: %m");
     exit(TWOPENCE_SERVER_FORK_ERROR);
   }
 
@@ -405,7 +405,7 @@ server_daemonize(void)
    * stdout and stderr.
    */
   if (daemon(0, 0) < 0) {
-    perror("test_server: unable to daemonize");
+    twopence_log_error("test_server: unable to daemonize: %m");
     exit(TWOPENCE_SERVER_FORK_ERROR);
   }
 

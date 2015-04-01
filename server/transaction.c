@@ -87,7 +87,7 @@ transaction_attach_local_sink(transaction_t *trans, int fd)
 	twopence_sock_t *sock;
 
 	if (trans->local_sink) {
-		fprintf(stderr, "%s: duplicate local sink\n", __func__);
+		twopence_log_error("%s: duplicate local sink\n", __func__);
 		return NULL;
 	}
 	sock = socket_new_flags(fd, O_WRONLY);
@@ -111,7 +111,7 @@ transaction_attach_local_source(transaction_t *trans, int fd)
 	twopence_sock_t *sock;
 
 	if (trans->num_local_sources >= TRANSACTION_MAX_SOURCES) {
-		fprintf(stderr, "%s: too many local sources\n", __func__);
+		twopence_log_error("%s: too many local sources\n", __func__);
 		return NULL;
 	}
 	sock = socket_new_flags(fd, O_RDONLY);
@@ -256,7 +256,7 @@ void
 transaction_send_status(transaction_t *trans, twopence_status_t *st)
 {
 	if (trans->done) {
-		fprintf(stderr, "%s called twice\n", __func__);
+		twopence_log_error("%s called twice\n", __func__);
 		return;
 	}
 	transaction_send_client(trans, twopence_protocol_build_uint_packet(TWOPENCE_PROTO_TYPE_MAJOR, st->major));

@@ -171,7 +171,7 @@ __socket_new(int fd)
 	/* Set to nonblocking IO */
 	if ((f = fcntl(fd, F_GETFL)) < 0
 	 || fcntl(fd, F_SETFL, f | O_NONBLOCK) < 0) {
-		fprintf(stderr, "socket_new: trouble setting socket to nonblocking I/O: %m\n");
+		twopence_log_error("socket_new: trouble setting socket to nonblocking I/O: %m\n");
 		/* Continue anyway */
 	}
 
@@ -332,7 +332,7 @@ __socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp, int direct)
 	int n = 0;
 
 	if (sock->write_eof) {
-		fprintf(stderr, "%s: attempt to queue data after write shutdown\n", __func__);
+		twopence_log_error("%s: attempt to queue data after write shutdown\n", __func__);
 		goto out_drop_buffer;
 	}
 
