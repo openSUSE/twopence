@@ -643,24 +643,74 @@ failed:
  * Handle incoming HELLO packet. Respond with the ID we assigned to the client
  */
 bool
-server_hello(connection_t *conn)
-{
-	connection_send_hello_reply(conn);
-	return true;
-}
-
-bool
 server_request_quit(void)
 {
 	exit(0);
 }
 
+bool
+server_process_request(twopence_transaction_t *trans, twopence_buf_t *payload)
+{
+	char username[128];
+	char filename[PATH_MAX];
+	char command[2048];
+	unsigned int filemode = 0;
+	unsigned int timeout = 0;
+
+	switch (trans->type) {
+	case TWOPENCE_PROTO_TYPE_HELLO:
+		twopence_sock_queue_xmit(trans->socket,
+				twopence_protocol_build_hello_packet(trans->ps.cid));
+		trans->done = true;
+		break;
+
+	case TWOPENCE_PROTO_TYPE_INJECT:
+		if (!twopence_protocol_dissect_string(payload, username, sizeof(username))
+		 || !twopence_protocol_dissect_uint(payload, &filemode)
+		 || !twopence_protocol_dissect_string(payload, filename, sizeof(filename)))
+			goto bad_packet;
+
+		server_inject_file(trans, username, filename, filemode);
+		break;
+
+	case TWOPENCE_PROTO_TYPE_EXTRACT:
+		if (!twopence_protocol_dissect_string(payload, username, sizeof(username))
+		 || !twopence_protocol_dissect_string(payload, filename, sizeof(filename)))
+			goto bad_packet;
+
+		server_extract_file(trans, username, filename);
+		break;
+
+	case TWOPENCE_PROTO_TYPE_COMMAND:
+		if (!twopence_protocol_dissect_string(payload, username, sizeof(username))
+		 || !twopence_protocol_dissect_uint(payload, &timeout)
+		 || !twopence_protocol_dissect_string_delim(payload, command, sizeof(command), '\n')
+		 || command[0] == '\0')
+			goto bad_packet;
+
+		server_run_command(trans, username, timeout, command);
+		break;
+
+	case TWOPENCE_PROTO_TYPE_QUIT:
+		server_request_quit();
+		/* we should not get here */
+		trans->done = true;
+		break;
+
+	default:
+		twopence_log_error("Unknown command code '%c' in global context\n", trans->type);
+		return false;
+	}
+
+	return true;
+
+bad_packet:
+	twopence_log_error("unable to parse %c packet", trans->type);
+	return false;
+}
+
 static semantics_t	server_ops = {
-	.hello			= server_hello,
-	.inject_file		= server_inject_file,
-	.extract_file		= server_extract_file,
-	.run_command		= server_run_command,
-	.request_quit		= server_request_quit,
+	.process_request	= server_process_request,
 };
 
 static void

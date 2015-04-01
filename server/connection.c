@@ -158,12 +158,36 @@ connection_find_transaction(connection_t *conn, uint16_t xid)
 	return NULL;
 }
 
-void
-connection_send_hello_reply(connection_t *conn)
+static bool
+connection_process_request(connection_t *conn, const twopence_hdr_t *hdr,
+		twopence_buf_t *payload, const twopence_protocol_state_t *ps)
 {
-	twopence_sock_queue_xmit(conn->client_sock,
-				twopence_protocol_build_hello_packet(conn->client_id));
+	twopence_transaction_t *trans = NULL;
+
+	if (!conn->semantics || !conn->semantics->process_request)
+		return false;
+
+	trans = twopence_transaction_new(conn->client_sock, hdr->type, ps);
+	if (!conn->semantics->process_request(trans, payload)) {
+#if 0
+		twopence_debug("bad %s packet in incoming request",
+			twopence_protocol_packet_type_to_name(hdr->type));
+#else
+		twopence_debug("bad %c packet in incoming request", hdr->type);
+#endif
+		twopence_transaction_send_major(trans, EPROTO);
+		twopence_transaction_free(trans);
+		return false;
+	}
+
+	if (!trans->done) {
+		connection_add_transaction(conn, trans);
+	} else {
+		twopence_transaction_free(trans);
+	}
+	return true;
 }
+
 
 bool
 connection_process_packet(connection_t *conn, twopence_buf_t *bp)
@@ -172,7 +196,6 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 	twopence_transaction_t *trans;
 
 	while (bp && twopence_protocol_buffer_complete(bp)) {
-		semantics_t *semantics = conn->semantics;
 		twopence_protocol_state_t ps;
 		twopence_buf_t payload;
 
@@ -185,9 +208,10 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 		twopence_debug("connection_process_packet cid=%u xid=%u type=%c len=%u\n",
 				ps.cid, ps.xid, hdr->type, twopence_buf_count(&payload));
 
-		if (hdr->type == TWOPENCE_PROTO_TYPE_HELLO && semantics) {
+		if (hdr->type == TWOPENCE_PROTO_TYPE_HELLO) {
 			/* Process HELLO packet from client */
-			semantics->hello(conn);
+			ps.cid = conn->client_id;
+			connection_process_request(conn, hdr, &payload, &ps);
 			continue;
 		}
 
@@ -199,75 +223,21 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 		trans = connection_find_transaction(conn, ps.xid);
 		if (trans != NULL) {
 			twopence_transaction_recv_packet(trans, hdr, &payload);
-		} else
-		if (semantics) {
-			twopence_transaction_t *trans = NULL;
-			char username[128];
-			char filename[PATH_MAX];
-			char command[2048];
-			unsigned int filemode = 0;
-			unsigned int timeout = 0;
-
+		} else {
 			switch (hdr->type) {
-			case TWOPENCE_PROTO_TYPE_INJECT:
-				if (!twopence_protocol_dissect_string(&payload, username, sizeof(username))
-				 || !twopence_protocol_dissect_uint(&payload, &filemode)
-				 || !twopence_protocol_dissect_string(&payload, filename, sizeof(filename))) {
-					twopence_debug("cannot parse packet\n");
-					break;
-				}
-
-				trans = twopence_transaction_new(conn->client_sock, hdr->type, &ps);
-				semantics->inject_file(trans, username, filename, filemode);
-				break;
-
-			case TWOPENCE_PROTO_TYPE_EXTRACT:
-				if (!twopence_protocol_dissect_string(&payload, username, sizeof(username))
-				 || !twopence_protocol_dissect_string(&payload, filename, sizeof(filename)))
-					break;
-
-				trans = twopence_transaction_new(conn->client_sock, hdr->type, &ps);
-				semantics->extract_file(trans, username, filename);
-				break;
-
-			case TWOPENCE_PROTO_TYPE_COMMAND:
-				if (!twopence_protocol_dissect_string(&payload, username, sizeof(username))
-				 || !twopence_protocol_dissect_uint(&payload, &timeout)
-				 || !twopence_protocol_dissect_string_delim(&payload, command, sizeof(command), '\n')
-				 || command[0] == '\0') {
-					twopence_debug("Failed to parse COMMAND packet\n");
-					break;
-				}
-
-				trans = twopence_transaction_new(conn->client_sock, hdr->type, &ps);
-				semantics->run_command(trans, username, timeout, command);
-				break;
-
-			case TWOPENCE_PROTO_TYPE_QUIT:
-				semantics->request_quit();
-				/* we should not get here */
-				continue;
-
 			case TWOPENCE_PROTO_TYPE_DATA:
 			case TWOPENCE_PROTO_TYPE_STDIN:
 			case TWOPENCE_PROTO_TYPE_EOF:
+			case TWOPENCE_PROTO_TYPE_INTR:
 				/* Due to bad timing, we may receive the stdin EOF indication from the
 				 * client after the process as exited. In this case, the transaction
 				 * may no longer exist.
 				 * However, we do not want to send a duplicate status response,
 				 * so skip the EPROTO thing a few lines down. */
-				continue;
+				break;
 
 			default:
-				twopence_debug("Unknown command code '%c' in global context\n", hdr->type);
-			}
-
-			if (trans == NULL) {
-				twopence_debug("unable to create transaction, send EPROTO error\n");
-				twopence_sock_queue_xmit(conn->client_sock,
-					 twopence_protocol_build_uint_packet_ps(&ps, TWOPENCE_PROTO_TYPE_MAJOR, EPROTO));
-			} else {
-				connection_add_transaction(conn, trans);
+				connection_process_request(conn, hdr, &payload, &ps);
 			}
 		}
 	}

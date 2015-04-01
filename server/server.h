@@ -32,12 +32,7 @@ typedef struct connection_pool connection_pool_t;
 
 typedef const struct semantics semantics_t;
 struct semantics {
-	/* Server side operations */
-	bool		(*hello)(connection_t *);
-	bool		(*inject_file)(twopence_transaction_t *, const char *username, const char *filename, size_t len);
-	bool		(*extract_file)(twopence_transaction_t *, const char *username, const char *filename);
-	bool		(*run_command)(twopence_transaction_t *, const char *username, unsigned int timeout, const char *cmdline);
-	bool		(*request_quit)(void);
+	bool		(*process_request)(twopence_transaction_t *, twopence_buf_t *);
 };
 
 #define DEFAULT_COMMAND_TIMEOUT	12	/* seconds */
@@ -47,7 +42,6 @@ extern void			connection_free(connection_t *conn);
 extern unsigned int		connection_fill_poll(connection_t *conn, twopence_pollinfo_t *pinfo);
 extern bool			connection_process_packet(connection_t *conn, twopence_buf_t *bp);
 extern bool			connection_process(connection_t *conn);
-extern void			connection_send_hello_reply(connection_t *conn);
 
 extern connection_pool_t *	connection_pool_new(void);
 extern void			connection_pool_add_connection(connection_pool_t *pool, connection_t *conn);
