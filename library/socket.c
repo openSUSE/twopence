@@ -219,7 +219,7 @@ twopence_sock_id(const twopence_sock_t *sock)
 }
 
 int
-socket_recv_buffer(twopence_sock_t *sock, twopence_buf_t *bp)
+twopence_sock_recv_buffer(twopence_sock_t *sock, twopence_buf_t *bp)
 {
 	unsigned int count;
 	int n;
@@ -247,7 +247,7 @@ socket_recv_buffer(twopence_sock_t *sock, twopence_buf_t *bp)
 }
 
 twopence_buf_t *
-socket_take_recvbuf(twopence_sock_t *sock)
+twopence_sock_take_recvbuf(twopence_sock_t *sock)
 {
 	twopence_buf_t *bp;
 
@@ -260,13 +260,13 @@ socket_take_recvbuf(twopence_sock_t *sock)
 }
 
 twopence_buf_t *
-socket_get_recvbuf(twopence_sock_t *sock)
+twopence_sock_get_recvbuf(twopence_sock_t *sock)
 {
 	return sock->recv_buf;
 }
 
 void
-socket_post_recvbuf(twopence_sock_t *sock, twopence_buf_t *bp)
+twopence_sock_post_recvbuf(twopence_sock_t *sock, twopence_buf_t *bp)
 {
 	if (sock->recv_buf != NULL) {
 		assert(twopence_buf_count(sock->recv_buf) == 0);
@@ -276,7 +276,7 @@ socket_post_recvbuf(twopence_sock_t *sock, twopence_buf_t *bp)
 }
 
 twopence_buf_t *
-socket_post_recvbuf_if_needed(twopence_sock_t *sock, unsigned int size)
+twopence_sock_post_recvbuf_if_needed(twopence_sock_t *sock, unsigned int size)
 {
 	/* If the socket is at EOF, or if we already have posted a
 	 * receive buffer, there's no need to post a new one.
@@ -307,7 +307,7 @@ twopence_sock_write(twopence_sock_t *sock, twopence_buf_t *bp, unsigned int coun
 }
 
 int
-socket_send_buffer(twopence_sock_t *sock, twopence_buf_t *bp)
+twopence_sock_send_buffer(twopence_sock_t *sock, twopence_buf_t *bp)
 {
 	int n;
 
@@ -349,7 +349,7 @@ __socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp, int flags)
 	if (flags & TWOPENCE_SOCK_XMIT_SYNCHRONOUS) {
 		/* Flush out all queued packets first */
 		while (twopence_queue_head(&sock->xmit_queue) != NULL) {
-			n = socket_send_queued(sock);
+			n = twopence_sock_send_queued(sock);
 			if (n < 0)
 				goto out_drop_buffer;
 		}
@@ -361,14 +361,14 @@ __socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp, int flags)
 		if (flags & TWOPENCE_SOCK_XMIT_SYNCHRONOUS) {
 			/* fully synchronous */
 			while (twopence_buf_count(bp) != 0) {
-				n = socket_send_buffer(sock, bp);
+				n = twopence_sock_send_buffer(sock, bp);
 				if (n < 0)
 					goto out_drop_buffer;
 			}
 		} else
 		if (flags & TWOPENCE_SOCK_XMIT_TRYTOWRITE) {
 			/* opportunistic - write some */
-			(void) socket_send_buffer(sock, bp);
+			(void) twopence_sock_send_buffer(sock, bp);
 		}
 	}
 
@@ -390,7 +390,7 @@ out:
 }
 
 void
-socket_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp)
+twopence_sock_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp)
 {
 	__socket_queue_xmit(sock, bp, TWOPENCE_SOCK_XMIT_TRYTOWRITE);
 }
@@ -408,7 +408,7 @@ twopence_sock_xmit(twopence_sock_t *sock, twopence_buf_t *bp)
 }
 
 int
-socket_send_queued(twopence_sock_t *sock)
+twopence_sock_send_queued(twopence_sock_t *sock)
 {
 	twopence_packet_t *pkt;
 	int n;
@@ -416,7 +416,7 @@ socket_send_queued(twopence_sock_t *sock)
 	if ((pkt = twopence_queue_head(&sock->xmit_queue)) == NULL)
 		return 0;
 
-	n = socket_send_buffer(sock, pkt->buffer);
+	n = twopence_sock_send_buffer(sock, pkt->buffer);
 	if (twopence_buf_count(pkt->buffer) == 0) {
 		/* Sent the complete buffer */
 		twopence_queue_dequeue(&sock->xmit_queue);
@@ -427,13 +427,13 @@ socket_send_queued(twopence_sock_t *sock)
 }
 
 unsigned int
-socket_xmit_queue_bytes(twopence_sock_t *sock)
+twopence_sock_xmit_queue_bytes(twopence_sock_t *sock)
 {
 	return sock->xmit_queue.bytes;
 }
 
 bool
-socket_xmit_queue_allowed(const twopence_sock_t *sock)
+twopence_sock_xmit_queue_allowed(const twopence_sock_t *sock)
 {
 	if (sock->write_eof) {
 		/* This is different from socket_is_write_eof.
@@ -465,7 +465,7 @@ __socket_try_shutdown(twopence_sock_t *sock)
 }
 
 bool
-socket_shutdown_write(twopence_sock_t *sock)
+twopence_sock_shutdown_write(twopence_sock_t *sock)
 {
 	if (sock->write_eof)
 		return true;
@@ -476,32 +476,32 @@ socket_shutdown_write(twopence_sock_t *sock)
 }
 
 void
-socket_mark_dead(twopence_sock_t *sock)
+twopence_sock_mark_dead(twopence_sock_t *sock)
 {
 	sock->read_eof = true;
 	sock->write_eof = SHUTDOWN_SENT;
 }
 
 bool
-socket_is_read_eof(const twopence_sock_t *sock)
+twopence_sock_is_read_eof(const twopence_sock_t *sock)
 {
 	return sock->read_eof;
 }
 
 bool
-socket_is_write_eof(const twopence_sock_t *sock)
+twopence_sock_is_write_eof(const twopence_sock_t *sock)
 {
 	return sock->write_eof == SHUTDOWN_SENT;
 }
 
 bool
-socket_is_dead(twopence_sock_t *sock)
+twopence_sock_is_dead(twopence_sock_t *sock)
 {
 	return sock->read_eof && sock->write_eof == SHUTDOWN_SENT;
 }
 
 const char *
-socket_state_desc(const twopence_sock_t *sock)
+twopence_sock_state_desc(const twopence_sock_t *sock)
 {
 	if (sock->read_eof) {
 		switch (sock->write_eof) {
@@ -526,7 +526,7 @@ socket_state_desc(const twopence_sock_t *sock)
 }
 
 static const char *
-socket_queue_desc(const twopence_sock_t *sock)
+twopence_sock_queue_desc(const twopence_sock_t *sock)
 {
 	static char buffer[60];
 	unsigned int recv_bytes = sock->recv_buf? twopence_buf_count(sock->recv_buf) : 0;
@@ -576,13 +576,13 @@ poll_bit_string(int events)
 }
 
 void
-socket_prepare_poll(twopence_sock_t *sock)
+twopence_sock_prepare_poll(twopence_sock_t *sock)
 {
 	sock->poll_data = NULL;
 }
 
 bool
-socket_fill_poll(twopence_sock_t *sock, struct pollfd *pfd)
+twopence_sock_fill_poll(twopence_sock_t *sock, struct pollfd *pfd)
 {
 	sock->poll_data = NULL;
 
@@ -602,7 +602,7 @@ socket_fill_poll(twopence_sock_t *sock, struct pollfd *pfd)
 	if (pfd->events == 0)
 		return false;
 
-	twopence_debug2("%s(fd=%d, %s%s): events=%s\n", __func__, sock->fd, socket_state_desc(sock), socket_queue_desc(sock), poll_bit_string(pfd->events));
+	twopence_debug2("%s(fd=%d, %s%s): events=%s\n", __func__, sock->fd, twopence_sock_state_desc(sock), twopence_sock_queue_desc(sock), poll_bit_string(pfd->events));
 	sock->poll_data = pfd;
 	pfd->fd = sock->fd;
 	return true;
@@ -623,7 +623,7 @@ twopence_sock_doio(twopence_sock_t *sock)
 		twopence_debug2("twopence_sock_doio(%d, pfd=<fd=%d, revents=%s)\n", sock->fd, pfd->fd, poll_bit_string(pfd->revents));
 
 	if (pfd->revents & POLLOUT) {
-		if ((n = socket_send_queued(sock)) < 0)
+		if ((n = twopence_sock_send_queued(sock)) < 0)
 			return n;
 	}
 
@@ -636,7 +636,7 @@ twopence_sock_doio(twopence_sock_t *sock)
 		if (sock->recv_buf)
 			tailroom = twopence_buf_tailroom(sock->recv_buf);
 		if (tailroom != 0) {
-			n = socket_recv_buffer(sock, sock->recv_buf);
+			n = twopence_sock_recv_buffer(sock, sock->recv_buf);
 			twopence_debug2("socket_recv_buffer returns %d\n", n);
 			if (n < 0)
 				return n;

@@ -173,7 +173,7 @@ transaction_channel_list_purge(transaction_channel_t **list)
 	transaction_channel_t *channel;
 
 	while ((channel = *list) != NULL) {
-		if (channel->socket && socket_is_dead(channel->socket)) {
+		if (channel->socket && twopence_sock_is_dead(channel->socket)) {
 			*list = channel->next;
 			transaction_channel_free(channel);
 		} else {
@@ -209,7 +209,7 @@ transaction_channel_write_eof(transaction_channel_t *sink)
 {
 	twopence_sock_t *sock = sink->socket;
 
-	if (sock && socket_shutdown_write(sock))
+	if (sock && twopence_sock_shutdown_write(sock))
 		return true;
 	return false;
 }
@@ -220,7 +220,7 @@ transaction_channel_is_read_eof(const transaction_channel_t *channel)
 	twopence_sock_t *sock = channel->socket;
 
 	if (sock)
-		return socket_is_read_eof(sock);
+		return twopence_sock_is_read_eof(sock);
 	return false;
 }
 
@@ -229,17 +229,17 @@ transaction_channel_poll(transaction_channel_t *sink, struct pollfd *pfd)
 {
 	twopence_sock_t *sock = sink->socket;
 
-	if (sock && !socket_is_dead(sock)) {
+	if (sock && !twopence_sock_is_dead(sock)) {
 		twopence_buf_t *bp;
 
-		socket_prepare_poll(sock);
+		twopence_sock_prepare_poll(sock);
 
 		/* If needed, post a new receive buffer to the socket.
 		 * Note: this is a NOP for sink channels, as their socket
 		 * already has read_eof set, so that a recvbuf is never
 		 * posted to it.
 		 */
-		if (!socket_is_read_eof(sock) && (bp = socket_get_recvbuf(sock)) == NULL) {
+		if (!twopence_sock_is_read_eof(sock) && (bp = twopence_sock_get_recvbuf(sock)) == NULL) {
 			/* When we receive data from a command's output stream, or from
 			 * a file that is being extracted, we do not want to copy
 			 * the entire packet - instead, we reserve some room for the
@@ -248,10 +248,10 @@ transaction_channel_poll(transaction_channel_t *sink, struct pollfd *pfd)
 			bp = twopence_buf_new(TWOPENCE_PROTO_MAX_PACKET);
 			twopence_buf_reserve_head(bp, TWOPENCE_PROTO_HEADER_SIZE);
 
-			socket_post_recvbuf(sock, bp);
+			twopence_sock_post_recvbuf(sock, bp);
 		}
 
-		if (socket_fill_poll(sock, pfd))
+		if (twopence_sock_fill_poll(sock, pfd))
 			return 1;
 	}
 
@@ -266,7 +266,7 @@ transaction_channel_doio(transaction_t *trans, transaction_channel_t *channel)
 	if (sock) {
 		if (twopence_sock_doio(sock) < 0) {
 			transaction_fail(trans, errno);
-			socket_mark_dead(sock);
+			twopence_sock_mark_dead(sock);
 		}
 	}
 }
@@ -319,7 +319,7 @@ transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max
 
 	/* If the client socket's write queue is already bursting with data,
 	 * refrain from queuing more until some of it has been drained */
-	if (socket_xmit_queue_allowed(trans->client_sock)) {
+	if (twopence_sock_xmit_queue_allowed(trans->client_sock)) {
 		transaction_channel_t *source;
 
 		for (source = trans->local_source; source; source = source->next) {
@@ -342,9 +342,9 @@ transaction_send_data(transaction_t *trans)
 		if ((sock = channel->socket) != NULL) {
 			twopence_buf_t *bp;
 
-			if ((bp = socket_take_recvbuf(sock)) != NULL) {
+			if ((bp = twopence_sock_take_recvbuf(sock)) != NULL) {
 				twopence_protocol_push_header_ps(bp, &trans->ps, channel->id);
-				socket_queue_xmit(trans->client_sock, bp);
+				twopence_sock_queue_xmit(trans->client_sock, bp);
 			}
 
 			/* For file extractions, we want to send an EOF packet
@@ -393,7 +393,7 @@ transaction_send_client(transaction_t *trans, twopence_buf_t *bp)
 	twopence_debug("%s()\n", __func__);
 	if (h)
 		twopence_debug("%s: sending packet type %c, payload=%u\n", __func__, h->type, ntohs(h->len) - TWOPENCE_PROTO_HEADER_SIZE);
-	socket_queue_xmit(trans->client_sock, bp);
+	twopence_sock_queue_xmit(trans->client_sock, bp);
 }
 
 void

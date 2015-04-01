@@ -173,7 +173,7 @@ __twopence_pipe_read_packet(struct twopence_pipe_target *handle)
 
   if ((sock = handle->link_sock) == NULL)
     return NULL;
-  bp = socket_get_recvbuf(sock);
+  bp = twopence_sock_get_recvbuf(sock);
 
   /* Receive more data from the link until we have at least one
    * complete packet.
@@ -183,7 +183,7 @@ __twopence_pipe_read_packet(struct twopence_pipe_target *handle)
     int count;
 
     /* FIXME: heed the link timeout */
-    count = socket_recv_buffer(sock, bp);
+    count = twopence_sock_recv_buffer(sock, bp);
     if (count == 0) {
       twopence_log_error("unexpected EOF on link");
       return NULL;
@@ -212,7 +212,7 @@ __twopence_pipe_handshake(struct twopence_pipe_target *handle)
   if (rc < 0)
     return rc;
 
-  socket_post_recvbuf_if_needed(handle->link_sock, 4 * TWOPENCE_PROTO_MAX_PACKET);
+  twopence_sock_post_recvbuf_if_needed(handle->link_sock, 4 * TWOPENCE_PROTO_MAX_PACKET);
 
   if ((bp = __twopence_pipe_read_packet(handle)) == NULL)
     return TWOPENCE_PROTOCOL_ERROR;
@@ -505,14 +505,14 @@ __twopence_pipe_transaction_poll_socket(twopence_pipe_transaction_t *trans, stru
   if ((sock = handle->link_sock) == NULL)
     return TWOPENCE_PROTOCOL_ERROR; /* SESSION_ERROR? */
 
-  socket_post_recvbuf_if_needed(sock, 4 * TWOPENCE_PROTO_MAX_PACKET);
+  twopence_sock_post_recvbuf_if_needed(sock, 4 * TWOPENCE_PROTO_MAX_PACKET);
 
-  bp = socket_get_recvbuf(sock);
+  bp = twopence_sock_get_recvbuf(sock);
   if (twopence_buf_tailroom_max(bp) < TWOPENCE_PROTO_MAX_PACKET)
     twopence_buf_compact(bp);
 
-  socket_prepare_poll(sock);
-  if (!socket_fill_poll(sock, pfd)) {
+  twopence_sock_prepare_poll(sock);
+  if (!twopence_sock_fill_poll(sock, pfd)) {
     twopence_log_error("socket doesn't wait for anything?!");
     return TWOPENCE_PROTOCOL_ERROR; /* SESSION_ERROR? */
   }

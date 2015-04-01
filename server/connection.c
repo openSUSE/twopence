@@ -104,7 +104,7 @@ connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
 	twopence_sock_t *sock;
 
 	sock = conn->client_sock;
-	if (sock && socket_is_dead(sock)) {
+	if (sock && twopence_sock_is_dead(sock)) {
 		twopence_debug("connection: client socket is dead, closing\n");
 		conn->client_sock = NULL;
 		twopence_sock_free(sock);
@@ -115,14 +115,14 @@ connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
 		nfds += transaction_fill_poll(conn->current_transaction, pfd, max);
 
 	if ((sock = conn->client_sock) != NULL) {
-		socket_prepare_poll(sock);
+		twopence_sock_prepare_poll(sock);
 
 		/* Make sure we have a receive buffer posted. */
-		socket_post_recvbuf_if_needed(sock, TWOPENCE_PROTO_MAX_PACKET);
+		twopence_sock_post_recvbuf_if_needed(sock, TWOPENCE_PROTO_MAX_PACKET);
 
-		if (socket_xmit_queue_bytes(sock))
-			twopence_debug("socket %d: xmit queue=%u bytes\n", twopence_sock_id(sock), socket_xmit_queue_bytes(sock));
-		if (nfds < max && socket_fill_poll(sock, pfd + nfds))
+		if (twopence_sock_xmit_queue_bytes(sock))
+			twopence_debug("socket %d: xmit queue=%u bytes\n", twopence_sock_id(sock), twopence_sock_xmit_queue_bytes(sock));
+		if (nfds < max && twopence_sock_fill_poll(sock, pfd + nfds))
 			nfds++;
 	}
 
@@ -170,7 +170,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 
 		if (hdr->type == TWOPENCE_PROTO_TYPE_HELLO) {
 			/* HELLO packet. Respond with the ID we assigned to the client */
-			socket_queue_xmit(conn->client_sock,
+			twopence_sock_queue_xmit(conn->client_sock,
 				twopence_protocol_build_hello_packet(conn->client_id));
 			continue;
 		}
@@ -245,7 +245,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 
 			if (trans == NULL) {
 				twopence_debug("unable to create transaction, send EPROTO error\n");
-				socket_queue_xmit(conn->client_sock,
+				twopence_sock_queue_xmit(conn->client_sock,
 					 twopence_protocol_build_uint_packet_ps(&ps, TWOPENCE_PROTO_TYPE_MAJOR, EPROTO));
 			} else {
 				conn->current_transaction = trans;
@@ -264,7 +264,7 @@ connection_process_incoming(connection_t *conn)
 {
 	twopence_buf_t *bp;
 
-	if ((bp = socket_get_recvbuf(conn->client_sock)) == NULL)
+	if ((bp = twopence_sock_get_recvbuf(conn->client_sock)) == NULL)
 		return true;
 
 	while (twopence_protocol_buffer_complete(bp)) {
@@ -309,19 +309,19 @@ connection_doio(connection_t *conn)
 			exit(1); /* FIXME: shut down this conn forcefully */
 		}
 
-		if (socket_is_read_eof(sock)) {
+		if (twopence_sock_is_read_eof(sock)) {
 			/* If the client shut down its side of the connection,
 			 * we may still have to flush out some data from the
 			 * current transaction to the client.
 			 * Otherwise, we are really done with this socket and
 			 * can close it.
 			 */
-			if (socket_xmit_queue_bytes(sock) == 0
+			if (twopence_sock_xmit_queue_bytes(sock) == 0
 			 && conn->current_transaction == NULL)
-				socket_mark_dead(sock);
+				twopence_sock_mark_dead(sock);
 		}
 
-		if (socket_is_dead(sock)) {
+		if (twopence_sock_is_dead(sock)) {
 			connection_close(conn);
 		}
 	}
@@ -334,7 +334,7 @@ connection_doio(connection_t *conn)
 			conn->current_transaction = NULL;
 			transaction_free(trans);
 		} else
-		if (sock && socket_is_read_eof(sock)) {
+		if (sock && twopence_sock_is_read_eof(sock)) {
 			twopence_debug("Client closed socket while transaction was in process. Terminate it\n");
 			conn->current_transaction = NULL;
 			transaction_free(trans);
