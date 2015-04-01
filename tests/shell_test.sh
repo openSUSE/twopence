@@ -413,6 +413,31 @@ if [ $elapsed -ge 5 ]; then
 fi
 test_case_report
 
+test_case_begin "make sure server side command is gone after signalling"
+twopence_command_background -u $TESTUSER $TARGET "sleep 20"
+pid=$!
+sleep 1
+echo "Sending SIGINT to $pid"
+ps hup $pid
+kill -INT $pid
+wait $pid
+test_case_check_status $? 9
+
+sleep 1
+echo "Checking if the command is still running"
+if twopence_command $TARGET "ps aux" | grep "^testuser.*sleep 20$"; then
+	case $TARGET in
+	ssh:*)
+		test_case_warn "command is still running"
+		echo "For ssh, this is expected, unfortunately";;
+	*)
+		test_case_fail "command is still running"
+	esac
+else
+	echo "Good, the command is no longer running on the server"
+fi
+test_case_report
+
 cat<<EOF
 ### SUMMARY $num_tests $num_skipped $num_failed 0
 Total tests run: $num_tests
