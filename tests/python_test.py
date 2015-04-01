@@ -58,6 +58,13 @@ def testCaseFail(msg):
 	if not testCaseStatus:
 		testCaseStatus = "FAILED"
 
+def testCaseSkip(msg):
+	global testCaseStatus
+
+	print "### " + msg
+	if not testCaseStatus:
+		testCaseStatus = "SKIPPED"
+
 def testCaseCheckStatus(status, expectExitCode = 0):
 	print # command may not have printed a newline
 	print "Transaction finished; status %d" % status.code
@@ -79,11 +86,14 @@ def testCaseException():
 	traceback.print_tb(info[2])
 
 def testCaseReport():
-	global testCaseStatus, testCaseRunning, numFailed
+	global testCaseStatus, testCaseRunning, numFailed, numSkipped
 
 	if testCaseStatus:
 		print "### " + testCaseStatus
-		numFailed = numFailed + 1
+		if testCaseStatus == "SKIPPED":
+			numSkipped = numSkipped + 1
+		else:
+			numFailed = numFailed + 1
 	else:
 		print "### SUCCESS"
 	print
@@ -109,12 +119,23 @@ def testSuiteExit():
 	print " %4d tests run" % numTests
 	print " %4d failed" % numFailed
 	print " %4d errors" % numErrors
+	print " %4d skipped" % numSkipped
 
 	sys.exit(exitStatus)
 
 ##################################################################
 # Individual test cases start here
 ##################################################################
+
+testCaseBegin("Check the plugin type")
+try:
+	t = target.type
+	print "plugin type is", t
+	if t != "ssh" and t != "virtio" and t != "serial":
+		testCaseFail("Unknwon plugin type \"%s\"" % type)
+except:
+	testCaseException()
+testCaseReport()
 
 testCaseBegin("Run command /bin/pwd")
 try:
@@ -420,7 +441,10 @@ except:
 testCaseReport()
 
 testCaseBegin("run /bin/pwd in the background")
-try:
+if target.type != "ssh":
+    testCaseSkip("background execution only available in ssh plugin right now")
+else:
+    try:
 	cmd = twopence.Command("/bin/pwd", background = 1);
 	if target.run(cmd):
 		testCaseFail("Target.run() of a backgrounded command should return None")
@@ -438,12 +462,15 @@ try:
 				testCaseFail("expected pwd to print '/' or '/root', instead got '%s'" % pwd);
 	if cmd.pid:
 		testCaseFail("command pid should be reset to 0 after completion")
-except:
+    except:
 	testCaseException()
 testCaseReport()
 
 testCaseBegin("run several processes in the background")
-try:
+if target.type != "ssh":
+    testCaseSkip("background execution only available in ssh plugin right now")
+else:
+    try:
 	cmds = []
 	for time in range(6, 0, -1):
 		cmd = twopence.Command("sleep %d" % time, background = 1);
@@ -462,7 +489,7 @@ try:
 
 	if nreaped != 6:
 		testCaseFail("Reaped %d commands, expected 6" % nreaped)
-except:
+    except:
 	testCaseException()
 testCaseReport()
 
