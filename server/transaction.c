@@ -175,7 +175,7 @@ transaction_num_channels(const transaction_t *trans)
 	return count;
 }
 
-int
+transaction_channel_t *
 transaction_attach_local_sink(transaction_t *trans, int fd, unsigned char id)
 {
 	transaction_channel_t *sink;
@@ -188,7 +188,7 @@ transaction_attach_local_sink(transaction_t *trans, int fd, unsigned char id)
 
 	sink->next = trans->local_sink;
 	trans->local_sink = sink;
-	return 0;
+	return sink;
 }
 
 void
@@ -198,7 +198,7 @@ transaction_close_sink(transaction_t *trans, unsigned char id)
 	transaction_channel_list_close(&trans->local_sink, id);
 }
 
-int
+transaction_channel_t *
 transaction_attach_local_source(transaction_t *trans, int fd, unsigned char channel_id)
 {
 	transaction_channel_t *source;
@@ -211,7 +211,7 @@ transaction_attach_local_source(transaction_t *trans, int fd, unsigned char chan
 
 	source->next = trans->local_source;
 	trans->local_source = source;
-	return 0;
+	return source;
 }
 
 void

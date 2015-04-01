@@ -520,12 +520,6 @@ server_extract_file_source_read_eof(transaction_t *trans, transaction_channel_t 
 }
 
 bool
-server_extract_file_send(transaction_t *trans)
-{
-	return true;
-}
-
-bool
 server_extract_file(transaction_t *trans, const char *username, const char *filename)
 {
 	transaction_channel_t *source;
@@ -538,18 +532,17 @@ server_extract_file(transaction_t *trans, const char *username, const char *file
 		return false;
 	}
 
-	if (transaction_attach_local_source(trans, fd, TWOPENCE_PROTO_TYPE_DATA) < 0) {
+	source = transaction_attach_local_source(trans, fd, TWOPENCE_PROTO_TYPE_DATA);
+	if (source == NULL) {
 		/* Something is wrong */
 		transaction_fail(trans, EIO);
 		close(fd);
 		return false;
 	}
 
-	source = transaction_find_source(trans, TWOPENCE_PROTO_TYPE_DATA);
 	transaction_channel_set_callback_read_eof(source, server_extract_file_source_read_eof);
 
 	trans->recv = server_extract_file_recv;
-	trans->send = server_extract_file_send;
 
 	return true;
 }
@@ -650,15 +643,15 @@ server_run_command(transaction_t *trans, const char *username, unsigned int time
 		return false;
 	}
 
-	if (transaction_attach_local_sink(trans, command_fds[0], TWOPENCE_PROTO_TYPE_STDIN) < 0)
+	if (transaction_attach_local_sink(trans, command_fds[0], TWOPENCE_PROTO_TYPE_STDIN) == NULL)
 		goto failed;
 	nattached++;
 
-	if (transaction_attach_local_source(trans, command_fds[1], TWOPENCE_PROTO_TYPE_STDOUT) < 0)
+	if (transaction_attach_local_source(trans, command_fds[1], TWOPENCE_PROTO_TYPE_STDOUT) == NULL)
 		goto failed;
 	nattached++;
 
-	if (transaction_attach_local_source(trans, command_fds[2], TWOPENCE_PROTO_TYPE_STDERR) < 0)
+	if (transaction_attach_local_source(trans, command_fds[2], TWOPENCE_PROTO_TYPE_STDERR) == NULL)
 		goto failed;
 	nattached++;
 
