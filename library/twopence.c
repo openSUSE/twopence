@@ -831,28 +831,17 @@ twopence_iostream_poll(twopence_iostream_t *stream, struct pollfd *pfd, int mask
 int
 twopence_iostream_getfd(twopence_iostream_t *stream)
 {
-  unsigned int i;
+  twopence_substream_t *substream;
 
-  if (stream == NULL)
+  if (stream == NULL || stream->eof || !stream->count != 1)
     return -1;
 
-  if (stream->eof || stream->count == 0)
-    return -1;
-
-  /* Find the first non-EOF substream and fill in the pollfd */
-  for (i = 0; i < stream->count; ++i) {
-    twopence_substream_t *substream = stream->substream[i];
-
-    if (substream->ops == NULL)
-      continue;
-
-    if (substream->ops->getfd == NULL)
-      return -1;
-
+  substream = stream->substream[0];
+  if (substream
+   && substream->ops != NULL
+   && substream->ops->getfd != NULL)
     return substream->ops->getfd(substream);
-  }
 
-  /* All substreams are EOF */
   return -1;
 }
 
