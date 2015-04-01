@@ -92,6 +92,7 @@ extern transaction_channel_t *	transaction_find_sink(transaction_t *trans, unsig
 extern transaction_channel_t *	transaction_find_source(transaction_t *trans, unsigned char channel);
 extern bool			transaction_channel_is_read_eof(const transaction_channel_t *);
 extern void			transaction_channel_set_callback_read_eof(transaction_channel_t *, void (*fn)(transaction_t *, transaction_channel_t *));
+extern void			transaction_channel_set_callback_write_eof(transaction_channel_t *, void (*fn)(transaction_t *, transaction_channel_t *));
 
 extern connection_t *		connection_new(semantics_t *semantics, twopence_sock_t *client_sock, unsigned int client_id);
 extern void			connection_free(connection_t *conn);

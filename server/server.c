@@ -446,28 +446,18 @@ failed:
 	goto out;
 }
 
-bool
-server_inject_file_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
+static void
+server_inject_file_write_eof(transaction_t *trans, transaction_channel_t *channel)
 {
-	switch (hdr->type) {
-	case TWOPENCE_PROTO_TYPE_EOF:
-		twopence_debug("inject: received EOF\n");
-		transaction_send_minor(trans, 0);
-		transaction_write_eof(trans);
-		trans->done = true;
-		break;
-
-	default:
-		twopence_log_error("Unknown command code '%c' in transaction context\n", hdr->type);
-		transaction_fail(trans, EPROTO);
-		break;
-	}
-	return true;
+	transaction_send_minor(trans, 0);
+	transaction_write_eof(trans);
+	trans->done = true;
 }
 
 bool
 server_inject_file(transaction_t *trans, const char *username, const char *filename, size_t filemode)
 {
+	transaction_channel_t *sink;
 	int status;
 	int fd;
 
@@ -477,18 +467,18 @@ server_inject_file(transaction_t *trans, const char *username, const char *filen
 		return false;
 	}
 
-	if (transaction_attach_local_sink(trans, fd, TWOPENCE_PROTO_TYPE_DATA) < 0) {
+	sink = transaction_attach_local_sink(trans, fd, TWOPENCE_PROTO_TYPE_DATA);
+	if (sink == NULL) {
 		/* Something is wrong */
 		close(fd);
 		return false;
 	}
 
+	transaction_channel_set_callback_write_eof(sink, server_inject_file_write_eof);
+
 	/* Tell the client a success status right after we open the file -
 	 * this will start the actual transfer */
 	transaction_send_major(trans, 0);
-
-	/* Ignore the file size - we're no longer interested in it */
-	trans->recv = server_inject_file_recv;
 
 	return true;
 }
@@ -496,7 +486,6 @@ server_inject_file(transaction_t *trans, const char *username, const char *filen
 void
 server_extract_file_source_read_eof(transaction_t *trans, transaction_channel_t *channel)
 {
-	twopence_debug("EOF on extracted file");
 	transaction_send_client(trans, twopence_protocol_build_eof_packet(&trans->ps));
 	trans->done = true;
 }
@@ -576,14 +565,16 @@ server_run_command_send(transaction_t *trans)
 	return true;
 }
 
+static void
+server_run_command_stdin_eof(transaction_t *trans, transaction_channel_t *sink)
+{
+	/* Nothing to be done. */
+}
+
 bool
 server_run_command_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
 {
 	switch (hdr->type) {
-	case TWOPENCE_PROTO_TYPE_EOF:
-		transaction_write_eof(trans);
-		break;
-
 	case TWOPENCE_PROTO_TYPE_INTR:
 		/* Send signal to process, and shut down all I/O.
 		 * When we send a signal, we're not really interested in what
@@ -607,6 +598,7 @@ server_run_command_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopenc
 bool
 server_run_command(transaction_t *trans, const char *username, unsigned int timeout, const char *cmdline)
 {
+	transaction_channel_t *sink;
 	int status;
 	int command_fds[3];
 	int nattached = 0;
@@ -618,8 +610,10 @@ server_run_command(transaction_t *trans, const char *username, unsigned int time
 		return false;
 	}
 
-	if (transaction_attach_local_sink(trans, command_fds[0], TWOPENCE_PROTO_TYPE_STDIN) == NULL)
+	sink = transaction_attach_local_sink(trans, command_fds[0], TWOPENCE_PROTO_TYPE_STDIN);
+	if (sink == NULL)
 		goto failed;
+	transaction_channel_set_callback_write_eof(sink, server_run_command_stdin_eof);
 	nattached++;
 
 	if (transaction_attach_local_source(trans, command_fds[1], TWOPENCE_PROTO_TYPE_STDOUT) == NULL)

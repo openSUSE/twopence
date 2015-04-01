@@ -57,6 +57,7 @@ struct transaction_channel {
 
 	struct {
 	    void		(*read_eof)(transaction_t *, transaction_channel_t *);
+	    void		(*write_eof)(transaction_t *, transaction_channel_t *);
 	} callbacks;
 };
 
@@ -101,6 +102,12 @@ void
 transaction_channel_set_callback_read_eof(transaction_channel_t *channel, void (*fn)(transaction_t *, transaction_channel_t *))
 {
 	channel->callbacks.read_eof = fn;
+}
+
+void
+transaction_channel_set_callback_write_eof(transaction_channel_t *channel, void (*fn)(transaction_t *, transaction_channel_t *))
+{
+	channel->callbacks.write_eof = fn;
 }
 
 static void
@@ -338,6 +345,7 @@ transaction_channel_doio(transaction_t *trans, transaction_channel_t *channel)
 		 * when the file has been transmitted in its entirety.
 		 */
 		if (twopence_sock_is_read_eof(sock) && channel->callbacks.read_eof) {
+			twopence_debug("%s: EOF on channel %c", transaction_describe(trans), channel->id);
 			channel->callbacks.read_eof(trans, channel);
 			channel->callbacks.read_eof = NULL;
 		}
@@ -411,18 +419,31 @@ transaction_recv_packet(transaction_t *trans, const twopence_hdr_t *hdr, twopenc
 		return;
 	}
 
-	if (trans->recv == NULL) {
-		twopence_log_error("%s: unexpected packet type '%c'\n", transaction_describe(trans), hdr->type);
-		transaction_fail(trans, EPROTO);
-		return;
-	}
-
 	sink = transaction_find_sink(trans, hdr->type);
 	if (sink != NULL) {
 		twopence_debug("%s: received %u bytes of data on channel %c\n",
 				transaction_describe(trans), twopence_buf_count(payload), sink->id);
 		if (sink && !transaction_channel_write_data(sink, payload))
 			transaction_fail(trans, errno);
+		return;
+	}
+
+	if (hdr->type == TWOPENCE_PROTO_TYPE_EOF
+	 && (sink = trans->local_sink) != NULL
+	 && sink->callbacks.write_eof) {
+		twopence_debug("%s: received EOF", transaction_describe(trans));
+
+		/* Passing the EOF indication to what is essentially a random local sink
+		 * is not correct, but right now, we're just handling one local sink at most. */
+		transaction_channel_write_eof(sink);
+		sink->callbacks.write_eof(trans, sink);
+		sink->callbacks.write_eof = NULL;
+		return;
+	}
+
+	if (trans->recv == NULL) {
+		twopence_log_error("%s: unexpected packet type '%c'\n", transaction_describe(trans), hdr->type);
+		transaction_fail(trans, EPROTO);
 		return;
 	}
 
