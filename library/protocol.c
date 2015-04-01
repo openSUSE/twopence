@@ -833,6 +833,10 @@ twopence_pipe_run_test
   const char *command;
   int rc;
 
+  /* Background execution of commands currently not supported on this plugin */
+  if (cmd->background)
+    return TWOPENCE_PARAMETER_ERROR;
+
   if ((command = cmd->command) == NULL)
     return TWOPENCE_PARAMETER_ERROR;
   username = cmd->user? : "root";
