@@ -1101,7 +1101,7 @@ twopence_substream_file_write(twopence_substream_t *sink, const void *data, size
   if (fd < 0)
     return -1;
 
-   return write(fd, data, len);
+  return write(fd, data, len);
 }
 
 static int

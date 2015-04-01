@@ -155,6 +155,22 @@ twopence_protocol_build_inject_packet(const char *user, const char *remote_name,
 }
 
 twopence_buf_t *
+twopence_protocol_build_command_packet(const char *user, const char *command, long timeout)
+{
+	twopence_buf_t *bp;
+
+	/* Allocate a large buffer with space reserved for the header */
+	bp = twopence_protocol_command_buffer_new();
+
+	/* Format the arguments */
+	twopence_protocol_format_args(bp, "%s %ld %s", user, timeout, command);
+
+	/* Finalize the header */
+	twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_COMMAND);
+	return bp;
+}
+
+twopence_buf_t *
 twopence_protocol_build_extract_packet(const char *user, const char *remote_name)
 {
 	twopence_buf_t *bp;
@@ -180,20 +196,31 @@ twopence_protocol_recv_buffer_new(void)
 	return bp;
 }
 
-bool
-twopence_protocol_buffer_complete(const twopence_buf_t *bp)
+int
+twopence_protocol_buffer_need_to_recv(const twopence_buf_t *bp)
 {
 	const twopence_hdr_t *hdr;
-	unsigned int len;
+	unsigned int len, total;
 
 	len = twopence_buf_count(bp);
 	if (len < TWOPENCE_PROTO_HEADER_SIZE)
-		return false;
+		return TWOPENCE_PROTO_HEADER_SIZE - len;
 
 	hdr = (twopence_hdr_t *) twopence_buf_head(bp);
-	if (len < htons(hdr->len))
-		return false;
-	return true;
+	total = htons(hdr->len);
+	if (total < TWOPENCE_PROTO_HEADER_SIZE)
+		return -1;
+
+	if (len < total)
+		return total - len;
+
+	return 0;
+}
+
+bool
+twopence_protocol_buffer_complete(const twopence_buf_t *bp)
+{
+	return twopence_protocol_buffer_need_to_recv(bp) == 0;
 }
 
 const twopence_hdr_t *
@@ -278,6 +305,20 @@ twopence_protocol_dissect_uint(twopence_buf_t *bp, unsigned int *retval)
 		return false;
 
 	*retval = strtoul(buffer, &s, 0);
+	if (*s)
+		return false;
+	return true;
+}
+
+bool
+twopence_protocol_dissect_int(twopence_buf_t *bp, int *retval)
+{
+	char buffer[32], *s;
+
+	if (!twopence_protocol_dissect_string(bp, buffer, sizeof(buffer)))
+		return false;
+
+	*retval = strtol(buffer, &s, 0);
 	if (*s)
 		return false;
 	return true;
