@@ -130,13 +130,13 @@ connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
 bool
 connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 {
-	const header_t *hdr;
+	const twopence_hdr_t *hdr;
 	transaction_t *trans;
 
-	while (bp && protocol_buffer_complete(bp)) {
+	while (bp && twopence_protocol_buffer_complete(bp)) {
 		twopence_buf_t payload;
 
-		hdr = protocol_dissect(bp, &payload);
+		hdr = twopence_protocol_dissect(bp, &payload);
 		if (hdr == NULL) {
 			fprintf(stderr, "%s: received invalid packet\n", __func__);
 			/* kill the connection? */
@@ -164,10 +164,10 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 			unsigned int timeout = 0;
 
 			switch (hdr->type) {
-			case PROTO_HDR_TYPE_INJECT:
-				if (!protocol_dissect_string(&payload, username, sizeof(username))
-				 || !protocol_dissect_uint(&payload, &filemode)
-				 || !protocol_dissect_string(&payload, filename, sizeof(filename))) {
+			case TWOPENCE_PROTO_TYPE_INJECT:
+				if (!twopence_protocol_dissect_string(&payload, username, sizeof(username))
+				 || !twopence_protocol_dissect_uint(&payload, &filemode)
+				 || !twopence_protocol_dissect_string(&payload, filename, sizeof(filename))) {
 					TRACE("cannot parse packet\n");
 					break;
 				}
@@ -176,19 +176,19 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 				semantics->inject_file(trans, username, filename, filemode);
 				break;
 
-			case PROTO_HDR_TYPE_EXTRACT:
-				if (!protocol_dissect_string(&payload, username, sizeof(username))
-				 || !protocol_dissect_string(&payload, filename, sizeof(filename)))
+			case TWOPENCE_PROTO_TYPE_EXTRACT:
+				if (!twopence_protocol_dissect_string(&payload, username, sizeof(username))
+				 || !twopence_protocol_dissect_string(&payload, filename, sizeof(filename)))
 					break;
 
 				trans = transaction_new(conn->client_sock, hdr->type, conn->next_id++);
 				semantics->extract_file(trans, username, filename);
 				break;
 
-			case PROTO_HDR_TYPE_COMMAND:
-				if (!protocol_dissect_string(&payload, username, sizeof(username))
-				 || !protocol_dissect_uint(&payload, &timeout)
-				 || !protocol_dissect_string_delim(&payload, command, sizeof(command), '\n')
+			case TWOPENCE_PROTO_TYPE_COMMAND:
+				if (!twopence_protocol_dissect_string(&payload, username, sizeof(username))
+				 || !twopence_protocol_dissect_uint(&payload, &timeout)
+				 || !twopence_protocol_dissect_string_delim(&payload, command, sizeof(command), '\n')
 				 || command[0] == '\0')
 					break;
 
@@ -196,7 +196,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 				semantics->run_command(trans, username, timeout, command);
 				break;
 
-			case PROTO_HDR_TYPE_QUIT:
+			case TWOPENCE_PROTO_TYPE_QUIT:
 				semantics->request_quit();
 				break;
 
@@ -207,7 +207,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 			if (trans == NULL) {
 				TRACE("unable to create transaction, send EPROTO error\n");
 				socket_queue_xmit(conn->client_sock,
-					 protocol_build_uint_packet(PROTO_HDR_TYPE_MAJOR, EPROTO));
+					 twopence_protocol_build_uint_packet(TWOPENCE_PROTO_TYPE_MAJOR, EPROTO));
 			} else {
 				conn->current_transaction = trans;
 			}
@@ -228,7 +228,7 @@ connection_process_incoming(connection_t *conn)
 	if ((bp = socket_get_recvbuf(conn->client_sock)) == NULL)
 		return true;
 
-	while (protocol_buffer_complete(bp)) {
+	while (twopence_protocol_buffer_complete(bp)) {
 		if (!connection_process_packet(conn, bp)) {
 			/* Something went wrong */
 			return false;

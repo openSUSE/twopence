@@ -225,7 +225,7 @@ transaction_doio(transaction_t *trans)
 inline void
 transaction_send_client(transaction_t *trans, twopence_buf_t *bp)
 {
-	const header_t *h = (const header_t *) twopence_buf_head(bp);
+	const twopence_hdr_t *h = (const twopence_hdr_t *) twopence_buf_head(bp);
 
 	TRACE("%s()\n", __func__);
 	if (h)
@@ -238,7 +238,7 @@ transaction_send_major(transaction_t *trans, unsigned int code)
 {
 	TRACE("%s(id=%d, %d)\n", __func__, trans->id, code);
 	assert(!trans->major_sent);
-	transaction_send_client(trans, protocol_build_uint_packet(PROTO_HDR_TYPE_MAJOR, code));
+	transaction_send_client(trans, twopence_protocol_build_uint_packet(TWOPENCE_PROTO_TYPE_MAJOR, code));
 	trans->major_sent = true;
 }
 
@@ -247,7 +247,7 @@ transaction_send_minor(transaction_t *trans, unsigned int code)
 {
 	TRACE("%s(id=%d, %d)\n", __func__, trans->id, code);
 	assert(!trans->minor_sent);
-	transaction_send_client(trans, protocol_build_uint_packet(PROTO_HDR_TYPE_MINOR, code));
+	transaction_send_client(trans, twopence_protocol_build_uint_packet(TWOPENCE_PROTO_TYPE_MINOR, code));
 	trans->minor_sent = true;
 }
 
@@ -258,8 +258,8 @@ transaction_send_status(transaction_t *trans, twopence_status_t *st)
 		fprintf(stderr, "%s called twice\n", __func__);
 		return;
 	}
-	transaction_send_client(trans, protocol_build_uint_packet(PROTO_HDR_TYPE_MAJOR, st->major));
-	transaction_send_client(trans, protocol_build_uint_packet(PROTO_HDR_TYPE_MINOR, st->minor));
+	transaction_send_client(trans, twopence_protocol_build_uint_packet(TWOPENCE_PROTO_TYPE_MAJOR, st->major));
+	transaction_send_client(trans, twopence_protocol_build_uint_packet(TWOPENCE_PROTO_TYPE_MINOR, st->minor));
 	trans->done = true;
 }
 
@@ -297,8 +297,8 @@ transaction_send_timeout(transaction_t *trans)
 {
 	twopence_buf_t *bp;
 
-	bp = protocol_command_buffer_new();
-	protocol_push_header(bp, PROTO_HDR_TYPE_TIMEOUT);
+	bp = twopence_protocol_command_buffer_new();
+	twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_TIMEOUT);
 	transaction_send_client(trans, bp);
 	trans->done = 1;
 }
@@ -376,7 +376,7 @@ transaction_process(transaction_t *trans)
 
 		sock = trans->local_source[i];
 		if (sock && (bp = socket_take_recvbuf(sock)) != NULL) {
-			protocol_push_header(bp, PROTO_HDR_TYPE_STDOUT + i);
+			twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_STDOUT + i);
 			socket_queue_xmit(trans->client_sock, bp);
 		}
 	}

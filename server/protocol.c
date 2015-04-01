@@ -51,10 +51,10 @@
  * Protocol handling functions
  */
 void
-protocol_build_header(twopence_buf_t *bp, unsigned char type)
+twopence_protocol_build_header(twopence_buf_t *bp, unsigned char type)
 {
 	unsigned int len = twopence_buf_count(bp);
-	header_t hdr;
+	twopence_hdr_t hdr;
 
 	assert(len < 65536);
 
@@ -66,7 +66,7 @@ protocol_build_header(twopence_buf_t *bp, unsigned char type)
 }
 
 void
-protocol_push_header(twopence_buf_t *bp, unsigned char type)
+twopence_protocol_push_header(twopence_buf_t *bp, unsigned char type)
 {
 	/* When we post buffers to the output streams of a command, for instance,
 	 * we reserve the space needed for the header.
@@ -75,11 +75,11 @@ protocol_push_header(twopence_buf_t *bp, unsigned char type)
 	assert(bp->head == TWOPENCE_PROTO_HEADER_SIZE);
 	bp->head = 0;
 
-	protocol_build_header(bp, type);
+	twopence_protocol_build_header(bp, type);
 }
 
 twopence_buf_t *
-protocol_command_buffer_new()
+twopence_protocol_command_buffer_new()
 {
 	twopence_buf_t *bp;
 
@@ -93,32 +93,32 @@ protocol_command_buffer_new()
 }
 
 twopence_buf_t *
-protocol_build_eof_packet(void)
+twopence_protocol_build_eof_packet(void)
 {
 	twopence_buf_t *bp;
 
-	bp = protocol_command_buffer_new();
-	protocol_push_header(bp, PROTO_HDR_TYPE_EOF);
+	bp = twopence_protocol_command_buffer_new();
+	twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_EOF);
 	return bp;
 }
 
 twopence_buf_t *
-protocol_build_uint_packet(unsigned char type, unsigned int value)
+twopence_protocol_build_uint_packet(unsigned char type, unsigned int value)
 {
 	twopence_buf_t *bp;
 	char string[32];
 
-	bp = protocol_command_buffer_new();
+	bp = twopence_protocol_command_buffer_new();
 
 	snprintf(string, sizeof(string), "%u", value);
 	twopence_buf_puts(bp, string);
 
-	protocol_push_header(bp, type);
+	twopence_protocol_push_header(bp, type);
 	return bp;
 }
 
 twopence_buf_t *
-protocol_recv_buffer_new(void)
+twopence_protocol_recv_buffer_new(void)
 {
 	twopence_buf_t *bp;
 
@@ -128,25 +128,25 @@ protocol_recv_buffer_new(void)
 }
 
 bool
-protocol_buffer_complete(const twopence_buf_t *bp)
+twopence_protocol_buffer_complete(const twopence_buf_t *bp)
 {
-	const header_t *hdr;
+	const twopence_hdr_t *hdr;
 	unsigned int len;
 
 	len = twopence_buf_count(bp);
 	if (len < TWOPENCE_PROTO_HEADER_SIZE)
 		return false;
 
-	hdr = (header_t *) twopence_buf_head(bp);
+	hdr = (twopence_hdr_t *) twopence_buf_head(bp);
 	if (len < htons(hdr->len))
 		return false;
 	return true;
 }
 
-const header_t *
-protocol_dissect(twopence_buf_t *bp, twopence_buf_t *payload)
+const twopence_hdr_t *
+twopence_protocol_dissect(twopence_buf_t *bp, twopence_buf_t *payload)
 {
-	header_t *hdr;
+	twopence_hdr_t *hdr;
 	unsigned int len;
 
 	if (!(hdr = twopence_buf_pull(bp, TWOPENCE_PROTO_HEADER_SIZE)))
@@ -171,7 +171,7 @@ protocol_dissect(twopence_buf_t *bp, twopence_buf_t *payload)
 }
 
 bool
-protocol_dissect_string(twopence_buf_t *bp, char *stringbuf, unsigned int size)
+twopence_protocol_dissect_string(twopence_buf_t *bp, char *stringbuf, unsigned int size)
 {
 	unsigned int n, k, count;
 	char *s;
@@ -198,7 +198,7 @@ protocol_dissect_string(twopence_buf_t *bp, char *stringbuf, unsigned int size)
 }
 
 bool
-protocol_dissect_string_delim(twopence_buf_t *bp, char *stringbuf, unsigned int size, char delimiter)
+twopence_protocol_dissect_string_delim(twopence_buf_t *bp, char *stringbuf, unsigned int size, char delimiter)
 {
 	unsigned int n = 0, k, count;
 	char *s;
@@ -218,11 +218,11 @@ protocol_dissect_string_delim(twopence_buf_t *bp, char *stringbuf, unsigned int 
 }
 
 bool
-protocol_dissect_uint(twopence_buf_t *bp, unsigned int *retval)
+twopence_protocol_dissect_uint(twopence_buf_t *bp, unsigned int *retval)
 {
 	char buffer[32], *s;
 
-	if (!protocol_dissect_string(bp, buffer, sizeof(buffer)))
+	if (!twopence_protocol_dissect_string(bp, buffer, sizeof(buffer)))
 		return false;
 
 	*retval = strtoul(buffer, &s, 0);

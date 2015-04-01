@@ -447,16 +447,16 @@ failed:
 }
 
 bool
-server_inject_file_recv(transaction_t *trans, const header_t *hdr, twopence_buf_t *payload)
+server_inject_file_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
 {
 	switch (hdr->type) {
-	case PROTO_HDR_TYPE_DATA:
+	case TWOPENCE_PROTO_TYPE_DATA:
 		TRACE("inject: received %u bytes of data\n", twopence_buf_count(payload));
 		transaction_write_data(trans, payload);
 		/* FIXME: how do we propagate write errors to the client? */
 		break;
 
-	case PROTO_HDR_TYPE_EOF:
+	case TWOPENCE_PROTO_TYPE_EOF:
 		TRACE("inject: received EOF\n");
 		transaction_send_minor(trans, 0);
 		socket_shutdown_write(trans->local_sink);
@@ -500,7 +500,7 @@ server_inject_file(transaction_t *trans, const char *username, const char *filen
 }
 
 bool
-server_extract_file_recv(transaction_t *trans, const header_t *hdr, twopence_buf_t *payload)
+server_extract_file_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
 {
 	switch (hdr->type) {
 	default:
@@ -526,13 +526,13 @@ server_extract_file_send(transaction_t *trans)
 	bp = socket_take_recvbuf(sock);
 	if (bp != NULL) {
 		/* Add a header to the packet and send it out */
-		protocol_push_header(bp, PROTO_HDR_TYPE_DATA);
+		twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_DATA);
 		transaction_send_client(trans, bp);
 	}
 
 	if (socket_is_read_eof(sock)) {
 		TRACE("EOF on extracted file");
-		transaction_send_client(trans, protocol_build_eof_packet());
+		transaction_send_client(trans, twopence_protocol_build_eof_packet());
 		transaction_close_source(trans, 0);
 		trans->done = true;
 	}
@@ -583,10 +583,10 @@ server_run_command_send(transaction_t *trans)
 		bp = socket_take_recvbuf(sock);
 		if (bp != NULL) {
 			TRACE("read %u bytes from command fd %d\n", twopence_buf_count(bp), i + 1);
-			protocol_push_header(bp, PROTO_HDR_TYPE_STDOUT + i);
+			twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_STDOUT + i);
 
 			socket_queue_xmit(trans->client_sock, bp);
-			socket_post_recvbuf(sock, protocol_command_buffer_new());
+			socket_post_recvbuf(sock, twopence_protocol_command_buffer_new());
 		}
 
 		if (socket_is_dead(sock))
@@ -628,19 +628,19 @@ server_run_command_send(transaction_t *trans)
 }
 
 bool
-server_run_command_recv(transaction_t *trans, const header_t *hdr, twopence_buf_t *payload)
+server_run_command_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
 {
 	switch (hdr->type) {
-	case PROTO_HDR_TYPE_STDIN:
+	case TWOPENCE_PROTO_TYPE_STDIN:
 		/* queue the buffer for output to the local command */
 		transaction_queue_stdin(trans, twopence_buf_clone(payload));
 		break;
 
-	case PROTO_HDR_TYPE_EOF:
+	case TWOPENCE_PROTO_TYPE_EOF:
 		transaction_write_eof(trans);
 		break;
 
-	case PROTO_HDR_TYPE_INTR:
+	case TWOPENCE_PROTO_TYPE_INTR:
 		/* Send signal to process, and shut down all I/O.
 		 * When we send a signal, we're not really interested in what
 		 * it has to say, not even "aargh".

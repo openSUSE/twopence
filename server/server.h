@@ -91,7 +91,7 @@ struct transaction {
 	bool			done;
 
 	bool			(*send)(transaction_t *);
-	bool			(*recv)(transaction_t *, const header_t *hdr, twopence_buf_t *);
+	bool			(*recv)(transaction_t *, const twopence_hdr_t *hdr, twopence_buf_t *);
 
 	socket_t *		client_sock;
 
