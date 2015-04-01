@@ -45,4 +45,6 @@ extern struct pollfd *	twopence_pollinfo_update(twopence_pollinfo_t *, int fd, i
 extern int		twopence_pollinfo_poll(const twopence_pollinfo_t *);
 extern int		twopence_pollinfo_ppoll(const twopence_pollinfo_t *, const sigset_t *);
 
+extern int		twopence_name_to_signal(const char *signal_name);
+
 #endif /* UTILS_H */

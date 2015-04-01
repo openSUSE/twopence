@@ -113,3 +113,55 @@ twopence_pollinfo_ppoll(const twopence_pollinfo_t *pinfo, const sigset_t *mask)
 		twopence_debug("No events to wait for?!\n");
 	return ppoll(pinfo->pfd, pinfo->num_fds, twopence_timeout_timespec(&pinfo->timeout), mask);
 }
+
+/*
+ * Convert a sigal name to a signal number recognized by our libc.
+ */
+int
+twopence_name_to_signal(const char *signal_name)
+{
+  static const char *signames[NSIG] = {
+	[SIGHUP] = "HUP",
+	[SIGINT] = "INT",
+	[SIGQUIT] = "QUIT",
+	[SIGILL] = "ILL",
+	[SIGTRAP] = "TRAP",
+	[SIGABRT] = "ABRT",
+	[SIGIOT] = "IOT",
+	[SIGBUS] = "BUS",
+	[SIGFPE] = "FPE",
+	[SIGKILL] = "KILL",
+	[SIGUSR1] = "USR1",
+	[SIGSEGV] = "SEGV",
+	[SIGUSR2] = "USR2",
+	[SIGPIPE] = "PIPE",
+	[SIGALRM] = "ALRM",
+	[SIGTERM] = "TERM",
+	[SIGSTKFLT] = "STKFLT",
+	[SIGCHLD] = "CHLD",
+	[SIGCONT] = "CONT",
+	[SIGSTOP] = "STOP",
+	[SIGTSTP] = "TSTP",
+	[SIGTTIN] = "TTIN",
+	[SIGTTOU] = "TTOU",
+	[SIGURG] = "URG",
+	[SIGXCPU] = "XCPU",
+	[SIGXFSZ] = "XFSZ",
+	[SIGVTALRM] = "VTALRM",
+	[SIGPROF] = "PROF",
+	[SIGWINCH] = "WINCH",
+	[SIGIO] = "IO",
+	[SIGPWR] = "PWR",
+	[SIGSYS] = "SYS",
+  };
+  int signo;
+
+  for (signo = 0; signo < NSIG; ++signo) {
+    const char *name = signames[signo];
+
+    if (name && !strcmp(name, signal_name))
+      return signo;
+  }
+
+  return -1;
+}

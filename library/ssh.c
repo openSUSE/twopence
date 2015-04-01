@@ -37,6 +37,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <assert.h>
 
 #include "twopence.h"
+#include "utils.h"
 
 #define BUFFER_SIZE 16384              // Size in bytes of the work buffer for receiving data from the remote host
 
@@ -314,53 +315,11 @@ __twopence_ssh_exit_signal_callback(ssh_session session, ssh_channel channel, co
 {
   twopence_ssh_transaction_t *trans = (twopence_ssh_transaction_t *) userdata;
 
-  static const char *signames[NSIG] = {
-	[SIGHUP] = "HUP",
-	[SIGINT] = "INT",
-	[SIGQUIT] = "QUIT",
-	[SIGILL] = "ILL",
-	[SIGTRAP] = "TRAP",
-	[SIGABRT] = "ABRT",
-	[SIGIOT] = "IOT",
-	[SIGBUS] = "BUS",
-	[SIGFPE] = "FPE",
-	[SIGKILL] = "KILL",
-	[SIGUSR1] = "USR1",
-	[SIGSEGV] = "SEGV",
-	[SIGUSR2] = "USR2",
-	[SIGPIPE] = "PIPE",
-	[SIGALRM] = "ALRM",
-	[SIGTERM] = "TERM",
-	[SIGSTKFLT] = "STKFLT",
-	[SIGCHLD] = "CHLD",
-	[SIGCONT] = "CONT",
-	[SIGSTOP] = "STOP",
-	[SIGTSTP] = "TSTP",
-	[SIGTTIN] = "TTIN",
-	[SIGTTOU] = "TTOU",
-	[SIGURG] = "URG",
-	[SIGXCPU] = "XCPU",
-	[SIGXFSZ] = "XFSZ",
-	[SIGVTALRM] = "VTALRM",
-	[SIGPROF] = "PROF",
-	[SIGWINCH] = "WINCH",
-	[SIGIO] = "IO",
-	[SIGPWR] = "PWR",
-	[SIGSYS] = "SYS",
-  };
-  int signo;
-
-  twopence_debug("%s(%s)\n", __func__, signal);
-  for (signo = 0; signo < NSIG; ++signo) {
-    const char *name = signames[signo];
-
-    if (name && !strcmp(name, signal)) {
-      trans->exit_signal = signo;
-      return;
-    }
+  trans->exit_signal = twopence_name_to_signal(signal);
+  if (trans->exit_signal < 0) {
+    twopence_log_error("process %d exited with unknown signal %s; mapping to SIGIO", trans->pid, signal);
+    trans->exit_signal = SIGIO;
   }
-
-  trans->exit_signal = -1;
 }
 
 static void
