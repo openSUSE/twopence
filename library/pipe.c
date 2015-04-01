@@ -236,6 +236,7 @@ typedef struct twopence_pipe_stream twopence_pipe_stream_t;
 struct twopence_pipe_stream {
 	twopence_pipe_stream_t *next;
 
+	int			fd;
 	twopence_iostream_t *	stream;
 	unsigned char		channel;	/* '0', '1', etc as used by the protocol */
 
@@ -283,6 +284,20 @@ twopence_pipe_stream_new(twopence_iostream_t *stream, unsigned char channel)
   pstream->stream = stream;
   pstream->channel = channel;
   pstream->was_blocking = -1;
+  pstream->fd = -1;
+
+  return pstream;
+}
+
+static twopence_pipe_stream_t *
+twopence_pipe_stream_new_fd(int fd, unsigned char channel)
+{
+  twopence_pipe_stream_t *pstream;
+
+  pstream = calloc(1, sizeof(*pstream));
+  pstream->channel = channel;
+  pstream->was_blocking = -1;
+  pstream->fd = fd;
 
   return pstream;
 }
@@ -311,16 +326,28 @@ twopence_pipe_stream_t *
 twopence_pipe_transaction_attach_source(twopence_pipe_transaction_t *trans, twopence_iostream_t *stream, unsigned char channel)
 {
   twopence_pipe_stream_t *pstream;
+  int fd;
 
   if (trans->local_sources != NULL)
     return NULL;
 
-  pstream = twopence_pipe_stream_new(stream, channel);
+  fd = twopence_iostream_getfd(stream);
+  if (fd >= 0) {
+    pstream = twopence_pipe_stream_new_fd(fd, channel);
+  } else {
+    /* The source stream is a buffer or something even more bizarre.
+     * We need to handle its data synchronously.
+     */
+    pstream = twopence_pipe_stream_new(stream, channel);
+  }
+
+#if 0
   if (stream && channel == TWOPENCE_PROTO_TYPE_STDIN) {
     // Tune stdin so it is nonblocking.
     // Not sure whether this is actually needed any longer
     pstream->was_blocking = twopence_iostream_set_blocking(stream, false);
   }
+#endif
 
   trans->local_sources = pstream;
   return pstream;
@@ -405,7 +432,7 @@ __twopence_pipe_forward_source(twopence_pipe_transaction_t *trans, twopence_pipe
     def_error = TWOPENCE_SEND_FILE_ERROR;
 
   stream = pstream->stream;
-  if (twopence_iostream_eof(stream)) {
+  if (stream && twopence_iostream_eof(stream)) {
 send_eof:
     if (__twopence_pipe_send_eof(trans->handle, &trans->ps) < 0)
       return def_error;
@@ -417,9 +444,13 @@ send_eof:
   bp = twopence_protocol_command_buffer_new();
 
   do {
-	  count = twopence_iostream_read(stream,
+    if (pstream->fd >= 0) {
+      count = read(pstream->fd, twopence_buf_tail(bp), twopence_buf_tailroom(bp));
+    } else {
+      count = twopence_iostream_read(stream,
 		    twopence_buf_tail(bp),
 		    twopence_buf_tailroom(bp));
+    }
   } while (count < 0 && errno == EINTR);
 
   if (count > 0) {
@@ -545,22 +576,19 @@ __twopence_pipe_transaction_doio(twopence_pipe_transaction_t *trans)
      * unplugged later on.
      */
     if ((pstream = trans->local_sources) != NULL && !pstream->eof && !pstream->plugged) {
-      twopence_iostream_t *source = pstream->stream;
-
-      n = twopence_iostream_poll(source, &pfd[nfds], POLLIN);
-      if (n == 0) {
-	/* A zero return code indicates the stream does not support polling,
-	 * which is the case of a buffer for instance.
-	 * Try to read from it directly.
+      if (pstream->fd >= 0) {
+        pfd[nfds].events = POLLIN;
+	pfd[nfds].fd = pstream->fd;
+	nfds++;
+      } else {
+	/* We have no fd for this source stream, and hence we cannot poll.
+	 * Just write data synchronously.
 	 */
         count = __twopence_pipe_forward_source(trans, pstream);
 	if (count <= 0)
 	  return count;
 	continue;
       }
-
-      if (n > 0)
-        nfds++;
     }
 
     n = poll(pfd, nfds, timeout);
