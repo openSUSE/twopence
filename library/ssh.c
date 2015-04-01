@@ -81,6 +81,9 @@ struct twopence_ssh_transaction {
   ssh_channel		channel;
   ssh_event		event;
 
+  /* Set to true when we have an exit status from remote */
+  bool			have_exit_status;
+
   /* Set to true when the transaction is done. */
   bool			done;
 
@@ -111,7 +114,6 @@ struct twopence_ssh_transaction {
   bool			eof_sent;
   bool			use_tty;
   bool			interrupted;
-  int			exit_signal;
 
   /* Right now, we need the callbacks for exactly one reason -
    * to catch the exit signal of the remote process.
@@ -286,6 +288,22 @@ __twopence_ssh_transaction_fail(twopence_ssh_transaction_t *trans, int error)
   trans->done = true;
 }
 
+static inline void
+__twopence_ssh_transaction_set_exit_status(twopence_ssh_transaction_t *trans, int exit_status)
+{
+  trans->status.major = 0;
+  trans->status.minor = exit_status;
+  trans->have_exit_status = true;
+}
+
+static inline void
+__twopence_ssh_transaction_set_exit_signal(twopence_ssh_transaction_t *trans, int exit_signal)
+{
+  trans->status.major = EFAULT;
+  trans->status.minor = exit_signal;
+  trans->have_exit_status = true;
+}
+
 static void
 __twopence_ssh_transaction_setup_stdio(twopence_ssh_transaction_t *trans,
 		twopence_iostream_t *stdin_stream,
@@ -314,12 +332,24 @@ static void
 __twopence_ssh_exit_signal_callback(ssh_session session, ssh_channel channel, const char *signal, int core, const char *errmsg, const char *lang, void *userdata)
 {
   twopence_ssh_transaction_t *trans = (twopence_ssh_transaction_t *) userdata;
+  int signo;
 
-  trans->exit_signal = twopence_name_to_signal(signal);
-  if (trans->exit_signal < 0) {
+  signo = twopence_name_to_signal(signal);
+  if (signo < 0) {
     twopence_log_error("process %d exited with unknown signal %s; mapping to SIGIO", trans->pid, signal);
-    trans->exit_signal = SIGIO;
+    signo = SIGIO;
   }
+  __twopence_ssh_transaction_set_exit_signal(trans, signo);
+}
+
+static void
+__twopence_ssh_exit_status_callback(ssh_session session, ssh_channel channel, int exit_status, void *userdata)
+{
+  twopence_ssh_transaction_t *trans = (twopence_ssh_transaction_t *) userdata;
+
+  trans->have_exit_status = true;
+  trans->status.major = 0;
+  trans->status.minor = exit_status;
 }
 
 static void
@@ -329,6 +359,7 @@ __twopence_ssh_init_callbacks(twopence_ssh_transaction_t *trans)
 
   if (cb->size == 0) {
     cb->channel_exit_signal_function = __twopence_ssh_exit_signal_callback;
+    cb->channel_exit_status_function = __twopence_ssh_exit_status_callback;
     ssh_callbacks_init(cb);
   }
 
@@ -397,7 +428,7 @@ __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
   twopence_status_t *status = &trans->status;
 
   if (trans->channel == NULL) {
-    __twopence_ssh_transaction_fail(trans, TWOPENCE_INTERNAL_ERROR);
+    __twopence_ssh_transaction_fail(trans, TWOPENCE_TRANSPORT_ERROR);
     return -1;
   }
 
@@ -406,8 +437,7 @@ __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
    * fake the exit signal here.
    */
   if (trans->interrupted) {
-    trans->status.major = EFAULT;
-    trans->status.minor = trans->exit_signal;
+    assert(trans->status.major == EFAULT);
     return 0;
   }
 
@@ -417,18 +447,19 @@ __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
     return -1;
   }
 
-  /* Get the exit status as reported by the SSH server.
-   * If the command exited with a signal, this will be SSH_ERROR;
-   * but the exit_signal_callback will be invoked, which allows us
-   * to snarf the exit_signal
-   */
-  status->minor = ssh_channel_get_exit_status(trans->channel);
-
-  if (status->minor == SSH_ERROR && trans->exit_signal) {
-    // mimic the behavior of the test server for now.
-    // in the long run, better reporting would be great.
-    status->major = EFAULT;
-    status->minor = trans->exit_signal;
+  if (!trans->have_exit_status) {
+    /* Get the exit status as reported by the SSH server.
+     * If the command exited with a signal, this will be SSH_ERROR;
+     * but the exit_signal_callback will be invoked, which allows us
+     * to snarf the exit_signal
+     */
+    twopence_log_error("transaction %d has no exit status", trans->pid);
+    status->major = 0;
+    (void) ssh_channel_get_exit_status(trans->channel);
+    if (!trans->have_exit_status) {
+      twopence_log_error("ssh_channel_get_exit_status didn't set the exit status either, faking it");
+      trans->status.major = EIO;
+    }
   }
 
   twopence_debug("exit status is %d/%d\n", status->major, status->minor);
@@ -438,8 +469,8 @@ __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
 static void
 __twopence_ssh_fake_exit_signal(twopence_ssh_transaction_t *trans, int signal)
 {
+  __twopence_ssh_transaction_set_exit_signal(trans, signal);
   trans->interrupted = true;
-  trans->exit_signal = signal;
   trans->done = true;
 }
 
@@ -615,7 +646,7 @@ __twopence_ssh_poll(struct twopence_ssh_target *handle)
           return 0;
 
         twopence_debug2("eof=%d/%d/%d\n", trans->stdin.eof, trans->stdout.eof, trans->stderr.eof);
-        if (trans->stdout.eof && trans->stderr.eof)
+        if (trans->stdout.eof && trans->stderr.eof && trans->have_exit_status)
           trans->done = true;
       }
 
