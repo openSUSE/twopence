@@ -155,10 +155,19 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 			continue;
 		}
 
+		if (conn->client_id != ps.cid) {
+			TRACE("ignoring packet with mismatched client id");
+			continue;
+		}
+
 		/* Here, we could extract a transaction ID from the header
 		 * and locate the right transaction instead of just using
 		 * the default one. */
 		if ((trans = conn->current_transaction) != NULL) {
+			if (trans->id != ps.xid) {
+				TRACE("ignoring packet with mismatched transaction id");
+				continue;
+			}
 			if (trans->done) {
 				/* Coming late to the party, uh? */
 			} else {
