@@ -33,8 +33,10 @@ struct twopence_transaction {
 	unsigned int		type;
 	unsigned int		id;
 
+	/* These are really server side only */
 	bool			major_sent;
 	bool			minor_sent;
+
 	bool			done;
 
 	bool			(*send)(twopence_transaction_t *);
@@ -43,18 +45,27 @@ struct twopence_transaction {
 	twopence_protocol_state_t ps;
 	twopence_sock_t *	client_sock;
 
+	/* These are really server side only (for command execution) */
 	pid_t			pid;
 	int			status;
 
 	twopence_trans_channel_t *local_sink;
 	twopence_trans_channel_t *local_source;
+
+	struct {
+		twopence_status_t	status_ret;
+		int			exception;
+	} client;
 };
 
+extern twopence_transaction_t *	twopence_transaction_new_ex(twopence_sock_t *, unsigned int, const twopence_protocol_state_t *, size_t);
 extern twopence_transaction_t *	twopence_transaction_new(twopence_sock_t *client, unsigned int type, const twopence_protocol_state_t *ps);
 extern void			twopence_transaction_free(twopence_transaction_t *trans);
 extern const char *		twopence_transaction_describe(const twopence_transaction_t *);
 extern twopence_trans_channel_t *twopence_transaction_attach_local_sink(twopence_transaction_t *trans, int fd, unsigned char channel);
 extern twopence_trans_channel_t *twopence_transaction_attach_local_source(twopence_transaction_t *trans, int fd, unsigned char channel);
+extern twopence_trans_channel_t *twopence_transaction_attach_local_sink_stream(twopence_transaction_t *trans, unsigned char channel, twopence_iostream_t *);
+extern twopence_trans_channel_t *twopence_transaction_attach_local_source_stream(twopence_transaction_t *trans, unsigned char channel, twopence_iostream_t *);
 extern void			twopence_transaction_close_sink(twopence_transaction_t *trans, unsigned char id);
 extern void			twopence_transaction_close_source(twopence_transaction_t *trans, unsigned char id);
 extern unsigned int		twopence_transaction_num_channels(const twopence_transaction_t *trans);
@@ -70,6 +81,10 @@ extern void			twopence_transaction_send_minor(twopence_transaction_t *trans, uns
 extern void			twopence_transaction_send_timeout(twopence_transaction_t *trans);
 extern twopence_trans_channel_t *twopence_transaction_find_sink(twopence_transaction_t *trans, unsigned char channel);
 extern twopence_trans_channel_t *twopence_transaction_find_source(twopence_transaction_t *trans, unsigned char channel);
+
+/* Client side functions */
+extern void			twopence_transaction_set_error(twopence_transaction_t *, int);
+
 extern bool			twopence_transaction_channel_is_read_eof(const twopence_trans_channel_t *);
 extern void			twopence_transaction_channel_set_callback_read_eof(twopence_trans_channel_t *, void (*fn)(twopence_transaction_t *, twopence_trans_channel_t *));
 extern void			twopence_transaction_channel_set_callback_write_eof(twopence_trans_channel_t *, void (*fn)(twopence_transaction_t *, twopence_trans_channel_t *));

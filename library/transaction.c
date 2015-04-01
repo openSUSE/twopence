@@ -55,6 +55,7 @@ struct twopence_trans_channel {
 	bool			sync;		/* if true, all writes are fully synchronous */
 
 	twopence_sock_t *	socket;
+	twopence_iostream_t *	stream;
 
 	/* This is needed by the client side "inject" code:
 	 * Before we start sending the actual file data, we want confirmation from
@@ -87,6 +88,17 @@ twopence_transaction_channel_from_fd(int fd, int flags)
 	return sink;
 }
 
+static twopence_trans_channel_t *
+twopence_transaction_channel_from_stream(twopence_iostream_t *stream, int flags)
+{
+	twopence_trans_channel_t *sink;
+
+	sink = calloc(1, sizeof(*sink));
+	sink->stream = stream;
+
+	return sink;
+}
+
 static void
 twopence_transaction_channel_free(twopence_trans_channel_t *sink)
 {
@@ -94,6 +106,9 @@ twopence_transaction_channel_free(twopence_trans_channel_t *sink)
 	if (sink->socket)
 		twopence_sock_free(sink->socket);
 	sink->socket = NULL;
+
+	/* Do NOT free the iostream */
+
 	free(sink);
 }
 
@@ -104,6 +119,8 @@ twopence_transaction_channel_is_read_eof(const twopence_trans_channel_t *channel
 
 	if (sock)
 		return twopence_sock_is_read_eof(sock);
+	if (channel->stream)
+		return twopence_iostream_eof(channel->stream);
 	return false;
 }
 
@@ -156,21 +173,28 @@ twopence_transaction_channel_list_close(twopence_trans_channel_t **list, unsigne
 }
 
 /*
- * Command handling
+ * twopence transactions as used by our own on-the-wire protocol
  */
 twopence_transaction_t *
-twopence_transaction_new(twopence_sock_t *client, unsigned int type, const twopence_protocol_state_t *ps)
+twopence_transaction_new_ex(twopence_sock_t *transport, unsigned int type, const twopence_protocol_state_t *ps, size_t size)
 {
 	twopence_transaction_t *trans;
 
-	trans = calloc(1, sizeof(*trans));
+	assert(size >= sizeof(*trans));
+	trans = calloc(1, size);
 	trans->ps = *ps;
 	trans->id = ps->xid;
 	trans->type = type;
-	trans->client_sock = client;
+	trans->client_sock = transport;
 
 	twopence_debug("%s: created new transaction", twopence_transaction_describe(trans));
 	return trans;
+}
+
+twopence_transaction_t *
+twopence_transaction_new(twopence_sock_t *client, unsigned int type, const twopence_protocol_state_t *ps)
+{
+	return twopence_transaction_new_ex(client, type, ps, sizeof(twopence_transaction_t));
 }
 
 void
@@ -210,6 +234,12 @@ twopence_transaction_describe(const twopence_transaction_t *trans)
 	return descbuf;
 }
 
+void
+twopence_transaction_set_error(twopence_transaction_t *trans, int rc)
+{
+	trans->client.exception = rc;
+}
+
 unsigned int
 twopence_transaction_num_channels(const twopence_transaction_t *trans)
 {
@@ -223,6 +253,7 @@ twopence_transaction_num_channels(const twopence_transaction_t *trans)
 	return count;
 }
 
+/* FIXME: swap fd and id arguments */
 twopence_trans_channel_t *
 twopence_transaction_attach_local_sink(twopence_transaction_t *trans, int fd, unsigned char id)
 {
@@ -232,6 +263,19 @@ twopence_transaction_attach_local_sink(twopence_transaction_t *trans, int fd, un
 	fcntl(fd, F_SETFL, O_NONBLOCK);
 
 	sink = twopence_transaction_channel_from_fd(fd, O_WRONLY);
+	sink->id = id;
+
+	sink->next = trans->local_sink;
+	trans->local_sink = sink;
+	return sink;
+}
+
+twopence_trans_channel_t *
+twopence_transaction_attach_local_sink_stream(twopence_transaction_t *trans, unsigned char id, twopence_iostream_t *stream)
+{
+	twopence_trans_channel_t *sink;
+
+	sink = twopence_transaction_channel_from_stream(stream, O_WRONLY);
 	sink->id = id;
 
 	sink->next = trans->local_sink;
@@ -278,15 +322,21 @@ twopence_transaction_close_source(twopence_transaction_t *trans, unsigned char i
 static bool
 twopence_transaction_channel_write_data(twopence_trans_channel_t *sink, twopence_buf_t *payload)
 {
+	twopence_iostream_t *stream;
 	twopence_sock_t *sock;
 
-	/* If there's no socket attached, silently discard the data */
-	if ((sock = sink->socket) == NULL)
-		return true;
-
 	twopence_debug("About to write %u bytes of data to local sink\n", twopence_buf_count(payload));
-	if (twopence_sock_xmit_shared(sock, payload) < 0)
-		return false;
+
+	if ((sock = sink->socket) != NULL) {
+		if (twopence_sock_xmit_shared(sock, payload) < 0)
+			return false;
+	} else
+	if ((stream = sink->stream) != NULL) {
+		unsigned int count = twopence_buf_count(payload);
+
+		twopence_iostream_write(stream, twopence_buf_head(payload), count);
+		twopence_buf_advance_head(payload, count);
+	}
 
 	return true;
 }
@@ -356,6 +406,7 @@ twopence_transaction_channel_doio(twopence_transaction_t *trans, twopence_trans_
 {
 	twopence_sock_t *sock = channel->socket;
 
+	twopence_debug("%s: channel %c i/o", twopence_transaction_describe(trans), channel->id);
 	if (sock) {
 		twopence_buf_t *bp;
 
@@ -406,6 +457,7 @@ twopence_transaction_fill_poll(twopence_transaction_t *trans, struct pollfd *pfd
 		twopence_trans_channel_t *source;
 
 		for (source = trans->local_source; source; source = source->next) {
+			twopence_debug("%s: poll channel %c", twopence_transaction_describe(trans), source->id);
 			if (nfds < max && twopence_transaction_channel_poll(source, pfd + nfds))
 				nfds++;
 		}

@@ -30,6 +30,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "twopence.h"
 #include "protocol.h"
+#include "transaction.h"
 #include "pipe.h"
 
 #define BUFFER_SIZE 32768              // Size in bytes of the work buffer for receiving data from the remote
@@ -265,6 +266,12 @@ struct twopence_pipe_transaction {
 	int			(*process_packet)(struct twopence_pipe_target *, twopence_pipe_transaction_t *,
 						const twopence_hdr_t *hdr, twopence_buf_t *payload);
 };
+
+twopence_transaction_t *
+twopence_pipe_transaction_new(struct twopence_pipe_target *handle, unsigned int type)
+{
+	return twopence_transaction_new(handle->link_sock, type, &handle->ps);
+}
 
 static void
 twopence_pipe_transaction_init(twopence_pipe_transaction_t *trans, struct twopence_pipe_target *handle)
@@ -641,6 +648,90 @@ __twopence_pipe_transaction_run(twopence_pipe_transaction_t *trans, twopence_sta
   return rc;
 }
 
+
+static int
+__twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transaction_t *trans, twopence_status_t *status)
+{
+	twopence_sock_t *sock = handle->link_sock;
+
+	while (!trans->done) {
+		/* This is connection_fill_poll() */
+		{
+			struct pollfd pfd[16];
+			unsigned int nfds = 0, max = 16;
+
+			twopence_sock_prepare_poll(sock);
+
+			/* Make sure we have a receive buffer posted. */
+			twopence_sock_post_recvbuf_if_needed(sock, TWOPENCE_PROTO_MAX_PACKET);
+
+			if (nfds < max && twopence_sock_fill_poll(sock, pfd + nfds))
+				nfds++;
+
+			nfds += twopence_transaction_fill_poll(trans, pfd, max);
+
+			/* FIXME: timeout handling */
+			poll(pfd, nfds, -1);
+		}
+
+		/* This is connection_doio() */
+		{
+			twopence_buf_t *bp;
+
+			if (twopence_sock_doio(sock) < 0) {
+				twopence_log_error("I/O error on socket: %m\n");
+				goto protocol_error;
+			}
+
+			bp = twopence_sock_get_recvbuf(sock);
+			while (bp && twopence_protocol_buffer_complete(bp)) {
+				const twopence_hdr_t *hdr;
+				twopence_protocol_state_t ps;
+				twopence_buf_t payload;
+
+				hdr = twopence_protocol_dissect_ps(bp, &payload, &ps);
+				if (hdr == NULL) {
+					twopence_log_error("%s: received invalid packet\n", __func__);
+					goto protocol_error;
+				}
+
+				twopence_debug("%s: cid=%u xid=%u type=%c len=%u\n", __func__,
+						ps.cid, ps.xid, hdr->type, twopence_buf_count(&payload));
+
+				if (ps.xid != trans->ps.xid) {
+					twopence_log_error("%s: xid mismatch", __func__);
+					continue;
+				}
+
+				twopence_transaction_recv_packet(trans, hdr, &payload);
+			}
+
+			if (twopence_buf_count(bp) == 0) {
+				/* All data has been used. Just reset the buffer */
+				twopence_buf_reset(bp);
+			} else {
+				/* There's an incomplete packet after the end of
+				* the one(s) we just processed.
+				* Make sure we still have ample tailroom
+				* to receive the rest of the packet.
+				*/
+				if (twopence_buf_tailroom_max(bp) < TWOPENCE_PROTO_MAX_PACKET)
+					twopence_buf_compact(bp);
+			}
+		}
+
+	}
+
+	if (trans->client.exception < 0)
+		return trans->client.exception;
+
+	return 0;
+
+protocol_error:
+	/* kill the connection? */
+	return TWOPENCE_PROTOCOL_ERROR;
+}
+
 ///////////////////////////// Middle layer //////////////////////////////////////
 //
 
@@ -717,6 +808,7 @@ __twopence_pipe_inject_process_packet(struct twopence_pipe_target *handle, twope
 /*
  * Callback function that handles incoming packets for a recvfile transaction.
  */
+#if 0
 static int
 __twopence_pipe_extract_process_packet(struct twopence_pipe_target *handle, twopence_pipe_transaction_t *trans,
 		const twopence_hdr_t *hdr, twopence_buf_t *payload)
@@ -738,7 +830,37 @@ __twopence_pipe_extract_process_packet(struct twopence_pipe_target *handle, twop
   }
   return 0;
 }
+#endif
 
+static bool
+__twopence_pipe_extract_recv(twopence_transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
+{
+  switch (hdr->type) {
+  case TWOPENCE_PROTO_TYPE_MAJOR:
+    /* Remote error occurred, usually when trying to open the file */
+    (void) twopence_protocol_dissect_int(payload, &trans->client.status_ret.major);
+    twopence_transaction_set_error(trans, TWOPENCE_RECEIVE_FILE_ERROR);
+    trans->done = true;
+    break;
+
+  case TWOPENCE_PROTO_TYPE_EOF:
+    /* End of data */
+    trans->done = true;
+    break;
+
+  default:
+    twopence_transaction_set_error(trans, TWOPENCE_RECEIVE_FILE_ERROR);
+    break;
+  }
+  return true;
+}
+
+static void
+__twopence_pipe_extract_eof(twopence_transaction_t *trans, twopence_trans_channel_t *channel)
+{
+  twopence_debug("%s: received EOF on data", twopence_transaction_describe(trans));
+  trans->done = true;
+}
 
 ///////////////////////////// Top layer /////////////////////////////////////////
 
@@ -865,7 +987,8 @@ int __twopence_pipe_inject_file
 int _twopence_extract_virtio_serial
   (struct twopence_pipe_target *handle, twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
-  twopence_pipe_transaction_t trans;
+  twopence_transaction_t *trans;
+  twopence_trans_channel_t *sink;
   twopence_buf_t *bp;
   int rc;
 
@@ -877,25 +1000,32 @@ int _twopence_extract_virtio_serial
   if (__twopence_pipe_open_link(handle) < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
-  twopence_pipe_transaction_init(&trans, handle);
-  trans.process_packet = __twopence_pipe_extract_process_packet;
+  trans = twopence_pipe_transaction_new(handle, TWOPENCE_PROTO_TYPE_EXTRACT);
+
+  trans->recv = __twopence_pipe_extract_recv;
+
+#ifdef later
   trans.print_dots = xfer->print_dots;
+#endif
 
   // Prepare command to send to the remote host
-  bp = twopence_protocol_build_extract_packet(&trans.ps, xfer->user, xfer->remote.name);
+  bp = twopence_protocol_build_extract_packet(&trans->ps, xfer->user, xfer->remote.name);
 
   // Send command (including terminating NUL)
   if (__twopence_pipe_send(handle, bp) < 0)
     return TWOPENCE_SEND_COMMAND_ERROR;
 
-  twopence_pipe_transaction_attach_sink(&trans, xfer->local_stream, TWOPENCE_PROTO_TYPE_DATA);
+  sink = twopence_transaction_attach_local_sink_stream(trans, TWOPENCE_PROTO_TYPE_DATA, xfer->local_stream);
+  twopence_transaction_channel_set_callback_write_eof(sink, __twopence_pipe_extract_eof);
 
-  rc = __twopence_pipe_transaction_run(&trans, status);
+  rc = __twopence_transaction_run(handle, trans, status);
 
+#ifdef later
   if (trans.print_dots && trans.total_data != 0)
     __twopence_pipe_output(trans.handle, '\n');
+#endif
 
-  twopence_pipe_transaction_destroy(&trans);
+  twopence_transaction_free(trans);
   return rc;
 }
 
