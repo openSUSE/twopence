@@ -445,9 +445,19 @@ except:
 	testCaseException()
 testCaseReport()
 
+try:
+	testCaseBegin("check whether target supports backgrounded commands")
+	target.wait()
+	print "It looks like it does"
+	backgroundingSupported = True
+except:
+	print "No, it does not"
+	backgroundingSupported = False
+testCaseReport()
+
 testCaseBegin("run /bin/pwd in the background")
-if target.type != "ssh":
-    testCaseSkip("background execution only available in ssh plugin right now")
+if not(backgroundingSupported):
+    testCaseSkip("background execution not available for %s plugin right now" % target.type)
 else:
     try:
 	cmd = twopence.Command("/bin/pwd", background = 1);
@@ -470,10 +480,11 @@ else:
     except:
 	testCaseException()
 testCaseReport()
+testSuiteExit()
 
 testCaseBegin("run several processes in the background")
-if target.type != "ssh":
-    testCaseSkip("background execution only available in ssh plugin right now")
+if not(backgroundingSupported):
+    testCaseSkip("background execution not available for %s plugin right now" % target.type)
 else:
     try:
 	cmds = []
@@ -499,8 +510,8 @@ else:
 testCaseReport()
 
 testCaseBegin("wait for a specific process")
-if target.type != "ssh":
-    testCaseSkip("background execution only available in ssh plugin right now")
+if not(backgroundingSupported):
+    testCaseSkip("background execution not available for %s plugin right now" % target.type)
 else:
     try:
 	cmd1 = twopence.Command("sleep 2", background = 1);
@@ -531,8 +542,8 @@ else:
 testCaseReport()
 
 testCaseBegin("combine foreground and background process")
-if target.type != "ssh":
-    testCaseSkip("background execution only available in ssh plugin right now")
+if not(backgroundingSupported):
+    testCaseSkip("background execution not available for %s plugin right now" % target.type)
 else:
     try:
 	cmd1 = twopence.Command("sleep 2", background = 1);
