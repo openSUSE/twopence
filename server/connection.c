@@ -129,6 +129,26 @@ connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
 	return nfds;
 }
 
+/*
+ * Find the transaction corresponding to a given XID.
+ * Trivial for now, as we do not support concurrent transactions yet.
+ */
+transaction_t *
+connection_find_transaction(connection_t *conn, uint16_t xid)
+{
+	transaction_t *trans;
+
+	if ((trans = conn->current_transaction) == NULL)
+		return NULL;
+
+	if (trans->id != xid) {
+		TRACE("ignoring packet with mismatched transaction id");
+		return NULL;
+	}
+
+	return trans;
+}
+
 bool
 connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 {
@@ -163,11 +183,8 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 		/* Here, we could extract a transaction ID from the header
 		 * and locate the right transaction instead of just using
 		 * the default one. */
-		if ((trans = conn->current_transaction) != NULL) {
-			if (trans->id != ps.xid) {
-				TRACE("ignoring packet with mismatched transaction id");
-				continue;
-			}
+		trans = connection_find_transaction(conn, ps.xid);
+		if (trans != NULL) {
 			if (trans->done) {
 				/* Coming late to the party, uh? */
 			} else {
