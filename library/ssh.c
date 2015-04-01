@@ -64,6 +64,12 @@ struct twopence_ssh_transaction {
   struct twopence_ssh_target *handle;
   ssh_channel		channel;
 
+  /* This is used by the lower-level routines to report exceptions
+   * while processing the transaction. The value of the exception
+   * is a twopence error code.
+   */
+  int			exception;
+
   /* If non-NULL, this is where we store the command's status */
   twopence_status_t *	status_ret;
 
@@ -188,6 +194,13 @@ __twopence_ssh_transaction_free(struct twopence_ssh_transaction *trans)
 
   __twopence_ssh_transaction_close_channel(trans);
   free(trans);
+}
+
+static inline void
+__twopence_ssh_transaction_fail(twopence_ssh_transaction_t *trans, int error)
+{
+  if (!trans->exception)
+    trans->exception = error;
 }
 
 static void
@@ -345,8 +358,10 @@ __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
     return 0;
 
   /* If we haven't done so, send the EOF now. */
-  if (__twopence_ssh_transaction_send_eof(trans) == SSH_ERROR)
-    return -7;
+  if (__twopence_ssh_transaction_send_eof(trans) == SSH_ERROR) {
+    __twopence_ssh_transaction_fail(trans, TWOPENCE_RECEIVE_RESULTS_ERROR);
+    return -1;
+  }
 
   /* Get the exit status as reported by the SSH server.
    * If the command exited with a signal, this will be SSH_ERROR;
@@ -427,8 +442,10 @@ __twopence_ssh_transaction_forward_output(twopence_ssh_transaction_t *trans, str
     SSH_TRACE("%s: trying to read some data from %s\n", __func__, name);
 
     size = ssh_channel_read_nonblocking(trans->channel, buffer, sizeof(buffer), out->index);
-    if (size == SSH_ERROR)
-      return -2;
+    if (size == SSH_ERROR) {
+      __twopence_ssh_transaction_fail(trans, TWOPENCE_RECEIVE_RESULTS_ERROR);
+      return -1;
+    }
 
     if (size == SSH_EOF) {
       SSH_TRACE("%s: %s is at EOF\n", __func__, name);
@@ -437,8 +454,10 @@ __twopence_ssh_transaction_forward_output(twopence_ssh_transaction_t *trans, str
 
     /* If there is no local stream to write it to, simply drop it on the floor */
     if (size > 0 && out->stream) {
-      if (twopence_iostream_write(out->stream, buffer, size) < 0)
-	return -2;
+      if (twopence_iostream_write(out->stream, buffer, size) < 0) {
+        __twopence_ssh_transaction_fail(trans, TWOPENCE_RECEIVE_RESULTS_ERROR);
+        return -1;
+      }
     }
   }
 
@@ -476,8 +495,10 @@ __twopence_ssh_transaction_poll_stdin(twopence_ssh_transaction_t *trans)
        * that has no open fd, or it's at EOF already.
        * In either case, we should try reading from this stream right away. */
       SSH_TRACE("%s: writing stdin synchronously to peer\n", __func__);
-      if (__twopence_ssh_transaction_forward_stdin(trans) < 0)
+      if (__twopence_ssh_transaction_forward_stdin(trans) < 0) {
+        __twopence_ssh_transaction_fail(trans, TWOPENCE_FORWARD_INPUT_ERROR);
         return -1;
+      }
     }
     if (n < 0) {
       __twopence_ssh_transaction_mark_stdin_eof(trans);
@@ -543,26 +564,30 @@ __twopence_ssh_poll(struct twopence_ssh_transaction *trans)
 
     if (trans->stdin.pfd.revents & (POLLIN|POLLHUP)) {
       SSH_TRACE("%s: trying to read some data from stdin\n", __func__);
-      if (__twopence_ssh_transaction_forward_stdin(trans) < 0)
+      if (__twopence_ssh_transaction_forward_stdin(trans) < 0) {
+	__twopence_ssh_transaction_fail(trans, TWOPENCE_FORWARD_INPUT_ERROR);
         return -1;
+      }
     }
     trans->stdin.pfd.revents = 0;
 
     if (__twopence_ssh_transaction_forward_output(trans, &trans->stdout, "stdout") < 0)
-      return -2;
+      return -1;
 
     if (__twopence_ssh_transaction_forward_output(trans, &trans->stderr, "stderr") < 0)
-      return -2;
+      return -1;
 
     SSH_TRACE("eof=%d/%d/%d\n", trans->stdin.eof, trans->stdout.eof, trans->stderr.eof);
     if (trans->stdout.eof && trans->stderr.eof)
-      break;
+      return __twopence_ssh_transaction_get_exit_status(trans);
 
     gettimeofday(&now, NULL);
     timeout = -1;
 
-    if (!__twopence_ssh_check_timeout(&now, &trans->command_timeout, &timeout))
-      return -5;
+    if (!__twopence_ssh_check_timeout(&now, &trans->command_timeout, &timeout)) {
+      __twopence_ssh_transaction_fail(trans, TWOPENCE_COMMAND_TIMEOUT_ERROR);
+      return -1;
+    }
 
     event = ssh_event_new();
 
@@ -572,8 +597,10 @@ __twopence_ssh_poll(struct twopence_ssh_transaction *trans)
     rc = ssh_event_dopoll(event, timeout);
     ssh_event_free(event);
 
-    if (rc == SSH_ERROR)
-      return -6;
+    if (rc == SSH_ERROR) {
+      __twopence_ssh_transaction_fail(trans, TWOPENCE_RECEIVE_RESULTS_ERROR);
+      return -1;
+    }
 
     SSH_TRACE("ssh_event_dopoll() = %d\n", rc);
   } while (true);
@@ -725,6 +752,7 @@ __twopence_ssh_command_ssh
     return rc;
   }
 
+  status_ret->minor = 0;
   rc = __twopence_ssh_transaction_execute_command(trans, cmd, status_ret);
   if (rc != 0) {
     __twopence_ssh_transaction_free(trans);
@@ -734,44 +762,9 @@ __twopence_ssh_command_ssh
   // Read "standard output", "standard error", and remote error code
   rc = __twopence_ssh_poll(trans);
 
-  status_ret->minor = 0;
-  if (rc == 0)
-    rc = __twopence_ssh_transaction_get_exit_status(trans);
-
-  /* FIXME: might be better to return useful status values from
-   * __twopence_ssh_poll() in the first place. Currently we
-   * don't, thus we need to translate them here.
-   */
-  switch (rc)
-  {
-    case 0:
-      break;
-
-    case -1:
-      rc = TWOPENCE_FORWARD_INPUT_ERROR;
-      break;
-
-    case -2:
-    case -3:
-    case -4:
-      rc = TWOPENCE_RECEIVE_RESULTS_ERROR;
-      break;
-
-    case -5:
-      rc = TWOPENCE_COMMAND_TIMEOUT_ERROR;
-      break;
-
-    case -6:
-      /* The following matches what the serial/virtio server code currently
-       * does, but it feels wrong. What about TWOPENCE_COMMAND_INTERRUPTED_ERROR?
-       */
-      status_ret->major = EFAULT;
-      status_ret->minor = SIGINT;
-      rc = 0;
-      break;
-
-    default:
-      rc = TWOPENCE_RECEIVE_RESULTS_ERROR;
+  if (rc < 0) {
+    assert(trans->exception < 0);
+    rc = trans->exception;
   }
 
   // Terminate the channel
