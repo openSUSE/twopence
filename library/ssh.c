@@ -64,6 +64,9 @@ struct twopence_ssh_transaction {
   struct twopence_ssh_target *handle;
   ssh_channel		channel;
 
+  /* If non-NULL, this is where we store the command's status */
+  twopence_status_t *	status_ret;
+
   struct {
     twopence_iostream_t *stream;
     struct pollfd	pfd;
@@ -274,6 +277,40 @@ __twopence_ssh_init_callbacks(twopence_ssh_transaction_t *trans)
 
   cb->userdata = trans;
   ssh_set_channel_callbacks(trans->channel, cb);
+}
+
+static int
+__twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
+{
+  twopence_status_t *status_ret;
+
+  if ((status_ret = trans->status_ret) == NULL)
+    return 0;
+
+  if (trans->channel == NULL)
+    return 0;
+
+  /* If we haven't done so, send the EOF now. */
+  if (__twopence_ssh_transaction_send_eof(trans) == SSH_ERROR)
+    return -6;
+
+  /* Get the exit status as reported by the SSH server.
+   * If the command exited with a signal, this will be SSH_ERROR;
+   * but the exit_signal_callback will be invoked, which allows us
+   * to snarf the exit_signal
+   */
+  status_ret->minor = ssh_channel_get_exit_status(trans->channel);
+
+  if (status_ret->minor == SSH_ERROR && trans->exit_signal) {
+    // mimic the behavior of the test server for now.
+    // in the long run, better reporting would be great.
+    status_ret->major = EFAULT;
+    status_ret->minor = trans->exit_signal;
+  }
+
+  /* We successfully reported the exit status; do not try again */
+  trans->status_ret = NULL;
+  return 0;
 }
 
 ///////////////////////////// Middle layer //////////////////////////////////////
@@ -644,29 +681,22 @@ __twopence_ssh_command_ssh
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
 
+  trans->status_ret = status_ret;
+
   // Read "standard output", "standard error", and remote error code
   rc = __twopence_ssh_poll(trans);
 
-  /* If we haven't done so, send the EOF now. */
-  __twopence_ssh_transaction_send_eof(trans);
+  status_ret->minor = 0;
+  if (rc == 0)
+    rc = __twopence_ssh_transaction_get_exit_status(trans);
 
   /* FIXME: might be better to return useful status values from
    * __twopence_ssh_poll() in the first place. Currently we
    * don't, thus we need to translate them here.
    */
-  status_ret->minor = 0;
   switch (rc)
   {
     case 0:
-      status_ret->minor = ssh_channel_get_exit_status(channel);
-      if (status_ret->minor == SSH_ERROR)
-        __twopence_ssh_transaction_close_channel(trans);
-      if (trans->exit_signal) {
-	// mimic the behavior of the test server for now.
-	// in the long run, better reporting would be great.
-	status_ret->major = EFAULT;
-	status_ret->minor = trans->exit_signal;
-      }
       break;
 
     case -1:

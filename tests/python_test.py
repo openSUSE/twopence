@@ -222,7 +222,6 @@ except:
 	testCaseException()
 testCaseReport()
 
-
 testCaseBegin("verify that command is run as root by default")
 try:
 	status = target.run("id -un")
