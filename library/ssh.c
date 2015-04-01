@@ -392,7 +392,7 @@ __twopence_ssh_transaction_open_session(twopence_ssh_transaction_t *trans, const
 }
 
 static int
-__twopence_ssh_transaction_execute_command(twopence_ssh_transaction_t *trans, twopence_command_t *cmd, twopence_status_t *status_ret)
+__twopence_ssh_transaction_execute_command(twopence_ssh_transaction_t *trans, twopence_command_t *cmd)
 {
   if (trans->channel == NULL)
     return TWOPENCE_OPEN_SESSION_ERROR;
@@ -662,7 +662,7 @@ __twopence_ssh_transaction_add_running(struct twopence_ssh_target *handle, twope
 }
 
 static twopence_ssh_transaction_t *
-__twopence_ssh_transaction_get_done(struct twopence_ssh_target *handle, unsigned int want_pid)
+__twopence_ssh_get_completed_transaction(struct twopence_ssh_target *handle, unsigned int want_pid)
 {
   twopence_ssh_transaction_t **pos, *trans;
 
@@ -684,7 +684,7 @@ __twopence_ssh_transaction_get_done(struct twopence_ssh_target *handle, unsigned
 }
 
 static int
-__twopence_ssh_reap(struct twopence_ssh_target *handle)
+__twopence_ssh_reap_completed(struct twopence_ssh_target *handle)
 {
   twopence_ssh_transaction_t **pos, **tail, *trans;
   int nreaped = 0;
@@ -851,8 +851,7 @@ __twopence_ssh_command_ssh
     return rc;
   }
 
-  status_ret->minor = 0;
-  rc = __twopence_ssh_transaction_execute_command(trans, cmd, status_ret);
+  rc = __twopence_ssh_transaction_execute_command(trans, cmd);
   if (rc != 0) {
     __twopence_ssh_transaction_free(trans);
     return rc;
@@ -878,9 +877,9 @@ __twopence_ssh_command_ssh
       return rc;
     }
 
-    if (!__twopence_ssh_reap(handle))
+    if (!__twopence_ssh_reap_completed(handle))
       return TWOPENCE_INTERNAL_ERROR;
-  } while (!__twopence_ssh_transaction_get_done(handle, trans->pid));
+  } while (!__twopence_ssh_get_completed_transaction(handle, trans->pid));
 
   if (trans->exception) {
     rc = trans->exception;
@@ -1227,7 +1226,7 @@ twopence_ssh_wait(struct twopence_target *opaque_handle, int want_pid, twopence_
   int rc;
 
   while (true) {
-    trans = __twopence_ssh_transaction_get_done(handle, want_pid);
+    trans = __twopence_ssh_get_completed_transaction(handle, want_pid);
     if (trans != NULL)
       break;
 
@@ -1238,7 +1237,7 @@ twopence_ssh_wait(struct twopence_target *opaque_handle, int want_pid, twopence_
     if (rc < 0)
       return rc;
 
-    if (!__twopence_ssh_reap(handle))
+    if (!__twopence_ssh_reap_completed(handle))
       return TWOPENCE_INTERNAL_ERROR;
   }
 
