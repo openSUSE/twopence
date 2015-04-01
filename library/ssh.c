@@ -1226,7 +1226,6 @@ twopence_ssh_wait(struct twopence_target *opaque_handle, int want_pid, twopence_
   twopence_ssh_transaction_t *trans = NULL;
   int rc;
 
-  want_pid = 0;
   while (true) {
     trans = __twopence_ssh_transaction_get_done(handle, want_pid);
     if (trans != NULL)
