@@ -377,37 +377,41 @@ twopence_pipe_transaction_attach_sink(twopence_pipe_transaction_t *trans, twopen
  * Attach a local source stream to the remote stdin
  * This can be fd 0, any other file, or even a buffer object.
  */
-int
-twopence_pipe_transaction_attach_stdin(twopence_pipe_transaction_t *trans)
+static void
+__twopence_pipe_stdin_read_eof(twopence_transaction_t *trans, twopence_trans_channel_t *source)
 {
-  twopence_iostream_t *stream;
+  int rc;
 
-  if (trans->local_sources != NULL)
-    return TWOPENCE_PARAMETER_ERROR;
-
-  stream = twopence_target_stream(&trans->handle->base, TWOPENCE_STDIN);
-  twopence_pipe_transaction_attach_source(trans, stream, TWOPENCE_PROTO_TYPE_STDIN);
-  return 0;
+  if ((rc = twopence_sock_xmit(trans->client_sock, twopence_protocol_build_eof_packet(&trans->ps))) < 0)
+    twopence_transaction_set_error(trans, rc);
 }
 
 void
-twopence_pipe_transaction_attach_stdout(twopence_pipe_transaction_t *trans)
+twopence_pipe_transaction_attach_stdin(twopence_transaction_t *trans, twopence_command_t *cmd)
 {
-  twopence_iostream_t *stream;
+  twopence_iostream_t *stream = &cmd->iostream[TWOPENCE_STDIN];
+  twopence_trans_channel_t *channel;
 
-  stream = twopence_target_stream(&trans->handle->base, TWOPENCE_STDOUT);
-  if (stream != NULL)
-    twopence_pipe_transaction_attach_sink(trans, stream, TWOPENCE_PROTO_TYPE_STDOUT);
+  channel = twopence_transaction_attach_local_source_stream(trans, TWOPENCE_PROTO_TYPE_STDIN, stream);
+  if (channel) {
+    twopence_transaction_channel_set_callback_read_eof(channel, __twopence_pipe_stdin_read_eof);
+    twopence_iostream_set_blocking(stream, false);
+    /* FIXME: need to set it back to original blocking state at some point */
+  }
 }
 
 void
-twopence_pipe_transaction_attach_stderr(twopence_pipe_transaction_t *trans)
+twopence_pipe_transaction_attach_stdout(twopence_transaction_t *trans, twopence_command_t *cmd)
 {
-  twopence_iostream_t *stream;
+  twopence_iostream_t *stream = &cmd->iostream[TWOPENCE_STDOUT];
+  twopence_transaction_attach_local_sink_stream(trans, TWOPENCE_PROTO_TYPE_STDOUT, stream);
+}
 
-  stream = twopence_target_stream(&trans->handle->base, TWOPENCE_STDERR);
-  if (stream != NULL)
-    twopence_pipe_transaction_attach_sink(trans, stream, TWOPENCE_PROTO_TYPE_STDERR);
+void
+twopence_pipe_transaction_attach_stderr(twopence_transaction_t *trans, twopence_command_t *cmd)
+{
+  twopence_iostream_t *stream = &cmd->iostream[TWOPENCE_STDERR];
+  twopence_transaction_attach_local_sink_stream(trans, TWOPENCE_PROTO_TYPE_STDERR, stream);
 }
 
 void
@@ -724,6 +728,7 @@ __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transac
 
 	}
 
+	*status = trans->client.status_ret;
 	if (trans->client.exception < 0)
 		return trans->client.exception;
 
@@ -740,6 +745,35 @@ protocol_error:
 /*
  * Callback function that handles incoming packets for a command transaction.
  */
+static bool
+__twopence_pipe_command_recv(twopence_transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
+{
+  switch (hdr->type) {
+  case TWOPENCE_PROTO_TYPE_TIMEOUT:
+    twopence_transaction_set_error(trans, TWOPENCE_COMMAND_TIMEOUT_ERROR);
+    break;
+
+  case TWOPENCE_PROTO_TYPE_MAJOR:
+    if (!twopence_protocol_dissect_int(payload, &trans->client.status_ret.major))
+      goto receive_results_error;
+    break;
+
+  case TWOPENCE_PROTO_TYPE_MINOR:
+    if (!twopence_protocol_dissect_int(payload, &trans->client.status_ret.minor))
+      goto receive_results_error;
+    trans->done = true;
+    break;
+
+  default:
+    goto receive_results_error;
+  }
+  return true;
+
+receive_results_error:
+  twopence_transaction_set_error(trans, TWOPENCE_RECEIVE_RESULTS_ERROR);
+  return true;
+}
+
 static int
 __twopence_pipe_command_process_packet(struct twopence_pipe_target *handle, twopence_pipe_transaction_t *trans,
 		const twopence_hdr_t *hdr, twopence_buf_t *payload)
@@ -917,45 +951,32 @@ __twopence_pipe_extract_eof(twopence_transaction_t *trans, twopence_trans_channe
 //
 // Returns 0 if everything went fine, or a negative error code if failed
 static int
-__twopence_pipe_command
-  (struct twopence_pipe_target *handle,
-   const char *username, long timeout, const char *linux_command,
-   twopence_status_t *status_ret)
+__twopence_pipe_command(struct twopence_pipe_target *handle, twopence_command_t *cmd, twopence_status_t *status_ret)
 {
-  twopence_pipe_transaction_t trans;
-  twopence_buf_t *bp;
+  twopence_transaction_t *trans;
   int rc;
 
   // By default, no major and no minor
   memset(status_ret, 0, sizeof(*status_ret));
 
   // Check that the username is valid
-  if (_twopence_invalid_username(username))
+  if (_twopence_invalid_username(cmd->user))
     return TWOPENCE_PARAMETER_ERROR;
 
   // Refuse to execute empty commands
-  if (*linux_command == '\0')
+  if (cmd->command == NULL || *cmd->command == '\0')
     return TWOPENCE_PARAMETER_ERROR;
 
   // Open communication link
   if (__twopence_pipe_open_link(handle) < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
-  twopence_pipe_transaction_init(&trans, handle);
-  trans.process_packet = __twopence_pipe_command_process_packet;
+  trans = twopence_pipe_transaction_new(handle, TWOPENCE_PROTO_TYPE_COMMAND);
+  trans->recv = __twopence_pipe_command_recv;
 
-  // Prepare command to send to the remote host
-  bp = twopence_protocol_build_command_packet(&trans.ps, username, linux_command, timeout);
-  if (bp == NULL) {
-    twopence_pipe_transaction_destroy(&trans);
-    return TWOPENCE_PARAMETER_ERROR;
-  }
-
-  // Send command
-  if (__twopence_pipe_send(handle, bp) < 0) {
-    twopence_pipe_transaction_destroy(&trans);
-    return TWOPENCE_SEND_COMMAND_ERROR;
-  }
+  // Send command packet
+  if ((rc = twopence_transaction_send_command(trans, cmd->user, cmd->command, cmd->timeout)) < 0)
+    goto out;
 
   /* This entire line timeout business seems not very useful, at least while
    * waiting for a command to finish - that command may sleep for minutes
@@ -963,25 +984,20 @@ __twopence_pipe_command
    * For now, we make sure that the link timeout is the maximum of LINE_TIMEOUT
    * and (command timeout + 1).
    */
-  handle->link_timeout = (timeout + 1) * 1000;
+  handle->link_timeout = (cmd->timeout + 1) * 1000;
   if (handle->link_timeout < LINE_TIMEOUT)
     handle->link_timeout = LINE_TIMEOUT;
 
-  rc = twopence_pipe_transaction_attach_stdin(&trans);
-  if (rc < 0) {
-    twopence_pipe_transaction_destroy(&trans);
-    return rc;
-  }
+  twopence_pipe_transaction_attach_stdin(trans, cmd);
+  twopence_pipe_transaction_attach_stdout(trans, cmd);
+  twopence_pipe_transaction_attach_stderr(trans, cmd);
 
-  twopence_pipe_transaction_attach_stdout(&trans);
-  twopence_pipe_transaction_attach_stderr(&trans);
-
-  // Read "standard output" and "standard error"
-  handle->current_transaction = &trans;
-  rc = __twopence_pipe_transaction_run(&trans, status_ret);
+  handle->current_transaction = trans;
+  rc = __twopence_transaction_run(handle, trans, status_ret);
   handle->current_transaction = NULL;
 
-  twopence_pipe_transaction_destroy(&trans);
+out:
+  twopence_transaction_free(trans);
   return rc;
 }
 
@@ -1095,7 +1111,7 @@ int _twopence_exit_virtio_serial
 int _twopence_interrupt_virtio_serial
   (struct twopence_pipe_target *handle)
 {
-  twopence_pipe_transaction_t *trans;
+  twopence_transaction_t *trans;
 
   if ((trans = handle->current_transaction) == NULL)
     return 0;
@@ -1121,26 +1137,13 @@ twopence_pipe_run_test
   (struct twopence_target *opaque_handle, twopence_command_t *cmd, twopence_status_t *status_ret)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
-  const char *username;
-  long timeout;
-  const char *command;
-  int rc;
 
   /* Background execution of commands currently not supported on this plugin */
   if (cmd->background)
     return TWOPENCE_PARAMETER_ERROR;
 
-  if ((command = cmd->command) == NULL)
-    return TWOPENCE_PARAMETER_ERROR;
-  username = cmd->user? : "root";
-  timeout = cmd->timeout? : 60L;
-
   handle->base.current.io = cmd->iostream;
-
-  rc = __twopence_pipe_command
-           (handle, username, timeout, command, status_ret);
-
-  return rc;
+  return __twopence_pipe_command(handle, cmd, status_ret);
 }
 
 /*

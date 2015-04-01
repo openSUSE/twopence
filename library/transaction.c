@@ -294,6 +294,17 @@ twopence_transaction_send_inject(twopence_transaction_t *trans, const char *user
 	return 0;
 }
 
+int
+twopence_transaction_send_command(twopence_transaction_t *trans, const char *user, const char *linux_command, long timeout)
+{
+	twopence_buf_t *bp;
+
+	bp = twopence_protocol_build_command_packet(&trans->ps, user, linux_command, timeout);
+	if (twopence_sock_xmit(trans->client_sock, bp) < 0)
+		return TWOPENCE_SEND_COMMAND_ERROR;
+	return 0;
+}
+
 /* FIXME: swap fd and id arguments */
 twopence_trans_channel_t *
 twopence_transaction_attach_local_sink(twopence_transaction_t *trans, int fd, unsigned char id)
@@ -315,6 +326,11 @@ twopence_trans_channel_t *
 twopence_transaction_attach_local_sink_stream(twopence_transaction_t *trans, unsigned char id, twopence_iostream_t *stream)
 {
 	twopence_trans_channel_t *sink;
+	int fd;
+
+	fd = twopence_iostream_getfd(stream);
+	if (fd >= 0)
+		return twopence_transaction_attach_local_sink(trans, fd, id);
 
 	sink = twopence_transaction_channel_from_stream(stream, O_WRONLY);
 	sink->id = id;
@@ -351,6 +367,11 @@ twopence_trans_channel_t *
 twopence_transaction_attach_local_source_stream(twopence_transaction_t *trans, unsigned char id, twopence_iostream_t *stream)
 {
 	twopence_trans_channel_t *source;
+	int fd;
+
+	fd = twopence_iostream_getfd(stream);
+	if (fd >= 0)
+		return twopence_transaction_attach_local_source(trans, fd, id);
 
 	source = twopence_transaction_channel_from_stream(stream, O_RDONLY);
 	source->id = id;
@@ -485,8 +506,10 @@ twopence_transaction_channel_forward(twopence_transaction_t *trans, twopence_tra
 			if (count == 0)
 				break;
 			if (count < 0) {
-				twopence_log_error("%s: error on channel %c", twopence_transaction_describe(trans), channel->id);
-				twopence_transaction_set_error(trans, count);
+				if (errno != EAGAIN) {
+					twopence_log_error("%s: error on channel %c", twopence_transaction_describe(trans), channel->id);
+					twopence_transaction_set_error(trans, count);
+				}
 				return;
 			}
 		}
@@ -505,7 +528,6 @@ twopence_transaction_channel_doio(twopence_transaction_t *trans, twopence_trans_
 {
 	twopence_sock_t *sock = channel->socket;
 
-	twopence_debug("%s: channel %c i/o", twopence_transaction_describe(trans), channel->id);
 	if (sock) {
 		twopence_buf_t *bp;
 
