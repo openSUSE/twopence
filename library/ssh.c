@@ -40,6 +40,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #define BUFFER_SIZE 16384              // Size in bytes of the work buffer for receiving data from the remote host
 
+
+typedef struct twopence_ssh_transaction twopence_ssh_transaction_t;
+
 // This structure encapsulates in an opaque way the behaviour of the library
 // It is not 100 % opaque, because it is publicly known that the first field is the plugin type
 struct twopence_ssh_target
@@ -47,11 +50,33 @@ struct twopence_ssh_target
   struct twopence_target base;
 
   ssh_session template, session;
-  ssh_channel channel;                 // Set during remote command execution only
-  bool use_tty;
-  bool eof_sent;
-  bool interrupted;
-  int exit_signal;
+
+  /* Current command being executed.
+   * Down the road, we can have one foreground command (which will
+   * receive Ctrl-C interrupts), and any number of backgrounded commands.
+   */
+  struct {
+    twopence_ssh_transaction_t *foreground;
+  } transactions;
+};
+
+struct twopence_ssh_transaction {
+  struct twopence_ssh_target *handle;
+  ssh_channel		channel;
+
+  struct {
+    twopence_iostream_t *stream;
+    struct pollfd	pfd;
+  } stdin;
+
+  bool			at_eof[3];
+
+  struct timeval	command_timeout;
+
+  bool			eof_sent;
+  bool			use_tty;
+  bool			interrupted;
+  int			exit_signal;
 
   /* Right now, we need the callbacks for exactly one reason -
    * to catch the exit signal of the remote process.
@@ -60,21 +85,6 @@ struct twopence_ssh_target
    * really happens is by hooking up this callback.
    */
   struct ssh_channel_callbacks_struct callbacks;
-};
-
-// Read the results of a command
-struct twopence_ssh_transaction {
-	struct twopence_ssh_target *handle;
-	ssh_channel		channel;
-
-	struct {
-	  twopence_iostream_t *	stream;;
-	  struct pollfd		pfd;
-	} stdin;
-
-	bool			at_eof[3];
-
-	struct timeval		command_timeout;
 };
 
 #if 0
@@ -112,44 +122,44 @@ __twopence_ssh_error(struct twopence_ssh_target *handle, char c)
 }
 
 static int
-__twopence_ssh_channel_eof(struct twopence_ssh_target *handle)
+__twopence_ssh_transaction_send_eof(twopence_ssh_transaction_t *trans)
 {
   int rc = SSH_OK;
 
-  if (handle->channel == NULL || handle->eof_sent)
+  if (trans->channel == NULL || trans->eof_sent)
     return SSH_OK;
-  if (handle->use_tty)
-    rc = ssh_channel_write(handle->channel, "\004", 1);
+  if (trans->use_tty)
+    rc = ssh_channel_write(trans->channel, "\004", 1);
   if (rc == SSH_OK)
-    rc = ssh_channel_send_eof(handle->channel);
+    rc = ssh_channel_send_eof(trans->channel);
   if (rc == SSH_OK)
-    handle->eof_sent = true;
+    trans->eof_sent = true;
   return rc;
 }
 
 static void
-__twopence_ssh_close_channel(struct twopence_ssh_target *handle)
+__twopence_ssh_transaction_close_channel(twopence_ssh_transaction_t *trans)
 {
-  if (handle->channel == NULL)
+  if (trans->channel == NULL)
     return;
 
-  ssh_channel_close(handle->channel);
-  ssh_channel_free(handle->channel);
-  handle->channel = NULL;
+  ssh_channel_close(trans->channel);
+  ssh_channel_free(trans->channel);
+  trans->channel = NULL;
 }
 
-static struct twopence_ssh_transaction *
-__twopence_ssh_transaction_new(struct twopence_ssh_target *handle, ssh_channel channel,
+static twopence_ssh_transaction_t *
+__twopence_ssh_transaction_new(struct twopence_ssh_target *handle,
 		twopence_iostream_t *stdin_stream, unsigned long timeout)
 {
-  struct twopence_ssh_transaction *trans;
+  twopence_ssh_transaction_t *trans;
 
   trans = calloc(1, sizeof(*trans));
   if (trans == NULL)
     return NULL;
 
   trans->handle = handle;
-  trans->channel = channel;
+  trans->channel = NULL;
   trans->stdin.stream = stdin_stream;
   trans->stdin.pfd.fd = -1;
   trans->stdin.pfd.revents = 0;
@@ -163,14 +173,15 @@ __twopence_ssh_transaction_new(struct twopence_ssh_target *handle, ssh_channel c
 void
 __twopence_ssh_transaction_free(struct twopence_ssh_transaction *trans)
 {
-  /* For now, nothing */
+  __twopence_ssh_transaction_close_channel(trans);
   free(trans);
 }
 
 static void
 __twopence_ssh_exit_signal_callback(ssh_session session, ssh_channel channel, const char *signal, int core, const char *errmsg, const char *lang, void *userdata)
 {
-  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) userdata;
+  twopence_ssh_transaction_t *trans = (twopence_ssh_transaction_t *) userdata;
+
   static const char *signames[NSIG] = {
 	[SIGHUP] = "HUP",
 	[SIGINT] = "INT",
@@ -211,29 +222,29 @@ __twopence_ssh_exit_signal_callback(ssh_session session, ssh_channel channel, co
     const char *name = signames[signo];
 
     if (name && !strcmp(name, signal)) {
-      handle->exit_signal = signo;
+      trans->exit_signal = signo;
       return;
     }
   }
 
-  handle->exit_signal = -1;
+  trans->exit_signal = -1;
 }
 
 static void
-__twopence_ssh_init_callbacks(struct twopence_ssh_target *handle)
+__twopence_ssh_init_callbacks(twopence_ssh_transaction_t *trans)
 {
-  struct ssh_channel_callbacks_struct *cb = &handle->callbacks;
+  struct ssh_channel_callbacks_struct *cb = &trans->callbacks;
 
   if (cb->size == 0) {
     cb->channel_exit_signal_function = __twopence_ssh_exit_signal_callback;
     ssh_callbacks_init(cb);
   }
 
-  if (handle->channel == NULL)
+  if (trans->channel == NULL)
     return;
 
-  cb->userdata = handle;
-  ssh_set_channel_callbacks(handle->channel, cb);
+  cb->userdata = trans;
+  ssh_set_channel_callbacks(trans->channel, cb);
 }
 
 ///////////////////////////// Middle layer //////////////////////////////////////
@@ -262,7 +273,7 @@ __twopence_ssh_read_input(struct twopence_ssh_transaction *trans)
   if (size == 0) {
     /* EOF from local file */
     SSH_TRACE("%s: EOF\n", __func__);
-    if (__twopence_ssh_channel_eof(trans->handle) == SSH_ERROR)
+    if (__twopence_ssh_transaction_send_eof(trans) == SSH_ERROR)
       return -1;
     trans->stdin.stream = NULL;
     return 0;
@@ -417,22 +428,6 @@ __twopence_ssh_poll(struct twopence_ssh_transaction *trans)
   return 0;
 }
 
-static int
-__twopence_ssh_read_results(struct twopence_ssh_target *handle, long timeout, ssh_channel channel)
-{
-  struct twopence_ssh_transaction *trans;
-  int rv;
-
-  trans = __twopence_ssh_transaction_new(handle, channel,
-			  twopence_target_stream(&handle->base, TWOPENCE_STDIN),
-			  timeout);
-
-  rv = __twopence_ssh_poll(trans);
-  __twopence_ssh_transaction_free(trans);
-
-  return rv;
-}
-
 // Send a file in chunks through SCP
 //
 // Returns 0 if everything went fine, or a negative error code if failed
@@ -563,9 +558,16 @@ __twopence_ssh_command_ssh
     (struct twopence_ssh_target *handle, twopence_command_t *cmd, twopence_status_t *status_ret)
 {
   ssh_session session = handle->session;
+  twopence_ssh_transaction_t *trans = NULL;
   ssh_channel channel;
   int was_blocking;
   int rc;
+
+  trans = __twopence_ssh_transaction_new(handle,
+			  twopence_target_stream(&handle->base, TWOPENCE_STDIN),
+			  cmd->timeout);
+  if (trans == NULL)
+    return TWOPENCE_OPEN_SESSION_ERROR;
 
   // Tune stdin so it is nonblocking
   was_blocking = twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, false);
@@ -576,59 +578,57 @@ __twopence_ssh_command_ssh
   channel = ssh_channel_new(session);
   if (channel == NULL)
   {
+    __twopence_ssh_transaction_free(trans);
     twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
+  trans->channel = channel;
+
   if (ssh_channel_open_session(channel) != SSH_OK)
   {
-    ssh_channel_free(channel);
+    __twopence_ssh_transaction_free(trans);
     twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     return TWOPENCE_OPEN_SESSION_ERROR;
   }
-  handle->channel = channel;
-  handle->eof_sent = false;
-  handle->use_tty = false;
-  handle->interrupted = false;
-  handle->exit_signal = 0;
 
-  __twopence_ssh_init_callbacks(handle);
+  __twopence_ssh_init_callbacks(trans);
 
   // Request that the command be run inside a tty
   if (cmd->request_tty)
   {
     if (ssh_channel_request_pty(channel) != SSH_OK)
     {
-      __twopence_ssh_close_channel(handle);
+      __twopence_ssh_transaction_free(trans);
       twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
       return TWOPENCE_OPEN_SESSION_ERROR;
     }
-    handle->use_tty = true;
+    trans->use_tty = true;
   }
 
   // Execute the command
   if (ssh_channel_request_exec(channel, cmd->command) != SSH_OK)
   {
-    __twopence_ssh_close_channel(handle);
+    __twopence_ssh_transaction_free(trans);
     twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
 
   // Read "standard output", "standard error", and remote error code
-  rc = __twopence_ssh_read_results(handle, cmd->timeout, channel);
+  rc = __twopence_ssh_poll(trans);
 
   /* FIXME: might be better to return useful status values from
-   * __twopence_ssh_read_results in the first place. Currently we
+   * __twopence_ssh_poll() in the first place. Currently we
    * don't, thus we need to translate them here.
    */
   status_ret->minor = 0;
   switch (rc)
   {
     case 0:
-      if (handle->exit_signal) {
+      if (trans->exit_signal) {
 	// mimic the behavior of the test server for now.
 	// in the long run, better reporting would be great.
 	status_ret->major = EFAULT;
-	status_ret->minor = handle->exit_signal;
+	status_ret->minor = trans->exit_signal;
       } else {
         status_ret->minor = ssh_channel_get_exit_status(channel);
       }
@@ -662,8 +662,8 @@ __twopence_ssh_command_ssh
   }
 
   // Terminate the channel
-  __twopence_ssh_channel_eof(handle);
-  __twopence_ssh_close_channel(handle);
+  __twopence_ssh_transaction_send_eof(trans);
+  __twopence_ssh_transaction_free(trans);
 
   twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
   return rc;
@@ -825,9 +825,11 @@ __twopence_ssh_disconnect_ssh(struct twopence_ssh_target *handle)
 static int
 __twopence_ssh_interrupt_ssh(struct twopence_ssh_target *handle)
 {
-  ssh_channel channel = handle->channel;
+  twopence_ssh_transaction_t *trans;
+  ssh_channel channel = NULL;
 
-  if (channel == NULL)
+  if ((trans = handle->transactions.foreground) == NULL
+   || (channel = trans->channel) == NULL)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
 #if 0
@@ -836,8 +838,8 @@ __twopence_ssh_interrupt_ssh(struct twopence_ssh_target *handle)
   if (ssh_channel_request_send_signal(channel, "INT") != SSH_OK)
     return TWOPENCE_INTERRUPT_COMMAND_ERROR;
 #else
-  if (handle->use_tty) {
-    if (handle->eof_sent) {
+  if (trans->use_tty) {
+    if (trans->eof_sent) {
       printf("Cannot send Ctrl-C, channel already closed for writing\n");
       return TWOPENCE_INTERRUPT_COMMAND_ERROR;
     }
@@ -846,7 +848,7 @@ __twopence_ssh_interrupt_ssh(struct twopence_ssh_target *handle)
       return TWOPENCE_INTERRUPT_COMMAND_ERROR;
   } else {
     printf("Command not being run in tty, cannot interrupt it\n");
-    handle->interrupted = true;
+    trans->interrupted = true;
   }
 #endif
 
@@ -896,7 +898,6 @@ __twopence_ssh_init(const char *hostname, unsigned int port)
   // Register the SSH session template and return the handle
   handle->template = template;
   handle->session = NULL;
-  handle->channel = NULL;
   return (struct twopence_target *) handle;
 };
 
