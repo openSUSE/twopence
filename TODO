@@ -10,6 +10,7 @@ BUGS
    o Re-enable "line timeout"
      Add option to set it (see below)
 
+   o Mention --debug option in shell/*.1 manpages
 
 REFACTORING
    o not sure there is much point in having two concurrent APIs to do the same:
@@ -45,9 +46,8 @@ FUNCTIONALITY
 
    o handle interrupts during file transfers,
      not only during command execution
-
-   o ssh.c: kill the remote command when it was aborted
-     because of a timeout or another problem
+     Note from okir: this should be next to trivial for the virtio target,
+     but may require a bit more work for ssh.
 
    o Document the tests we're doing in tests/
 

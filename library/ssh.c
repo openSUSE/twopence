@@ -137,6 +137,8 @@ struct twopence_scp_transaction {
 
 extern const struct twopence_plugin twopence_ssh_ops;
 
+static bool		__twopence_ssh_interrupted;
+
 static ssh_session	__twopence_ssh_open_session(const struct twopence_ssh_target *, const char *);
 static int		__twopence_ssh_interrupt_ssh(struct twopence_ssh_target *);
 
@@ -195,10 +197,28 @@ __twopence_ssh_transaction_close_channel(twopence_ssh_transaction_t *trans)
     trans->event = NULL;
   }
 
-  if (trans->channel) {
-    ssh_channel_close(trans->channel);
-    ssh_channel_free(trans->channel);
-    trans->channel = NULL;
+  /*
+   * In absence of a real signal delivery mechanism, we have to forcefully
+   * disconnect after interrupting the command.
+   *
+   * Simply calling ssh_channel_close doesn't help at all, because that
+   * will also try to shut down the command in an orderly fashion and
+   * collect its exit status. So it will just hang.
+   */
+  if (trans->interrupted) {
+    if (trans->session) {
+      ssh_silent_disconnect(trans->session);
+      trans->channel = NULL;
+    }
+  } else {
+    if (trans->channel) {
+      ssh_channel_close(trans->channel);
+      ssh_channel_free(trans->channel);
+      trans->channel = NULL;
+    }
+
+    if (trans->session)
+      ssh_disconnect(trans->session);
   }
 
   if (trans->session) {
@@ -412,7 +432,6 @@ __twopence_ssh_transaction_execute_command(twopence_ssh_transaction_t *trans, tw
   return 0;
 }
 
-
 static int
 __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
 {
@@ -421,6 +440,16 @@ __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
   if (trans->channel == NULL) {
     __twopence_ssh_transaction_fail(trans, TWOPENCE_INTERNAL_ERROR);
     return -1;
+  }
+
+  /*
+   * In absence of a real signal delivery mechanism, we have to
+   * fake the exit signal here.
+   */
+  if (trans->interrupted) {
+    trans->status.major = EFAULT;
+    trans->status.minor = trans->exit_signal;
+    return 0;
   }
 
   /* If we haven't done so, send the EOF now. */
@@ -445,6 +474,14 @@ __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
 
   twopence_debug("exit status is %d/%d\n", status->major, status->minor);
   return 0;
+}
+
+static void
+__twopence_ssh_fake_exit_signal(twopence_ssh_transaction_t *trans, int signal)
+{
+  trans->interrupted = true;
+  trans->exit_signal = signal;
+  trans->done = true;
 }
 
 static int
@@ -509,7 +546,7 @@ __twopence_ssh_transaction_forward_output(twopence_ssh_transaction_t *trans, str
   char buffer[BUFFER_SIZE];
   int size;
 
-  if (out->eof)
+  if (trans->done || out->eof)
     return 0;
 
   while (!out->eof && ssh_channel_poll(trans->channel, out->index) != 0) {
@@ -608,14 +645,26 @@ __twopence_ssh_poll(struct twopence_ssh_target *handle)
     int timeout;
     int rc;
 
+    twopence_debug("%s: try to do some I/O", __func__);
     for (trans = handle->transactions.running; trans; trans = trans->next) {
-      if (__twopence_ssh_transaction_forward_output(trans, &trans->stdout, "stdout") < 0
-       || __twopence_ssh_transaction_forward_output(trans, &trans->stderr, "stderr") < 0)
-        return 0;
+      /* Note: the transaction may have been interrupted by twopence_ssh_interrupt_command().
+       * In this case, trans->done will be true.
+       */
+      if (!trans->done) {
+        if (__twopence_ssh_transaction_forward_output(trans, &trans->stdout, "stdout") < 0
+         || __twopence_ssh_transaction_forward_output(trans, &trans->stderr, "stderr") < 0)
+          return 0;
 
-      twopence_debug("eof=%d/%d/%d\n", trans->stdin.eof, trans->stdout.eof, trans->stderr.eof);
-      if (trans->stdout.eof && trans->stderr.eof) {
-        trans->done = true;
+        twopence_debug2("eof=%d/%d/%d\n", trans->stdin.eof, trans->stdout.eof, trans->stderr.eof);
+        if (trans->stdout.eof && trans->stderr.eof)
+          trans->done = true;
+      }
+
+      if (trans->done) {
+	/* FIXME: this is blocking, which is bad. A program may close its standard
+	 * I/O channels and still keep on running for a long time.
+	 * We really need to tie into the exit status callback from SSH
+	 */
         return __twopence_ssh_transaction_get_exit_status(trans);
       }
     }
@@ -633,9 +682,16 @@ __twopence_ssh_poll(struct twopence_ssh_target *handle)
     twopence_debug("polling for events; timeout=%d\n", timeout);
     rc = ssh_event_dopoll(event, timeout);
 
-    twopence_debug("ssh_event_dopoll() = %d\n", rc);
-    if (rc == SSH_ERROR)
+    if (__twopence_ssh_interrupted) {
+      twopence_debug("ssh_event_dopoll() interrupted by signal");
+      __twopence_ssh_interrupted = false;
+      continue;
+    }
+
+    if (rc == SSH_ERROR) {
+      twopence_debug("ssh_event_dopoll() returns error");
       return TWOPENCE_INTERNAL_ERROR;
+    }
   } while (true);
 
   return 0;
@@ -1073,18 +1129,24 @@ __twopence_ssh_interrupt_ssh(struct twopence_ssh_target *handle)
 #else
   if (trans->use_tty) {
     if (trans->eof_sent) {
-      printf("Cannot send Ctrl-C, channel already closed for writing\n");
+      twopence_log_error("Cannot send Ctrl-C, channel already closed for writing\n");
       return TWOPENCE_INTERRUPT_COMMAND_ERROR;
     }
 
     if (ssh_channel_write(channel, "\003", 1) != 1)
       return TWOPENCE_INTERRUPT_COMMAND_ERROR;
   } else {
-    printf("Command not being run in tty, cannot interrupt it\n");
-    trans->interrupted = true;
+    twopence_debug("Command not being run in tty, just shutting it down\n");
   }
+  __twopence_ssh_fake_exit_signal(trans, SIGINT);
 #endif
 
+  /* When we catch a signal, ssh_event_dopoll will return SSH_ERROR to the
+   * caller. Looks like a bug in their code.
+   * Nevertheless, work around that by telling __twopence_ssh_poll to ignore
+   * that error.
+   */
+  __twopence_ssh_interrupted = true;
   return 0;
 }
 

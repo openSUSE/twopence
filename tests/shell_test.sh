@@ -397,6 +397,7 @@ fi
 test_case_report
 
 test_case_begin "test SIGINT handling"
+t0=`date +%s`
 twopence_command_background $TARGET "sleep 5"
 pid=$!
 sleep 1
@@ -405,6 +406,11 @@ ps hup $pid
 kill -INT $pid
 wait $pid
 test_case_check_status $? 9
+t1=`date +%s`
+let elapsed=$t1-$t0
+if [ $elapsed -ge 5 ]; then
+	test_case_warn "test case took $elapsed seconds to complete (looks like we waited for the command to finish)"
+fi
 test_case_report
 
 cat<<EOF
