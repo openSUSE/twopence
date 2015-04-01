@@ -299,7 +299,8 @@ connection_doio(connection_t *conn)
 	if ((sock = conn->client_sock) != NULL) {
 		if (socket_doio(sock) < 0) {
 			TRACE("I/O error on socket: %m\n");
-			exit(1);
+			connection_close(conn);
+			return;
 		}
 
 		/* See if we have received one or more complete packets */
