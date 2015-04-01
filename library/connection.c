@@ -28,9 +28,6 @@
 #include <sys/un.h>
 #include <netinet/in.h> /* for htons */
 
-#include <fcntl.h>
-#include <poll.h>
-#include <time.h>
 #include <errno.h>
 #include <signal.h>
 #include <unistd.h>
@@ -40,15 +37,21 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdint.h>
+#include <assert.h>
 
 #include "connection.h"
 
+
+typedef struct twopence_conn_list {
+	twopence_conn_t *		head;
+} twopence_conn_list_t;
 
 /*
  * Connection handling
  */
 struct twopence_connection {
 	twopence_conn_t *		next;
+	twopence_conn_t **		prev;
 
 	twopence_conn_semantics_t *	semantics;
 
@@ -59,6 +62,17 @@ struct twopence_connection {
 	twopence_transaction_list_t	transactions;
 	twopence_transaction_list_t	done_transactions;
 };
+
+static void
+twopence_conn_list_insert(twopence_conn_list_t *list, twopence_conn_t *conn)
+{
+	assert(conn->prev == NULL);
+	conn->next = list->head;
+	if (list->head)
+		list->head->prev = &conn->next;
+	conn->prev = &list->head;
+	list->head = conn;
+}
 
 twopence_conn_t *
 twopence_conn_new(twopence_conn_semantics_t *semantics, twopence_sock_t *client_sock, unsigned int client_id)
@@ -74,6 +88,17 @@ twopence_conn_new(twopence_conn_semantics_t *semantics, twopence_sock_t *client_
 }
 
 void
+twopence_conn_unlink(twopence_conn_t *conn)
+{
+	if (conn->prev)
+		*(conn->prev) = conn->next;
+	if (conn->next)
+		conn->next->prev = conn->prev;
+	conn->prev = NULL;
+	conn->next = NULL;
+}
+
+void
 twopence_conn_close(twopence_conn_t *conn)
 {
 	if (conn->client_sock)
@@ -81,11 +106,18 @@ twopence_conn_close(twopence_conn_t *conn)
 	conn->client_sock = NULL;
 }
 
+bool
+twopence_conn_is_closed(const twopence_conn_t *conn)
+{
+	return conn->client_sock == NULL;
+}
+
 void
 twopence_conn_free(twopence_conn_t *conn)
 {
 	twopence_transaction_t *trans;
 
+	twopence_conn_unlink(conn);
 	twopence_conn_close(conn);
 	while ((trans = conn->transactions.head) != NULL) {
 		twopence_transaction_unlink(trans);
@@ -377,7 +409,11 @@ twopence_conn_doio(twopence_conn_t *conn)
 }
 
 struct twopence_connection_pool {
-	twopence_conn_t *		connections;
+	twopence_conn_list_t	connections;
+
+	struct {
+		void		(*close_connection)(twopence_conn_t *);
+	} callbacks;
 };
 
 twopence_conn_pool_t *
@@ -386,14 +422,20 @@ twopence_conn_pool_new(void)
 	twopence_conn_pool_t *pool;
 
 	pool = calloc(1, sizeof(*pool));
+	pool->callbacks.close_connection = twopence_conn_free;
 	return pool;
+}
+
+void
+twopence_conn_pool_set_callback_close_connection(twopence_conn_pool_t *pool, void (*cb)(twopence_conn_t *))
+{
+	pool->callbacks.close_connection = cb;
 }
 
 void
 twopence_conn_pool_add_connection(twopence_conn_pool_t *pool, twopence_conn_t *conn)
 {
-	conn->next = pool->connections;
-	pool->connections = conn;
+	twopence_conn_list_insert(&pool->connections, conn);
 }
 
 
@@ -401,14 +443,14 @@ bool
 twopence_conn_pool_poll(twopence_conn_pool_t *pool)
 {
 	twopence_pollinfo_t poll_info;
-	twopence_conn_t *conn, **connp;
+	twopence_conn_t *conn, *next;
 	unsigned int maxfds = 0;
 	sigset_t mask;
 
-	if (pool->connections == NULL)
+	if (pool->connections.head == NULL)
 		return false;
 
-	for (conn = pool->connections; conn; conn = conn->next) {
+	for (conn = pool->connections.head; conn; conn = conn->next) {
 		twopence_transaction_t *trans;
 
 		maxfds ++;	/* One socket for the client */
@@ -418,26 +460,24 @@ twopence_conn_pool_poll(twopence_conn_pool_t *pool)
 
 	twopence_pollinfo_init(&poll_info, alloca(maxfds * sizeof(struct pollfd)), maxfds);
 
-	connp = &pool->connections;
-	while ((conn = *connp) != NULL) {
+	for (conn = pool->connections.head; conn; conn = next) {
+		next = conn->next;
+
 		if (twopence_conn_fill_poll(conn, &poll_info) == 0) {
 			if (conn->client_sock == NULL) {
-				*connp = conn->next;
-				twopence_conn_free(conn);
+				twopence_conn_unlink(conn);
+
+				if (pool->callbacks.close_connection)
+					pool->callbacks.close_connection(conn);
 				continue;
 			}
 			twopence_debug("connection doesn't wait for anything?!\n");
 		}
-		connp = &conn->next;
 	}
 
-	if (pool->connections == NULL) {
+	if (pool->connections.head == NULL) {
 		twopence_debug("All connections closed\n");
 		return false;
-	}
-
-	if (poll_info.num_fds == 0) {
-		twopence_debug("No events to wait for?!\n");
 	}
 
 	/* Query the current sigprocmask, and allow SIGCHLD while we're polling */
@@ -446,8 +486,13 @@ twopence_conn_pool_poll(twopence_conn_pool_t *pool)
 
 	(void) twopence_pollinfo_ppoll(&poll_info, &mask);
 
-	for (conn = pool->connections; conn; conn = conn->next)
-		twopence_conn_doio(conn);
+	for (conn = pool->connections.head; conn; conn = conn->next) {
+		if (twopence_conn_doio(conn) < 0) {
+			twopence_log_error("%s: error when processing IO, closing connection", __func__);
+			twopence_conn_close(conn);
+		}
+	}
 
-	return !!pool->connections;
+	return !!pool->connections.head;
 }
+

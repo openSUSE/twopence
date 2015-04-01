@@ -101,11 +101,15 @@ twopence_pollinfo_update(twopence_pollinfo_t *pinfo, int fd, int events, const s
 int
 twopence_pollinfo_poll(const twopence_pollinfo_t *pinfo)
 {
+	if (pinfo->num_fds == 0)
+		twopence_debug("No events to wait for?!\n");
 	return poll(pinfo->pfd, pinfo->num_fds, twopence_timeout_msec(&pinfo->timeout));
 }
 
 int
 twopence_pollinfo_ppoll(const twopence_pollinfo_t *pinfo, const sigset_t *mask)
 {
+	if (pinfo->num_fds == 0)
+		twopence_debug("No events to wait for?!\n");
 	return ppoll(pinfo->pfd, pinfo->num_fds, twopence_timeout_timespec(&pinfo->timeout), mask);
 }

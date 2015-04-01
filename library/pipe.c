@@ -34,13 +34,13 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "pipe.h"
 #include "utils.h"
 
-#define BUFFER_SIZE 32768              // Size in bytes of the work buffer for receiving data from the remote
 #define LINE_TIMEOUT 60000             // Maximum silence on the line in milliseconds
-#define COMMAND_BUFFER_SIZE 8192       // Size in bytes of the work buffer for sending data to the remote
 
 
 static int				__twopence_pipe_handshake(twopence_sock_t *sock, unsigned int *client_id);
 static void				__twopence_pipe_end_transaction(twopence_conn_t *, twopence_transaction_t *);
+
+static twopence_conn_pool_t *		twopence_pipe_connection_pool;
 
 static twopence_conn_semantics_t	twopence_client_semantics = {
 	.end_transaction	= __twopence_pipe_end_transaction,
@@ -105,6 +105,13 @@ __twopence_pipe_open_link(struct twopence_pipe_target *handle)
     handle->connection = twopence_conn_new(&twopence_client_semantics, sock, client_id);
     handle->ps.cid = client_id;
     handle->ps.xid = 1;
+
+    if (twopence_pipe_connection_pool == NULL) {
+      twopence_pipe_connection_pool = twopence_conn_pool_new();
+      twopence_conn_pool_set_callback_close_connection(twopence_pipe_connection_pool, NULL);
+    }
+
+    twopence_conn_pool_add_connection(twopence_pipe_connection_pool, handle->connection);
   }
 
   return 0;
@@ -276,16 +283,9 @@ __twopence_pipe_get_completed_transaction(struct twopence_pipe_target *handle, i
 int
 __twopence_pipe_doio(struct twopence_pipe_target *handle)
 {
-	twopence_pollinfo_t poll_info;
-	struct pollfd pfd[16];
-
-	twopence_debug("%s()", __func__);
-	twopence_pollinfo_init(&poll_info, pfd, 16);
-	twopence_conn_fill_poll(handle->connection, &poll_info);
-
-	twopence_pollinfo_poll(&poll_info);
-	if (twopence_conn_doio(handle->connection) < 0)
-		return TWOPENCE_PROTOCOL_ERROR;
+	twopence_conn_pool_poll(twopence_pipe_connection_pool);
+	if (twopence_conn_is_closed(handle->connection))
+		return TWOPENCE_OPEN_SESSION_ERROR;
 
 	return 0;
 }
@@ -299,6 +299,9 @@ __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transac
 	while (twopence_conn_reap_transaction(handle->connection, xid) == NULL) {
 		if ((rc = __twopence_pipe_doio(handle)) < 0) {
 			/* Kill the connection? */
+			twopence_conn_free(handle->connection);
+			handle->connection = NULL;
+
 			twopence_transaction_unlink(trans);
 			return rc;
 		}
