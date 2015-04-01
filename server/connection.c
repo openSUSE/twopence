@@ -64,7 +64,7 @@ struct connection {
 	unsigned int	next_id;
 
 	/* We may want to have concurrent transactions later on */
-	transaction_t *	current_transaction;
+	transaction_t *	transactions;
 };
 
 connection_t *
@@ -91,15 +91,20 @@ connection_close(connection_t *conn)
 void
 connection_free(connection_t *conn)
 {
+	transaction_t *trans;
+
 	connection_close(conn);
-	if (conn->current_transaction)
-		transaction_free(conn->current_transaction);
+	while ((trans = conn->transactions) != NULL) {
+		conn->transactions = trans->next;
+		transaction_free(trans);
+	}
 	free(conn);
 }
 
 unsigned int
 connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
 {
+	transaction_t *trans;
 	unsigned int nfds = 0;
 	twopence_sock_t *sock;
 
@@ -111,8 +116,8 @@ connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
 		return 0;
 	}
 
-	if (conn->current_transaction)
-		nfds += transaction_fill_poll(conn->current_transaction, pfd, max);
+	for (trans = conn->transactions; trans; trans = trans->next)
+		nfds += transaction_fill_poll(trans, pfd, max);
 
 	if ((sock = conn->client_sock) != NULL) {
 		twopence_sock_prepare_poll(sock);
@@ -138,15 +143,12 @@ connection_find_transaction(connection_t *conn, uint16_t xid)
 {
 	transaction_t *trans;
 
-	if ((trans = conn->current_transaction) == NULL)
-		return NULL;
-
-	if (trans->id != xid) {
-		twopence_debug("ignoring packet with mismatched transaction id");
-		return NULL;
+	for (trans = conn->transactions; trans; trans = trans->next) {
+		if (trans->id == xid)
+			return trans;
 	}
 
-	return trans;
+	return NULL;
 }
 
 bool
@@ -243,7 +245,8 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 				twopence_sock_queue_xmit(conn->client_sock,
 					 twopence_protocol_build_uint_packet_ps(&ps, TWOPENCE_PROTO_TYPE_MAJOR, EPROTO));
 			} else {
-				conn->current_transaction = trans;
+				trans->next = conn->transactions;
+				conn->transactions = trans;
 			}
 		}
 	}
@@ -288,7 +291,7 @@ connection_process_incoming(connection_t *conn)
 void
 connection_doio(connection_t *conn)
 {
-	transaction_t *trans;
+	transaction_t **pos, *trans;
 	twopence_sock_t *sock;
 
 	if ((sock = conn->client_sock) != NULL) {
@@ -312,28 +315,25 @@ connection_doio(connection_t *conn)
 			 * can close it.
 			 */
 			if (twopence_sock_xmit_queue_bytes(sock) == 0
-			 && conn->current_transaction == NULL)
+			 && conn->transactions == NULL)
 				twopence_sock_mark_dead(sock);
 		}
 
 		if (twopence_sock_is_dead(sock)) {
 			connection_close(conn);
+			return;
 		}
 	}
 
-	if ((trans = conn->current_transaction) != NULL) {
+	for (pos = &conn->transactions; (trans = *pos) != NULL; ) {
 		transaction_doio(trans);
 
 		if (trans->done) {
-			twopence_debug("current transaction done, free it\n");
-			conn->current_transaction = NULL;
+			twopence_debug("%s: transaction done, free it", transaction_describe(trans));
+			*pos = trans->next;
 			transaction_free(trans);
-		} else
-		if (sock && twopence_sock_is_read_eof(sock)) {
-			twopence_debug("Client closed socket while transaction was in process. Terminate it\n");
-			conn->current_transaction = NULL;
-			transaction_free(trans);
-			connection_close(conn);
+		} else {
+			pos = &trans->next;
 		}
 	}
 }
@@ -375,7 +375,7 @@ connection_pool_poll(connection_pool_t *pool)
 		transaction_t *trans;
 
 		maxfds ++;	/* One socket for the client */
-		if ((trans = conn->current_transaction) != NULL)
+		for (trans = conn->transactions; trans; trans = trans->next)
 			maxfds += transaction_num_channels(trans);
 	}
 

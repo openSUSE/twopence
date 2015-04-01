@@ -45,6 +45,8 @@ struct semantics {
 typedef struct transaction_channel transaction_channel_t;
 
 struct transaction {
+	transaction_t *		next;
+
 	unsigned int		type;
 	unsigned int		id;
 
