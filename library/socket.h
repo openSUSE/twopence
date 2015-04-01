@@ -28,6 +28,7 @@ typedef struct twopence_socket twopence_sock_t;
 
 extern twopence_sock_t *twopence_sock_new(int fd);
 extern twopence_sock_t *twopence_sock_new_flags(int fd, int oflags);
+extern void		twopence_sock_set_noclose(twopence_sock_t *);
 extern void		twopence_sock_free(twopence_sock_t *sock);
 extern int		twopence_sock_id(const twopence_sock_t *sock);
 extern int		twopence_sock_recv_buffer(twopence_sock_t *sock, twopence_buf_t *bp);

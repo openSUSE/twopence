@@ -51,6 +51,7 @@ struct twopence_queue {
 
 struct twopence_socket {
 	int			fd;
+	bool			closeit;
 
 	unsigned int		bytes_sent;
 
@@ -166,6 +167,7 @@ __twopence_socket_new(int fd, int oflags)
 
 	sock = calloc(1, sizeof(*sock));
 	sock->fd = fd;
+	sock->closeit = true;
 
 	/* Set flags (usually for nonblocking IO) */
 	if ((f = fcntl(fd, F_GETFL)) < 0
@@ -206,10 +208,18 @@ twopence_sock_new_flags(int fd, int oflags)
 }
 
 void
+twopence_sock_set_noclose(twopence_sock_t *sock)
+{
+	/* If the socket shares its fd with some other object, to not
+	 * close that fd when we destroy the socket. */
+	sock->closeit = false;
+}
+
+void
 twopence_sock_free(twopence_sock_t *sock)
 {
 	twopence_debug("%s(%d)\n", __func__, sock->fd);
-	if (sock->fd >= 0)
+	if (sock->closeit && sock->fd >= 0)
 		close(sock->fd);
 
 	twopence_queue_destroy(&sock->xmit_queue);
