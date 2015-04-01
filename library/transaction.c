@@ -96,10 +96,24 @@ twopence_transaction_channel_from_stream(twopence_iostream_t *stream, int flags)
 	return sink;
 }
 
+static const char *
+__twopence_transaction_channel_name(unsigned char id)
+{
+	if (id == 0)
+		return "all";
+	return twopence_protocol_packet_type_to_string(id);
+}
+
+static const char *
+twopence_transaction_channel_name(twopence_trans_channel_t *channel)
+{
+	return __twopence_transaction_channel_name(channel->id);
+}
+
 static void
 twopence_transaction_channel_free(twopence_trans_channel_t *sink)
 {
-	twopence_debug("%s(%c)", __func__, sink->id);
+	twopence_debug("%s(%s)", __func__, twopence_transaction_channel_name(sink));
 	if (sink->socket)
 		twopence_sock_free(sink->socket);
 	sink->socket = NULL;
@@ -203,24 +217,9 @@ const char *
 twopence_transaction_describe(const twopence_transaction_t *trans)
 {
 	static char descbuf[64];
-	const char *n;
 
-	switch (trans->type) {
-	case TWOPENCE_PROTO_TYPE_INJECT:
-		n = "inject";
-		break;
-	case TWOPENCE_PROTO_TYPE_EXTRACT:
-		n = "extract";
-		break;
-	case TWOPENCE_PROTO_TYPE_COMMAND:
-		n = "command";
-		break;
-	default:
-		snprintf(descbuf, sizeof(descbuf), "trans-type-%d/%u", trans->type, trans->ps.xid);
-		return descbuf;
-	}
-
-	snprintf(descbuf, sizeof(descbuf), "%s/%u", n, trans->ps.xid);
+	snprintf(descbuf, sizeof(descbuf), "%s/%u",
+			twopence_protocol_packet_type_to_string(trans->type), trans->ps.xid);
 	return descbuf;
 }
 
@@ -351,7 +350,7 @@ twopence_transaction_attach_local_sink_stream(twopence_transaction_t *trans, uns
 void
 twopence_transaction_close_sink(twopence_transaction_t *trans, unsigned char id)
 {
-	twopence_debug("%s: close sink %c\n", twopence_transaction_describe(trans), id? : '-');
+	twopence_debug("%s: close sink %s\n", twopence_transaction_describe(trans), __twopence_transaction_channel_name(id));
 	twopence_transaction_channel_list_close(&trans->local_sink, id);
 }
 
@@ -395,7 +394,7 @@ twopence_transaction_attach_local_source_stream(twopence_transaction_t *trans, u
 void
 twopence_transaction_close_source(twopence_transaction_t *trans, unsigned char id)
 {
-	twopence_debug("%s: close source %c\n", twopence_transaction_describe(trans), id? : '-');
+	twopence_debug("%s: close source %s\n", twopence_transaction_describe(trans), __twopence_transaction_channel_name(id));
 	twopence_transaction_channel_list_close(&trans->local_source, id);
 }
 
@@ -437,7 +436,8 @@ twopence_transaction_channel_flush(twopence_trans_channel_t *sink)
 	if (twopence_sock_xmit_queue_bytes(sock) == 0)
 		return 0;
 
-	twopence_debug("Flushing %u bytes queued to channel %c\n", twopence_sock_xmit_queue_bytes(sock), sink->id);
+	twopence_debug("Flushing %u bytes queued to channel %s\n",
+			twopence_sock_xmit_queue_bytes(sock), twopence_transaction_channel_name(sink));
 	return twopence_sock_xmit_queue_flush(sock);
 }
 
@@ -518,7 +518,9 @@ twopence_transaction_channel_forward(twopence_transaction_t *trans, twopence_tra
 				break;
 			if (count < 0) {
 				if (errno != EAGAIN) {
-					twopence_log_error("%s: error on channel %c", twopence_transaction_describe(trans), channel->id);
+					twopence_log_error("%s: error on channel %s",
+							twopence_transaction_describe(trans),
+							twopence_transaction_channel_name(channel));
 					twopence_transaction_set_error(trans, count);
 				}
 				return;
@@ -526,7 +528,8 @@ twopence_transaction_channel_forward(twopence_transaction_t *trans, twopence_tra
 		}
 
 		if (twopence_iostream_eof(stream) && channel->callbacks.read_eof) {
-			twopence_debug("%s: EOF on channel %c", twopence_transaction_describe(trans), channel->id);
+			twopence_debug("%s: EOF on channel %s", twopence_transaction_describe(trans),
+					twopence_transaction_channel_name(channel));
 			channel->callbacks.read_eof(trans, channel);
 			channel->callbacks.read_eof = NULL;
 			channel->stream = NULL;
@@ -554,7 +557,8 @@ twopence_transaction_channel_doio(twopence_transaction_t *trans, twopence_trans_
 		if ((bp = twopence_sock_take_recvbuf(sock)) != NULL) {
 			unsigned int count = twopence_buf_count(bp) - TWOPENCE_PROTO_HEADER_SIZE;
 
-			twopence_debug2("%s: %u bytes from local source %c", twopence_transaction_describe(trans), count, channel->id);
+			twopence_debug2("%s: %u bytes from local source %s", twopence_transaction_describe(trans),
+					count, twopence_transaction_channel_name(channel));
 			twopence_protocol_push_header_ps(bp, &trans->ps, channel->id);
 			twopence_sock_queue_xmit(trans->socket, bp);
 
@@ -565,7 +569,8 @@ twopence_transaction_channel_doio(twopence_transaction_t *trans, twopence_trans_
 		 * when the file has been transmitted in its entirety.
 		 */
 		if (twopence_sock_is_read_eof(sock) && channel->callbacks.read_eof) {
-			twopence_debug("%s: EOF on channel %c", twopence_transaction_describe(trans), channel->id);
+			twopence_debug("%s: EOF on channel %s", twopence_transaction_describe(trans),
+					twopence_transaction_channel_name(channel));
 			channel->callbacks.read_eof(trans, channel);
 			channel->callbacks.read_eof = NULL;
 		}
@@ -645,8 +650,9 @@ twopence_transaction_recv_packet(twopence_transaction_t *trans, const twopence_h
 
 	sink = twopence_transaction_find_sink(trans, hdr->type);
 	if (sink != NULL) {
-		twopence_debug("%s: received %u bytes of data on channel %c\n",
-				twopence_transaction_describe(trans), twopence_buf_count(payload), sink->id);
+		twopence_debug("%s: received %u bytes of data on channel %s\n",
+				twopence_transaction_describe(trans), twopence_buf_count(payload),
+				twopence_transaction_channel_name(sink));
 		if (sink && !twopence_transaction_channel_write_data(trans, sink, payload))
 			twopence_transaction_fail(trans, errno);
 		return;
@@ -666,7 +672,8 @@ twopence_transaction_recv_packet(twopence_transaction_t *trans, const twopence_h
 	}
 
 	if (trans->recv == NULL) {
-		twopence_log_error("%s: unexpected packet type '%c'\n", twopence_transaction_describe(trans), hdr->type);
+		twopence_log_error("%s: unexpected %s packet\n", twopence_transaction_describe(trans),
+				twopence_protocol_packet_type_to_string(hdr->type));
 		twopence_transaction_fail(trans, EPROTO);
 		return;
 	}
@@ -683,7 +690,9 @@ twopence_transaction_send_client(twopence_transaction_t *trans, twopence_buf_t *
 	if (h == NULL)
 		return;
 
-	twopence_debug("%s: sending packet type %c, payload=%u\n", twopence_transaction_describe(trans), h->type, ntohs(h->len) - TWOPENCE_PROTO_HEADER_SIZE);
+	twopence_debug("%s: sending packet type=%s, payload=%u\n", twopence_transaction_describe(trans),
+			twopence_protocol_packet_type_to_string(h->type),
+			ntohs(h->len) - TWOPENCE_PROTO_HEADER_SIZE);
 	twopence_sock_queue_xmit(trans->socket, bp);
 }
 

@@ -289,8 +289,10 @@ __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transac
 					goto protocol_error;
 				}
 
-				twopence_debug("%s: cid=%u xid=%u type=%c len=%u\n", __func__,
-						ps.cid, ps.xid, hdr->type, twopence_buf_count(&payload));
+				twopence_debug("%s: cid=%u xid=%u type=%s len=%u\n", __func__,
+						ps.cid, ps.xid,
+						twopence_protocol_packet_type_to_string(hdr->type),
+						twopence_buf_count(&payload));
 
 				if (ps.xid != trans->ps.xid) {
 					twopence_log_error("%s: xid mismatch", __func__);

@@ -57,6 +57,7 @@ typedef struct twopence_protocol_state {
 	uint16_t	xid;
 } twopence_protocol_state_t;
 
+extern const char *	twopence_protocol_packet_type_to_string(unsigned int type);
 extern void		twopence_protocol_build_header(twopence_buf_t *bp, unsigned char type);
 extern void		twopence_protocol_push_header(twopence_buf_t *bp, unsigned char type);
 extern void		twopence_protocol_push_header_ps(twopence_buf_t *bp, const twopence_protocol_state_t *ps, unsigned char type);

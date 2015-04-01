@@ -51,6 +51,45 @@
 /*
  * Protocol handling functions
  */
+const char *
+twopence_protocol_packet_type_to_string(unsigned int type)
+{
+	static char descbuf[64];
+
+	switch (type) {
+	case TWOPENCE_PROTO_TYPE_HELLO:
+		return "hello";
+	case TWOPENCE_PROTO_TYPE_INJECT:
+		return "inject";
+	case TWOPENCE_PROTO_TYPE_EXTRACT:
+		return "extract";
+	case TWOPENCE_PROTO_TYPE_COMMAND:
+		return "command";
+	case TWOPENCE_PROTO_TYPE_QUIT:
+		return "quit";
+	case TWOPENCE_PROTO_TYPE_STDIN:
+		return "stdin";
+	case TWOPENCE_PROTO_TYPE_STDOUT:
+		return "stdout";
+	case TWOPENCE_PROTO_TYPE_STDERR:
+		return "stderr";
+	case TWOPENCE_PROTO_TYPE_DATA:
+		return "data";
+	case TWOPENCE_PROTO_TYPE_EOF:
+		return "eof";
+	case TWOPENCE_PROTO_TYPE_INTR:
+		return "intr";
+	case TWOPENCE_PROTO_TYPE_MAJOR:
+		return "major";
+	case TWOPENCE_PROTO_TYPE_MINOR:
+		return "minor";
+	case TWOPENCE_PROTO_TYPE_TIMEOUT:
+		return "timeout";
+	default:
+		snprintf(descbuf, sizeof(descbuf), "trans-type-%d", type);
+		return descbuf;
+	}
+}
 void
 __twopence_protocol_build_header(twopence_buf_t *bp, unsigned char type, unsigned int cid, unsigned int xid)
 {
