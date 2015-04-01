@@ -22,6 +22,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define TWOPENCE_H
 
 #include <stdbool.h>
+#include <stdio.h>
 #include "buffer.h"
 
 struct pollfd;
@@ -466,5 +467,21 @@ extern twopence_substream_t *twopence_substream_new_buffer(twopence_buf_t *, boo
 extern twopence_substream_t *twopence_substream_new_fd(int fd, bool closeit);
 extern void		twopence_substream_close(twopence_substream_t *);
 
+/*
+ * Logging functions
+ */
+extern void		twopence_logging_init();
+extern void		twopence_set_logfile(FILE *fp);
+extern void		twopence_set_syslog(bool on);
+extern void		twopence_trace(const char *fmt, ...);
+extern void		twopence_log_error(const char *fmt, ...);
+
+#define __twopence_debug(level, fmt...) \
+			do { \
+				if (twopence_debug_level >= level) \
+					twopence_trace(fmt); \
+			} while (0)
+#define twopence_debug(fmt...)   __twopence_debug(1, fmt)
+#define twopence_debug2(fmt...)  __twopence_debug(2, fmt)
 
 #endif /* TWOPENCE_H */

@@ -101,11 +101,11 @@ extern void		server_run(twopence_sock_t *);
 
 #define __TRACE(level, fmt...) \
 	do { \
-		if (server_debug_level >= level) \
+		if (twopence_debug_level >= level) \
 			twopence_trace(fmt); \
 	} while (0)
-#define TRACE(fmt...)	__TRACE(1, fmt)
-#define TRACE2(fmt...)	__TRACE(2, fmt)
+#define TRACE(fmt...)	twopence_debug(fmt)
+#define TRACE2(fmt...)	twopence_debug2(fmt)
 
 #define AUDIT(fmt, args...) \
 	do { \
@@ -114,12 +114,9 @@ extern void		server_run(twopence_sock_t *);
 		} \
 	} while (0)
 
-extern unsigned int	server_debug_level;
+extern unsigned int	twopence_debug_level;
 
 extern bool		server_audit;
 extern unsigned int	server_audit_seq;
-
-extern void		twopence_trace(const char *fmt, ...);
-extern void		twopence_log_error(const char *fmt, ...);
 
 #endif /* SERVER_H */
