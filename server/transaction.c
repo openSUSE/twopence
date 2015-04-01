@@ -55,6 +55,14 @@ struct twopence_trans_channel {
 
 	twopence_sock_t *	socket;
 
+	/* This is needed by the client side "inject" code:
+	 * Before we start sending the actual file data, we want confirmation from
+	 * the server that it was able to open the destination file.
+	 * So even though we're adding the local sink channel early, we do not allow
+	 * to transmit from right away. So initially, the channel is "plugged", and
+	 * only when we receive a major status of 0, we will "unplug" it. */
+	bool			plugged;
+
 	struct {
 	    void		(*read_eof)(twopence_transaction_t *, twopence_trans_channel_t *);
 	    void		(*write_eof)(twopence_transaction_t *, twopence_trans_channel_t *);
@@ -96,6 +104,12 @@ twopence_transaction_channel_is_read_eof(const twopence_trans_channel_t *channel
 	if (sock)
 		return twopence_sock_is_read_eof(sock);
 	return false;
+}
+
+void
+twopence_transaction_channel_set_plugged(twopence_trans_channel_t *channel, bool plugged)
+{
+	channel->plugged = plugged;
 }
 
 void
@@ -286,9 +300,9 @@ twopence_transaction_channel_write_eof(twopence_trans_channel_t *sink)
 }
 
 int
-twopence_transaction_channel_poll(twopence_trans_channel_t *sink, struct pollfd *pfd)
+twopence_transaction_channel_poll(twopence_trans_channel_t *channel, struct pollfd *pfd)
 {
-	twopence_sock_t *sock = sink->socket;
+	twopence_sock_t *sock = channel->socket;
 
 	if (sock && !twopence_sock_is_dead(sock)) {
 		twopence_buf_t *bp;
@@ -300,7 +314,9 @@ twopence_transaction_channel_poll(twopence_trans_channel_t *sink, struct pollfd 
 		 * already has read_eof set, so that a recvbuf is never
 		 * posted to it.
 		 */
-		if (!twopence_sock_is_read_eof(sock) && (bp = twopence_sock_get_recvbuf(sock)) == NULL) {
+		if (!channel->plugged
+		 && !twopence_sock_is_read_eof(sock)
+		 && (bp = twopence_sock_get_recvbuf(sock)) == NULL) {
 			/* When we receive data from a command's output stream, or from
 			 * a file that is being extracted, we do not want to copy
 			 * the entire packet - instead, we reserve some room for the
