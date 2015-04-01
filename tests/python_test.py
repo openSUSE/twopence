@@ -480,7 +480,6 @@ else:
     except:
 	testCaseException()
 testCaseReport()
-testSuiteExit()
 
 testCaseBegin("run several processes in the background")
 if not(backgroundingSupported):
