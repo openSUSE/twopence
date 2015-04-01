@@ -166,6 +166,13 @@ __twopence_ssh_putc(twopence_iostream_t *stream, char c)
 /*
  * SSH Transaction functions
  */
+
+/*
+ * __twopence_ssh_transaction_send_eof
+ *
+ * This is called when we find that the local stream connected to the remote stdin
+ * has been closed. Inform the remote.
+ */
 static int
 __twopence_ssh_transaction_send_eof(twopence_ssh_transaction_t *trans)
 {
@@ -182,6 +189,10 @@ __twopence_ssh_transaction_send_eof(twopence_ssh_transaction_t *trans)
   return rc;
 }
 
+/*
+ * Tear down the SSH connection and all related stuff.
+ * Make sure we remove ourselves from the event handle.
+ */
 static void
 __twopence_ssh_transaction_close_channel(twopence_ssh_transaction_t *trans)
 {
@@ -208,6 +219,9 @@ __twopence_ssh_transaction_close_channel(twopence_ssh_transaction_t *trans)
   }
 }
 
+/*
+ * Create a new SSH (command) transaction
+ */
 static twopence_ssh_transaction_t *
 __twopence_ssh_transaction_new(struct twopence_ssh_target *handle, unsigned long timeout)
 {
@@ -227,12 +241,21 @@ __twopence_ssh_transaction_new(struct twopence_ssh_target *handle, unsigned long
   return trans;
 }
 
+/*
+ * Delete a transaction object
+ */
 void
 __twopence_ssh_transaction_free(struct twopence_ssh_transaction *trans)
 {
   twopence_iostream_t *stream;
 
-  /* Reset stdin to previous behavior */
+  /* Reset stdin to original behavior.
+   * I'm not convinced that this still makes a lot of sense, given that
+   * (a) we have now changed everything to ssh_poll, and
+   * (b) we're executing several transactions concurrently
+   * The latter shouldn't be a problem in theory, because only the foreground
+   * process should be allowed to connect to stdin.
+   */
   if ((stream = trans->stdin.stream) != NULL)
     if (trans->stdin.was_blocking >= 0)
       twopence_iostream_set_blocking(stream, trans->stdin.was_blocking);
@@ -241,6 +264,10 @@ __twopence_ssh_transaction_free(struct twopence_ssh_transaction *trans)
   free(trans);
 }
 
+/*
+ * When a transaction fails due to some protocol/transport layer problems,
+ * we store the error code in trans->exception and mark it as done.
+ */
 static inline void
 __twopence_ssh_transaction_fail(twopence_ssh_transaction_t *trans, int error)
 {
@@ -269,6 +296,10 @@ __twopence_ssh_transaction_setup_stdio(twopence_ssh_transaction_t *trans,
   trans->stderr.stream = stderr_stream;
 }
 
+/*
+ * The following functions are somewhat complicated, but provide the necessary machinery to discover
+ * processes that were killed via a signal
+ */
 static void
 __twopence_ssh_exit_signal_callback(ssh_session session, ssh_channel channel, const char *signal, int core, const char *errmsg, const char *lang, void *userdata)
 {
@@ -426,8 +457,6 @@ __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
   SSH_TRACE("exit status is %d/%d\n", status->major, status->minor);
   return 0;
 }
-
-///////////////////////////// Middle layer //////////////////////////////////////
 
 static int
 __twopence_ssh_transaction_mark_stdin_eof(twopence_ssh_transaction_t *trans)
