@@ -62,6 +62,7 @@ extern void		twopence_protocol_push_header(twopence_buf_t *bp, unsigned char typ
 extern void		twopence_protocol_push_header_ps(twopence_buf_t *bp, const twopence_protocol_state_t *ps, unsigned char type);
 extern twopence_buf_t *	twopence_protocol_command_buffer_new();
 extern twopence_buf_t *	twopence_protocol_build_simple_packet(unsigned char type);
+extern twopence_buf_t *	twopence_protocol_build_simple_packet_ps(twopence_protocol_state_t *, unsigned char);
 extern twopence_buf_t *	twopence_protocol_build_eof_packet(twopence_protocol_state_t *);
 extern twopence_buf_t *	twopence_protocol_build_hello_packet(unsigned int cid);
 extern twopence_buf_t *	twopence_protocol_build_inject_packet(const twopence_protocol_state_t *ps, const char *user, const char *remote_name, unsigned int remote_mode);

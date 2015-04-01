@@ -817,7 +817,9 @@ __twopence_pipe_command
   twopence_pipe_transaction_attach_stderr(&trans);
 
   // Read "standard output" and "standard error"
+  handle->current_transaction = &trans;
   rc = __twopence_pipe_transaction_run(&trans, status_ret);
+  handle->current_transaction = NULL;
 
   twopence_pipe_transaction_destroy(&trans);
   return rc;
@@ -931,14 +933,16 @@ int _twopence_exit_virtio_serial
 int _twopence_interrupt_virtio_serial
   (struct twopence_pipe_target *handle)
 {
-  // Open link for sending interrupt command
-  if (__twopence_pipe_open_link(handle) < 0)
+  twopence_pipe_transaction_t *trans;
+
+  if ((trans = handle->current_transaction) == NULL)
+    return 0;
+
+  /* If the link is not open, there's nothing to interrupt */
+  if (handle->link_fd < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
-  /* FIXME: we should look up the current cmd transaction and use its protocol state in building the INTR packet */
-
-  // Send command
-  if (__twopence_pipe_send(handle, twopence_protocol_build_simple_packet(TWOPENCE_PROTO_TYPE_INTR)) < 0)
+  if (__twopence_pipe_send(handle, twopence_protocol_build_simple_packet_ps(&trans->ps, TWOPENCE_PROTO_TYPE_INTR)) < 0)
     return TWOPENCE_INTERRUPT_COMMAND_ERROR;
 
   return 0;

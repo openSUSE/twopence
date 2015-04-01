@@ -33,6 +33,10 @@ struct twopence_pipe_target {
   int link_fd;
 
   twopence_protocol_state_t ps;
+
+  /* "foreground" transaction. This is the transaction that gets
+   * cancelled when twopence_interrupt() is called. */
+  struct twopence_pipe_transaction *current_transaction;
 };
 
 
