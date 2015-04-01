@@ -56,8 +56,8 @@ struct twopence_trans_channel {
 	twopence_sock_t *	socket;
 
 	struct {
-	    void		(*read_eof)(transaction_t *, twopence_trans_channel_t *);
-	    void		(*write_eof)(transaction_t *, twopence_trans_channel_t *);
+	    void		(*read_eof)(twopence_transaction_t *, twopence_trans_channel_t *);
+	    void		(*write_eof)(twopence_transaction_t *, twopence_trans_channel_t *);
 	} callbacks;
 };
 
@@ -99,13 +99,13 @@ transaction_channel_is_read_eof(const twopence_trans_channel_t *channel)
 }
 
 void
-transaction_channel_set_callback_read_eof(twopence_trans_channel_t *channel, void (*fn)(transaction_t *, twopence_trans_channel_t *))
+transaction_channel_set_callback_read_eof(twopence_trans_channel_t *channel, void (*fn)(twopence_transaction_t *, twopence_trans_channel_t *))
 {
 	channel->callbacks.read_eof = fn;
 }
 
 void
-transaction_channel_set_callback_write_eof(twopence_trans_channel_t *channel, void (*fn)(transaction_t *, twopence_trans_channel_t *))
+transaction_channel_set_callback_write_eof(twopence_trans_channel_t *channel, void (*fn)(twopence_transaction_t *, twopence_trans_channel_t *))
 {
 	channel->callbacks.write_eof = fn;
 }
@@ -143,10 +143,10 @@ transaction_channel_list_close(twopence_trans_channel_t **list, unsigned char id
 /*
  * Command handling
  */
-transaction_t *
+twopence_transaction_t *
 transaction_new(twopence_sock_t *client, unsigned int type, const twopence_protocol_state_t *ps)
 {
-	transaction_t *trans;
+	twopence_transaction_t *trans;
 
 	trans = calloc(1, sizeof(*trans));
 	trans->ps = *ps;
@@ -159,7 +159,7 @@ transaction_new(twopence_sock_t *client, unsigned int type, const twopence_proto
 }
 
 void
-transaction_free(transaction_t *trans)
+transaction_free(twopence_transaction_t *trans)
 {
 	/* Do not free trans->client_sock, we don't own it */
 
@@ -171,7 +171,7 @@ transaction_free(transaction_t *trans)
 }
 
 const char *
-transaction_describe(const transaction_t *trans)
+transaction_describe(const twopence_transaction_t *trans)
 {
 	static char descbuf[64];
 	const char *n;
@@ -196,7 +196,7 @@ transaction_describe(const transaction_t *trans)
 }
 
 unsigned int
-transaction_num_channels(const transaction_t *trans)
+transaction_num_channels(const twopence_transaction_t *trans)
 {
 	twopence_trans_channel_t *channel;
 	unsigned int count = 0;
@@ -209,7 +209,7 @@ transaction_num_channels(const transaction_t *trans)
 }
 
 twopence_trans_channel_t *
-transaction_attach_local_sink(transaction_t *trans, int fd, unsigned char id)
+transaction_attach_local_sink(twopence_transaction_t *trans, int fd, unsigned char id)
 {
 	twopence_trans_channel_t *sink;
 
@@ -225,14 +225,14 @@ transaction_attach_local_sink(transaction_t *trans, int fd, unsigned char id)
 }
 
 void
-transaction_close_sink(transaction_t *trans, unsigned char id)
+transaction_close_sink(twopence_transaction_t *trans, unsigned char id)
 {
 	twopence_debug("%s: close sink %c\n", transaction_describe(trans), id? : '-');
 	transaction_channel_list_close(&trans->local_sink, id);
 }
 
 twopence_trans_channel_t *
-transaction_attach_local_source(transaction_t *trans, int fd, unsigned char channel_id)
+transaction_attach_local_source(twopence_transaction_t *trans, int fd, unsigned char channel_id)
 {
 	twopence_trans_channel_t *source;
 
@@ -248,7 +248,7 @@ transaction_attach_local_source(transaction_t *trans, int fd, unsigned char chan
 }
 
 void
-transaction_close_source(transaction_t *trans, unsigned char id)
+transaction_close_source(twopence_transaction_t *trans, unsigned char id)
 {
 	twopence_debug("%s: close source %c\n", transaction_describe(trans), id? : '-');
 	transaction_channel_list_close(&trans->local_source, id);
@@ -320,7 +320,7 @@ transaction_channel_poll(twopence_trans_channel_t *sink, struct pollfd *pfd)
 }
 
 static void
-transaction_channel_doio(transaction_t *trans, twopence_trans_channel_t *channel)
+transaction_channel_doio(twopence_transaction_t *trans, twopence_trans_channel_t *channel)
 {
 	twopence_sock_t *sock = channel->socket;
 
@@ -353,7 +353,7 @@ transaction_channel_doio(transaction_t *trans, twopence_trans_channel_t *channel
 }
 
 int
-transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max)
+transaction_fill_poll(twopence_transaction_t *trans, struct pollfd *pfd, unsigned int max)
 {
 	unsigned int nfds = 0;
 
@@ -381,7 +381,7 @@ transaction_fill_poll(transaction_t *trans, struct pollfd *pfd, unsigned int max
 }
 
 void
-transaction_doio(transaction_t *trans)
+transaction_doio(twopence_transaction_t *trans)
 {
 	twopence_trans_channel_t *channel;
 
@@ -410,7 +410,7 @@ transaction_doio(transaction_t *trans)
  * for this transaction
  */
 void
-transaction_recv_packet(transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
+transaction_recv_packet(twopence_transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
 {
 	twopence_trans_channel_t *sink;
 
@@ -452,7 +452,7 @@ transaction_recv_packet(transaction_t *trans, const twopence_hdr_t *hdr, twopenc
 
 
 inline void
-transaction_send_client(transaction_t *trans, twopence_buf_t *bp)
+transaction_send_client(twopence_transaction_t *trans, twopence_buf_t *bp)
 {
 	const twopence_hdr_t *h = (const twopence_hdr_t *) twopence_buf_head(bp);
 
@@ -464,7 +464,7 @@ transaction_send_client(transaction_t *trans, twopence_buf_t *bp)
 }
 
 void
-transaction_send_major(transaction_t *trans, unsigned int code)
+transaction_send_major(twopence_transaction_t *trans, unsigned int code)
 {
 	twopence_debug("%s: send status.major=%u", transaction_describe(trans), code);
 	assert(!trans->major_sent);
@@ -473,7 +473,7 @@ transaction_send_major(transaction_t *trans, unsigned int code)
 }
 
 void
-transaction_send_minor(transaction_t *trans, unsigned int code)
+transaction_send_minor(twopence_transaction_t *trans, unsigned int code)
 {
 	twopence_debug("%s: send status.minor=%u", transaction_describe(trans), code);
 	assert(!trans->minor_sent);
@@ -482,7 +482,7 @@ transaction_send_minor(transaction_t *trans, unsigned int code)
 }
 
 void
-transaction_send_status(transaction_t *trans, twopence_status_t *st)
+transaction_send_status(twopence_transaction_t *trans, twopence_status_t *st)
 {
 	if (trans->done) {
 		twopence_log_error("%s called twice\n", __func__);
@@ -494,7 +494,7 @@ transaction_send_status(transaction_t *trans, twopence_status_t *st)
 }
 
 void
-transaction_fail(transaction_t *trans, int code)
+transaction_fail(twopence_transaction_t *trans, int code)
 {
 	trans->done = true;
 	if (!trans->major_sent) {
@@ -510,7 +510,7 @@ transaction_fail(transaction_t *trans, int code)
 }
 
 void
-transaction_fail2(transaction_t *trans, int major, int minor)
+transaction_fail2(twopence_transaction_t *trans, int major, int minor)
 {
 	transaction_send_major(trans, major);
 	transaction_send_minor(trans, minor);
@@ -523,7 +523,7 @@ transaction_fail2(transaction_t *trans, int major, int minor)
  * its own packet type.
  */
 void
-transaction_send_timeout(transaction_t *trans)
+transaction_send_timeout(twopence_transaction_t *trans)
 {
 	twopence_buf_t *bp;
 
@@ -538,7 +538,7 @@ transaction_send_timeout(transaction_t *trans)
  * For now, the "id" is a packet type, such as '0' or 'd'
  */
 twopence_trans_channel_t *
-transaction_find_sink(transaction_t *trans, unsigned char id)
+transaction_find_sink(twopence_transaction_t *trans, unsigned char id)
 {
 	twopence_trans_channel_t *sink;
 
@@ -550,7 +550,7 @@ transaction_find_sink(transaction_t *trans, unsigned char id)
 }
 
 twopence_trans_channel_t *
-transaction_find_source(transaction_t *trans, unsigned char id)
+transaction_find_source(twopence_transaction_t *trans, unsigned char id)
 {
 	twopence_trans_channel_t *channel;
 
@@ -566,7 +566,7 @@ transaction_find_source(transaction_t *trans, unsigned char id)
  * or to the command's stdin
  */
 void
-transaction_write_data(transaction_t *trans, twopence_buf_t *payload, unsigned char id)
+transaction_write_data(twopence_transaction_t *trans, twopence_buf_t *payload, unsigned char id)
 {
 	twopence_trans_channel_t *sink;
 
@@ -576,7 +576,7 @@ transaction_write_data(transaction_t *trans, twopence_buf_t *payload, unsigned c
 }
 
 void
-transaction_write_eof(transaction_t *trans)
+transaction_write_eof(twopence_transaction_t *trans)
 {
 	twopence_trans_channel_t *sink;
 

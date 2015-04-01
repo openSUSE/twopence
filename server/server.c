@@ -447,7 +447,7 @@ failed:
 }
 
 static void
-server_inject_file_write_eof(transaction_t *trans, twopence_trans_channel_t *channel)
+server_inject_file_write_eof(twopence_transaction_t *trans, twopence_trans_channel_t *channel)
 {
 	transaction_send_minor(trans, 0);
 	transaction_write_eof(trans);
@@ -455,7 +455,7 @@ server_inject_file_write_eof(transaction_t *trans, twopence_trans_channel_t *cha
 }
 
 bool
-server_inject_file(transaction_t *trans, const char *username, const char *filename, size_t filemode)
+server_inject_file(twopence_transaction_t *trans, const char *username, const char *filename, size_t filemode)
 {
 	twopence_trans_channel_t *sink;
 	int status;
@@ -484,14 +484,14 @@ server_inject_file(transaction_t *trans, const char *username, const char *filen
 }
 
 void
-server_extract_file_source_read_eof(transaction_t *trans, twopence_trans_channel_t *channel)
+server_extract_file_source_read_eof(twopence_transaction_t *trans, twopence_trans_channel_t *channel)
 {
 	transaction_send_client(trans, twopence_protocol_build_eof_packet(&trans->ps));
 	trans->done = true;
 }
 
 bool
-server_extract_file(transaction_t *trans, const char *username, const char *filename)
+server_extract_file(twopence_transaction_t *trans, const char *username, const char *filename)
 {
 	twopence_trans_channel_t *source;
 	int status;
@@ -518,7 +518,7 @@ server_extract_file(transaction_t *trans, const char *username, const char *file
 }
 
 bool
-server_run_command_send(transaction_t *trans)
+server_run_command_send(twopence_transaction_t *trans)
 {
 	twopence_trans_channel_t *channel;
 	int status;
@@ -566,13 +566,13 @@ server_run_command_send(transaction_t *trans)
 }
 
 static void
-server_run_command_stdin_eof(transaction_t *trans, twopence_trans_channel_t *sink)
+server_run_command_stdin_eof(twopence_transaction_t *trans, twopence_trans_channel_t *sink)
 {
 	/* Nothing to be done. */
 }
 
 bool
-server_run_command_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
+server_run_command_recv(twopence_transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
 {
 	switch (hdr->type) {
 	case TWOPENCE_PROTO_TYPE_INTR:
@@ -596,7 +596,7 @@ server_run_command_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopenc
 }
 
 bool
-server_run_command(transaction_t *trans, const char *username, unsigned int timeout, const char *cmdline)
+server_run_command(twopence_transaction_t *trans, const char *username, unsigned int timeout, const char *cmdline)
 {
 	twopence_trans_channel_t *sink;
 	int status;

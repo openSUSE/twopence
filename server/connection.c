@@ -64,7 +64,7 @@ struct connection {
 	unsigned int	next_id;
 
 	/* We may want to have concurrent transactions later on */
-	transaction_t *	transactions;
+	twopence_transaction_t *	transactions;
 };
 
 connection_t *
@@ -91,7 +91,7 @@ connection_close(connection_t *conn)
 void
 connection_free(connection_t *conn)
 {
-	transaction_t *trans;
+	twopence_transaction_t *trans;
 
 	connection_close(conn);
 	while ((trans = conn->transactions) != NULL) {
@@ -104,7 +104,7 @@ connection_free(connection_t *conn)
 unsigned int
 connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
 {
-	transaction_t *trans;
+	twopence_transaction_t *trans;
 	unsigned int nfds = 0;
 	twopence_sock_t *sock;
 
@@ -138,10 +138,10 @@ connection_fill_poll(connection_t *conn, struct pollfd *pfd, unsigned int max)
  * Find the transaction corresponding to a given XID.
  * Trivial for now, as we do not support concurrent transactions yet.
  */
-transaction_t *
+twopence_transaction_t *
 connection_find_transaction(connection_t *conn, uint16_t xid)
 {
-	transaction_t *trans;
+	twopence_transaction_t *trans;
 
 	for (trans = conn->transactions; trans; trans = trans->next) {
 		if (trans->id == xid)
@@ -155,7 +155,7 @@ bool
 connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 {
 	const twopence_hdr_t *hdr;
-	transaction_t *trans;
+	twopence_transaction_t *trans;
 
 	while (bp && twopence_protocol_buffer_complete(bp)) {
 		twopence_protocol_state_t ps;
@@ -190,7 +190,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 			transaction_recv_packet(trans, hdr, &payload);
 		} else {
 			semantics_t *semantics = conn->semantics;
-			transaction_t *trans = NULL;
+			twopence_transaction_t *trans = NULL;
 			char username[128];
 			char filename[PATH_MAX];
 			char command[2048];
@@ -291,7 +291,7 @@ connection_process_incoming(connection_t *conn)
 void
 connection_doio(connection_t *conn)
 {
-	transaction_t **pos, *trans;
+	twopence_transaction_t **pos, *trans;
 	twopence_sock_t *sock;
 
 	if ((sock = conn->client_sock) != NULL) {
@@ -372,7 +372,7 @@ connection_pool_poll(connection_pool_t *pool)
 		return false;
 
 	for (conn = pool->connections; conn; conn = conn->next) {
-		transaction_t *trans;
+		twopence_transaction_t *trans;
 
 		maxfds ++;	/* One socket for the client */
 		for (trans = conn->transactions; trans; trans = trans->next)
