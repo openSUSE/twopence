@@ -259,102 +259,25 @@ __close_fds(int *fd_list)
 }
 
 static char **
-server_parse_cmdline(char *cmdline)
+server_build_shell_argv(const char *cmdline)
 {
-	char **argv, *s;
-	int argc;
+	char **argv;
+	int argc = 0;
 
 	twopence_debug("%s(\"%s\")\n", __func__, cmdline);
-
-	s = cmdline;
-
-	argc = 0;
-	argv = NULL;
-	while (true) {
-		while (isspace(*s))
-			++s;
-		if (*s == '\0')
-			break;
-
-		if ((argc % 16) == 0)
-			argv = realloc(argv, (argc + 16) * sizeof(argv[0]));
-
-		if (*s == '"') {
-			char cc, *t;
-
-			argv[argc++] = ++s;
-			t = s;
-			while ((cc = *s++) != '\0') {
-				if (cc == '\\') {
-					if (*s == '\0')
-						goto failed;
-					cc = *s++;
-				} else if (cc == '"')
-					break;
-
-				*t++ = cc;
-			}
-			*t++ = '\0';
-		} else
-		if (*s == '\'') {
-			argv[argc++] = ++s;
-			while (*s != '\'') {
-				if (*s == '\0')
-					goto failed;
-				++s;
-			}
-			*s++ = '\0';
-		} else {
-			argv[argc++] = s;
-			while (*s && !isspace(*s))
-				++s;
-			if (*s)
-				*s++ = '\0';
-		}
-	}
-
+	argv = calloc(4, sizeof(argv[0]));
+	argv[argc++] = "/bin/sh";
+	argv[argc++] = "-c";
+	argv[argc++] = (char *) cmdline;
 	argv[argc] = NULL;
 	return argv;
-
-failed:
-	free(argv);
-	return NULL;
-
-}
-
-const char *
-server_path_find_bin(const char *argv0)
-{
-	static const char *path_dir[] = {
-		"/bin",
-		"/sbin",
-		"/usr/bin",
-		"/usr/sbin",
-		"/usr/local/bin",
-		"/usr/local/sbin",
-		NULL
-	};
-	unsigned int n;
-
-	if (*argv0 == '/')
-		return argv0;
-
-	for (n = 0; path_dir[n]; ++n) {
-		const char *path;
-
-		path = server_build_path(path_dir[n], argv0);
-		if (server_file_exists(path))
-			return path;
-	}
-
-	return NULL;
 }
 
 int
 server_run_command_as(const char *username, unsigned int timeout, const char *cmdline, int *parent_fds, int *status)
 {
 	int pipefds[6], child_fds[3];
-	char *cmdline_copy = NULL, **argv = NULL;
+	char **argv = NULL;
 	struct passwd *user;
 	const char *argv0;
 	int nfds = 0;
@@ -374,10 +297,7 @@ server_run_command_as(const char *username, unsigned int timeout, const char *cm
 	__init_fds(child_fds,  pipefds[0], pipefds[3], pipefds[5]); /* read-write-write */
 	__init_fds(parent_fds, pipefds[1], pipefds[2], pipefds[4]); /* write-read-read */
 
-	/* This whole cmdline business isn't really optimal, as it requires us to
-	 * use a shell process inbetween */
-	cmdline_copy = strdup(cmdline);
-	argv = server_parse_cmdline(cmdline_copy);
+	argv = server_build_shell_argv(cmdline);
 	if (argv == NULL) {
 		*status = EINVAL;
 		goto failed;
@@ -392,13 +312,6 @@ server_run_command_as(const char *username, unsigned int timeout, const char *cm
 	}
 
 	argv0 = argv[0];
-	if (*argv0 != '/') {
-		argv0 = server_path_find_bin(argv[0]);
-		if (argv0 == NULL) {
-			*status = ENOENT;
-			goto failed;
-		}
-	}
 
 	pid = fork();
 	if (pid < 0) {
@@ -437,8 +350,6 @@ server_run_command_as(const char *username, unsigned int timeout, const char *cm
 out:
 	if (argv)
 		free(argv);
-	if (cmdline_copy)
-		free(cmdline_copy);
 	return pid;
 
 failed:
