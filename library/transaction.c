@@ -329,8 +329,11 @@ twopence_transaction_attach_local_sink_stream(twopence_transaction_t *trans, uns
 	int fd;
 
 	fd = twopence_iostream_getfd(stream);
-	if (fd >= 0)
-		return twopence_transaction_attach_local_sink(trans, fd, id);
+	if (fd >= 0) {
+		sink = twopence_transaction_attach_local_sink(trans, fd, id);
+		twopence_sock_set_noclose(sink->socket);
+		return sink;
+	}
 
 	sink = twopence_transaction_channel_from_stream(stream, O_WRONLY);
 	sink->id = id;
@@ -370,8 +373,11 @@ twopence_transaction_attach_local_source_stream(twopence_transaction_t *trans, u
 	int fd;
 
 	fd = twopence_iostream_getfd(stream);
-	if (fd >= 0)
-		return twopence_transaction_attach_local_source(trans, fd, id);
+	if (fd >= 0) {
+		source = twopence_transaction_attach_local_source(trans, fd, id);
+		twopence_sock_set_noclose(source->socket);
+		return source;
+	}
 
 	source = twopence_transaction_channel_from_stream(stream, O_RDONLY);
 	source->id = id;
