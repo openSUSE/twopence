@@ -130,6 +130,9 @@ struct twopence_scp_transaction {
 
   twopence_iostream_t *	local_stream;
   long			remaining;
+
+  /* Used for printing dots */
+  twopence_iostream_t *	dots_stream;
 };
 
 #if 0
@@ -150,24 +153,19 @@ static int		__twopence_ssh_interrupt_ssh(struct twopence_ssh_target *);
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
 
-// Output a "stdout" character through one of the available methods
-//
-// Returns 0 if everything went fine, a negative error code otherwise
-static inline int
-__twopence_ssh_output(struct twopence_ssh_target *handle, char c)
+/*
+ * This is really just a helper for printing dots to stdout
+ */
+static inline void
+__twopence_ssh_putc(twopence_iostream_t *stream, char c)
 {
-  return twopence_target_putc(&handle->base, TWOPENCE_STDOUT, c);
+  if (stream)
+    twopence_iostream_putc(stream, c);
 }
 
-// Output a "stderr" character through one of the available methods
-//
-// Returns 0 if everything went fine, a negative error code otherwise
-static inline int
-__twopence_ssh_error(struct twopence_ssh_target *handle, char c)
-{
-  return twopence_target_putc(&handle->base, TWOPENCE_STDERR, c);
-}
-
+/*
+ * SSH Transaction functions
+ */
 static int
 __twopence_ssh_transaction_send_eof(twopence_ssh_transaction_t *trans)
 {
@@ -700,21 +698,21 @@ __twopence_ssh_send_file(twopence_scp_transaction_t *trans, twopence_status_t *s
     received = twopence_iostream_read(trans->local_stream, buffer, size);
     if (received != size)
     {
-      __twopence_ssh_output(trans->handle, '\n');
+      __twopence_ssh_putc(trans->dots_stream, '\n');
       return TWOPENCE_LOCAL_FILE_ERROR;
     }
 
     if (ssh_scp_write (trans->scp, buffer, size) != SSH_OK)
     {
       status->major = ssh_get_error_code(trans->session);
-      __twopence_ssh_output(trans->handle, '\n');
+      __twopence_ssh_putc(trans->dots_stream, '\n');
       return TWOPENCE_SEND_FILE_ERROR;
     }
 
-    __twopence_ssh_output(trans->handle, '.');     // Progression dots
+    __twopence_ssh_putc(trans->dots_stream, '.');     // Progression dots
     trans->remaining -= size;                 // That much we don't need to send anymore
   }
-  __twopence_ssh_output(trans->handle, '\n');
+  __twopence_ssh_putc(trans->dots_stream, '\n');
   return 0;
 }
 
@@ -736,21 +734,21 @@ __twopence_ssh_receive_file(twopence_scp_transaction_t *trans, twopence_status_t
     if (received != size)
     {
       status->major = ssh_get_error_code(trans->session);
-      __twopence_ssh_output(trans->handle, '\n');
+      __twopence_ssh_putc(trans->dots_stream, '\n');
       return TWOPENCE_RECEIVE_FILE_ERROR;
     }
 
     written = twopence_iostream_write(trans->local_stream, buffer, size);
     if (written != size)
     {
-      __twopence_ssh_output(trans->handle, '\n');
+      __twopence_ssh_putc(trans->dots_stream, '\n');
       return TWOPENCE_LOCAL_FILE_ERROR;
     }
 
-    __twopence_ssh_output(trans->handle, '.');     // Progression dots
+    __twopence_ssh_putc(trans->dots_stream, '.');     // Progression dots
     trans->remaining -= size;                 // That's that much less to receive
   }
-  __twopence_ssh_output(trans->handle, '\n');
+  __twopence_ssh_putc(trans->dots_stream, '\n');
   return 0;
 }
 
@@ -893,6 +891,16 @@ twopence_scp_transfer_destroy(twopence_scp_transaction_t *trans)
     ssh_free(trans->session);
     trans->session = NULL;
   }
+  if (trans->dots_stream) {
+    twopence_iostream_free(trans->dots_stream);
+    trans->dots_stream = NULL;
+  }
+}
+
+static void
+twopence_scp_transfer_print_dots(twopence_scp_transaction_t *state)
+{
+  twopence_iostream_wrap_fd(1, false, &state->dots_stream);
 }
 
 static int
@@ -1241,6 +1249,9 @@ twopence_ssh_inject_file(struct twopence_target *opaque_handle,
   if ((rc = twopence_scp_transfer_open_session(&state, xfer->user)) < 0)
     return rc;
 
+  if (xfer->print_dots)
+    twopence_scp_transfer_print_dots(&state);
+
   dirname = ssh_dirname(xfer->remote.name);
   basename = ssh_basename(xfer->remote.name);
 
@@ -1295,6 +1306,9 @@ twopence_ssh_extract_file(struct twopence_target *opaque_handle,
   twopence_scp_transfer_init(&state, handle);
   if ((rc = twopence_scp_transfer_open_session(&state, xfer->user)) < 0)
     return rc;
+
+  if (xfer->print_dots)
+    twopence_scp_transfer_print_dots(&state);
 
   // Extract the file
   rc = __twopence_ssh_extract_ssh(&state, xfer, status);
