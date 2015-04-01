@@ -833,7 +833,7 @@ twopence_iostream_getfd(twopence_iostream_t *stream)
 {
   twopence_substream_t *substream;
 
-  if (stream == NULL || stream->eof || !stream->count != 1)
+  if (stream == NULL || stream->eof || stream->count != 1)
     return -1;
 
   substream = stream->substream[0];
