@@ -65,7 +65,6 @@ struct transaction {
 
 	transaction_channel_t *	local_sink;
 
-	unsigned int		num_local_sources;
 	transaction_channel_t *	local_source;
 };
 
