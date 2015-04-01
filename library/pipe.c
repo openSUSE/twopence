@@ -314,20 +314,40 @@ __twopence_pipe_handshake(struct twopence_pipe_target *handle)
  * Wrap command transaction state into a struct.
  * We may want to reuse the server side transaction code here, at some point.
  */
+typedef struct twopence_pipe_stream twopence_pipe_stream_t;
+struct twopence_pipe_stream {
+	twopence_pipe_stream_t *next;
+
+	twopence_iostream_t *	stream;
+	unsigned char		channel;	/* '0', '1', etc as used by the protocol */
+
+	int			was_blocking;
+	bool			eof;
+	bool			plugged;	/* When injecting a file, we're not allowed to
+						 * send before we have received the server's
+						 * go-ahead. */
+};
+
 typedef struct twopence_pipe_transaction twopence_pipe_transaction_t;
 struct twopence_pipe_transaction {
 	struct twopence_pipe_target *handle;
 	twopence_status_t	status;
 	bool			done;
+	bool			print_dots;
 
 	int			state;
 	twopence_protocol_state_t ps;
-	twopence_iostream_t *	stdin;
 
-	int			(*process_packet)(struct twopence_pipe_target *, twopence_pipe_transaction_t *, twopence_buf_t *);
+	unsigned int		total_data;
+
+	twopence_pipe_stream_t *local_sources;
+	twopence_pipe_stream_t *local_sinks;
+
+	int			(*process_packet)(struct twopence_pipe_target *, twopence_pipe_transaction_t *,
+						const twopence_hdr_t *hdr, twopence_buf_t *payload);
 };
 
-void
+static void
 twopence_pipe_transaction_init(twopence_pipe_transaction_t *trans, struct twopence_pipe_target *handle)
 {
   memset(trans, 0, sizeof(*trans));
@@ -336,76 +356,159 @@ twopence_pipe_transaction_init(twopence_pipe_transaction_t *trans, struct twopen
   handle->ps.xid++;
 }
 
+static twopence_pipe_stream_t *
+twopence_pipe_stream_new(twopence_iostream_t *stream, unsigned char channel)
+{
+  twopence_pipe_stream_t *pstream;
+
+  pstream = calloc(1, sizeof(*pstream));
+  pstream->stream = stream;
+  pstream->channel = channel;
+  pstream->was_blocking = -1;
+
+  return pstream;
+}
+
+static void
+twopence_pipe_stream_free(twopence_pipe_stream_t *pstream)
+{
+  if (pstream->was_blocking >= 0 && pstream->stream) {
+    twopence_iostream_set_blocking(pstream->stream, pstream->was_blocking);
+  }
+  free(pstream);
+}
+
+static void
+twopence_pipe_stream_drop(twopence_pipe_stream_t **head)
+{
+  twopence_pipe_stream_t *pstream;
+
+  while ((pstream = *head) != NULL) {
+   *head = pstream->next;
+   twopence_pipe_stream_free(pstream);
+  }
+}
+
+twopence_pipe_stream_t *
+twopence_pipe_transaction_attach_source(twopence_pipe_transaction_t *trans, twopence_iostream_t *stream, unsigned char channel)
+{
+  twopence_pipe_stream_t *pstream;
+
+  if (trans->local_sources != NULL)
+    return NULL;
+
+  pstream = twopence_pipe_stream_new(stream, channel);
+  if (stream && channel == TWOPENCE_PROTO_TYPE_STDIN) {
+    // Tune stdin so it is nonblocking.
+    // Not sure whether this is actually needed any longer
+    pstream->was_blocking = twopence_iostream_set_blocking(stream, false);
+  }
+
+  trans->local_sources = pstream;
+  return pstream;
+}
+
+void
+twopence_pipe_transaction_attach_sink(twopence_pipe_transaction_t *trans, twopence_iostream_t *stream, unsigned char channel)
+{
+  twopence_pipe_stream_t *pstream;
+
+  if (stream != NULL) {
+    pstream = twopence_pipe_stream_new(stream, channel);
+
+    pstream->next = trans->local_sinks;
+    trans->local_sinks = pstream;
+  }
+}
+
 /*
  * Attach a local source stream to the remote stdin
  * This can be fd 0, any other file, or even a buffer object.
  */
 int
-twopence_pipe_transaction_attach_stdin(twopence_pipe_transaction_t *trans, twopence_iostream_t *stream)
+twopence_pipe_transaction_attach_stdin(twopence_pipe_transaction_t *trans)
 {
-  /* If there is no stdin attached to this command, send an EOF packet
-   * to the other end right away (normally, this is sent after we reach
-   * EOF on the input.
-   */
-  if (stream == NULL || twopence_iostream_eof(stream)) {
-    /* Send an EOF packet to the server */
-    if (__twopence_pipe_send_eof(trans->handle, &trans->ps) < 0)
-      return TWOPENCE_FORWARD_INPUT_ERROR;
-    stream = NULL;
-  }
+  twopence_iostream_t *stream;
 
-  trans->stdin = stream;
+  if (trans->local_sources != NULL)
+    return TWOPENCE_PARAMETER_ERROR;
+
+  stream = twopence_target_stream(&trans->handle->base, TWOPENCE_STDIN);
+  twopence_pipe_transaction_attach_source(trans, stream, TWOPENCE_PROTO_TYPE_STDIN);
   return 0;
 }
 
 void
-twopence_pipe_transaction_close_stdin(twopence_pipe_transaction_t *trans)
+twopence_pipe_transaction_attach_stdout(twopence_pipe_transaction_t *trans)
 {
-  if (trans->stdin) {
-    twopence_iostream_destroy(trans->stdin);
-    trans->stdin = NULL;
-  }
+  twopence_iostream_t *stream;
+
+  stream = twopence_target_stream(&trans->handle->base, TWOPENCE_STDOUT);
+  if (stream != NULL)
+    twopence_pipe_transaction_attach_sink(trans, stream, TWOPENCE_PROTO_TYPE_STDOUT);
+}
+
+void
+twopence_pipe_transaction_attach_stderr(twopence_pipe_transaction_t *trans)
+{
+  twopence_iostream_t *stream;
+
+  stream = twopence_target_stream(&trans->handle->base, TWOPENCE_STDERR);
+  if (stream != NULL)
+    twopence_pipe_transaction_attach_sink(trans, stream, TWOPENCE_PROTO_TYPE_STDERR);
 }
 
 void
 twopence_pipe_transaction_destroy(twopence_pipe_transaction_t *trans)
 {
-  twopence_pipe_transaction_close_stdin(trans);
+  twopence_pipe_stream_drop(&trans->local_sources);
+  twopence_pipe_stream_drop(&trans->local_sinks);
 }
 
 /*
- * Helper functions to read from either link or stdin
+ * Forward data from a local source file to the server.
+ *
+ * We can have at most one local source for now, which
+ * helps to keep the code a bit simpler.
  */
 static int
-__twopence_pipe_forward_stdin(struct twopence_pipe_target *handle, twopence_pipe_transaction_t *trans)
+__twopence_pipe_forward_source(twopence_pipe_transaction_t *trans, twopence_pipe_stream_t *pstream)
 {
+  twopence_iostream_t *stream;
   twopence_buf_t *bp;
-  int count;
+  int count, def_error;
 
-  if (trans->stdin == NULL)
+  if (pstream == NULL || pstream->eof || pstream->plugged)
     return 0;
 
-  if (twopence_iostream_eof(trans->stdin)) {
+  if (pstream->channel == TWOPENCE_PROTO_TYPE_STDIN)
+    def_error = TWOPENCE_FORWARD_INPUT_ERROR;
+  else
+    def_error = TWOPENCE_SEND_FILE_ERROR;
+
+  stream = pstream->stream;
+  if (twopence_iostream_eof(stream)) {
 send_eof:
-    twopence_pipe_transaction_close_stdin(trans);
-    if (__twopence_pipe_send_eof(handle, &trans->ps) < 0)
-      return TWOPENCE_FORWARD_INPUT_ERROR;
+    if (__twopence_pipe_send_eof(trans->handle, &trans->ps) < 0)
+      return def_error;
+
+    pstream->eof = true;
     return 0;
   }
 
   bp = twopence_protocol_command_buffer_new();
 
   do {
-	  count = twopence_iostream_read(trans->stdin,
+	  count = twopence_iostream_read(stream,
 		    twopence_buf_tail(bp),
 		    twopence_buf_tailroom(bp));
   } while (count < 0 && errno == EINTR);
 
   if (count > 0) {
     twopence_buf_advance_tail(bp, count);
-    twopence_protocol_push_header_ps(bp, &trans->ps, TWOPENCE_PROTO_TYPE_STDIN);
-    if (__twopence_pipe_send(handle, bp) < 0)
-      return TWOPENCE_FORWARD_INPUT_ERROR;
+    twopence_protocol_push_header_ps(bp, &trans->ps, pstream->channel);
+    if (__twopence_pipe_send(trans->handle, bp) < 0)
+      return def_error;
     return count;
   }
 
@@ -415,15 +518,37 @@ send_eof:
     goto send_eof;
 
   /* Failure to read from stdin stream */
-  return TWOPENCE_FORWARD_INPUT_ERROR;
+  return def_error;
 }
 
 static int
-__twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, twopence_pipe_transaction_t *trans)
+__twopence_pipe_forward_sink(twopence_pipe_transaction_t *trans, unsigned char channel, twopence_buf_t *payload)
 {
+  twopence_pipe_stream_t *pstream = NULL;
+
+  for (pstream = trans->local_sinks; pstream; pstream = pstream->next) {
+    if (pstream->channel == channel) {
+      if (__twopence_pipe_write_stream(pstream->stream, payload) < 0)
+        return TWOPENCE_RECEIVE_RESULTS_ERROR;
+
+      trans->total_data += twopence_buf_count(payload);
+      if (trans->print_dots)
+        __twopence_pipe_output(trans->handle, '.');
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+static int
+__twopence_pipe_transaction_doio(twopence_pipe_transaction_t *trans)
+{
+  struct twopence_pipe_target *handle = trans->handle;
   unsigned long timeout = handle->link_timeout;
 
   while (!trans->done) {
+    twopence_pipe_stream_t *pstream = NULL;
     struct pollfd pfd[2];
     int nfds = 0, n;
     int count, rc;
@@ -432,17 +557,29 @@ __twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, twopence_pipe_
     pfd[nfds].events = POLLIN;
     nfds++;
 
-    if (trans->stdin && trans->state == 0) {
-      n = twopence_iostream_poll(trans->stdin, &pfd[nfds], POLLIN);
+    /*
+     * Comment on the use of pstream->plugged.
+     *
+     * For command transactions, we should only send data in state 0.
+     * For inject transactions, we should only send data after we have received the
+     * MAJOR code. Thus, the local source is initially plugged in this case, and
+     * unplugged later on.
+     */
+    if ((pstream = trans->local_sources) != NULL && !pstream->eof && !pstream->plugged) {
+      twopence_iostream_t *source = pstream->stream;
+
+      n = twopence_iostream_poll(source, &pfd[nfds], POLLIN);
       if (n == 0) {
 	/* A zero return code indicates the stream does not support polling,
 	 * which is the case of a buffer for instance.
 	 * Try to read from it directly.
 	 */
-        count = __twopence_pipe_forward_stdin(handle, trans);
-	if (count != 0)
+        count = __twopence_pipe_forward_source(trans, pstream);
+	if (count <= 0)
 	  return count;
-      } else
+	continue;
+      }
+
       if (n > 0)
         nfds++;
     }
@@ -461,20 +598,42 @@ __twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, twopence_pipe_
 
     if (pfd[0].revents & POLLIN) {
       /* Incoming data on the link. Read the complete frame right away (blocking until we have it) */
-      twopence_buf_t *bp;
+      twopence_protocol_state_t ps;
+      const twopence_hdr_t *hdr;
+      twopence_buf_t *bp, payload;
 
       bp = __twopence_pipe_read_packet(handle);
       if (bp == NULL)
         return TWOPENCE_PROTOCOL_ERROR;
 
-      rc = trans->process_packet(handle, trans, bp);
+      /* Split the packet into header and payload */
+      hdr = twopence_protocol_dissect_ps(bp, &payload, &ps);
+      if (hdr == NULL)
+        return TWOPENCE_PROTOCOL_ERROR;
+
+      /* Sanity check: make sure this actually belongs to this transaction */
+      if (ps.cid != trans->ps.cid || ps.xid != trans->ps.xid) {
+	fprintf(stderr, "%s: incoming '%c' packet with bad cid=0x%x or xid=0x%x\n",
+			__func__, hdr->type, ps.cid, ps.xid);
+        twopence_buf_free(bp);
+	return TWOPENCE_PROTOCOL_ERROR;
+      }
+
+      /* See if this is a generic data channel that we should just copy to
+       * a local data stream */
+      rc = __twopence_pipe_forward_sink(trans, hdr->type, &payload);
+
+      /* No packet that we would have known. Pass it on */
+      if (rc == 0)
+        rc = trans->process_packet(handle, trans, hdr, &payload);
+
       twopence_buf_free(bp);
       if (rc < 0)
         return rc;
     }
 
     if (nfds > 1 && (pfd[1].revents & (POLLIN|POLLHUP))) {
-      rc = __twopence_pipe_forward_stdin(handle, trans);
+      rc = __twopence_pipe_forward_source(trans, pstream);
       if (rc < 0)
         return rc;
     }
@@ -483,40 +642,30 @@ __twopence_pipe_recvbuf_both(struct twopence_pipe_target *handle, twopence_pipe_
   return 0;
 }
 
-///////////////////////////// Middle layer //////////////////////////////////////
-// Read stdin, stdout, stderr, and both error codes
-//
-// Returns 0 if everything went fine, or a negative error code if failed
 static int
-__twopence_pipe_command_process_packet(struct twopence_pipe_target *handle, twopence_pipe_transaction_t *trans, twopence_buf_t *bp)
+__twopence_pipe_transaction_run(twopence_pipe_transaction_t *trans, twopence_status_t *status_ret)
 {
-  twopence_protocol_state_t ps;
-  const twopence_hdr_t *hdr;
-  twopence_buf_t payload;
+  int rc;
 
-  hdr = twopence_protocol_dissect_ps(bp, &payload, &ps);
-  if (hdr == NULL)
-    return TWOPENCE_PROTOCOL_ERROR;
+  do {
+    rc = __twopence_pipe_transaction_doio(trans);
+  } while (!trans->done && rc >= 0);
 
-  if (ps.cid != trans->ps.cid || ps.xid != trans->ps.xid)
-	  fprintf(stderr, "%s: incoming '%c' packet with bad cid=0x%x or xid=0x%x\n",
-			  __func__, hdr->type, ps.cid, ps.xid);
+  *status_ret = trans->status;
+  return rc;
+}
 
+///////////////////////////// Middle layer //////////////////////////////////////
+//
+
+/*
+ * Callback function that handles incoming packets for a command transaction.
+ */
+static int
+__twopence_pipe_command_process_packet(struct twopence_pipe_target *handle, twopence_pipe_transaction_t *trans,
+		const twopence_hdr_t *hdr, twopence_buf_t *payload)
+{
   switch (hdr->type) {
-  case TWOPENCE_PROTO_TYPE_STDOUT:
-    if (trans->state != 0)
-      return TWOPENCE_RECEIVE_RESULTS_ERROR;
-    if (__twopence_pipe_write(handle, TWOPENCE_STDOUT, &payload) < 0)
-      return TWOPENCE_RECEIVE_RESULTS_ERROR;
-    break;
-
-  case TWOPENCE_PROTO_TYPE_STDERR:
-    if (trans->state != 0)
-      return TWOPENCE_RECEIVE_RESULTS_ERROR;
-    if (__twopence_pipe_write(handle, TWOPENCE_STDERR, &payload) < 0)
-      return TWOPENCE_RECEIVE_RESULTS_ERROR;
-    break;
-
   case TWOPENCE_PROTO_TYPE_TIMEOUT:
     if (trans->state != 0)
       return TWOPENCE_RECEIVE_RESULTS_ERROR;
@@ -524,17 +673,17 @@ __twopence_pipe_command_process_packet(struct twopence_pipe_target *handle, twop
 
   case TWOPENCE_PROTO_TYPE_MAJOR:
     if (trans->state != 0
-     || !twopence_protocol_dissect_int(&payload, &trans->status.major))
+     || !twopence_protocol_dissect_int(payload, &trans->status.major))
       return TWOPENCE_RECEIVE_RESULTS_ERROR;
     trans->state = 1;
     break;
 
   case TWOPENCE_PROTO_TYPE_MINOR:
     if (trans->state != 1
-     || !twopence_protocol_dissect_int(&payload, &trans->status.minor))
+     || !twopence_protocol_dissect_int(payload, &trans->status.minor))
       return TWOPENCE_RECEIVE_RESULTS_ERROR;
     trans->state = 2;
-	trans->done = true;
+    trans->done = true;
     break;
 
   default:
@@ -543,163 +692,64 @@ __twopence_pipe_command_process_packet(struct twopence_pipe_target *handle, twop
   return 0;
 }
 
-// Read major/minor error codes
-//
-// Returns 0 if everything went fine, or a negative error code if failed
+/*
+ * Callback function that handles incoming packets for a sendfile transaction.
+ */
 static int
-__twopence_wait_status_packet(struct twopence_pipe_target *handle, unsigned int packet_type, int *status_word)
+__twopence_pipe_inject_process_packet(struct twopence_pipe_target *handle, twopence_pipe_transaction_t *trans,
+		const twopence_hdr_t *hdr, twopence_buf_t *payload)
 {
-  twopence_buf_t *bp, payload;
-  const twopence_hdr_t *hdr;
-  int rc = TWOPENCE_PROTOCOL_ERROR;
+  switch (hdr->type) {
+  case TWOPENCE_PROTO_TYPE_MAJOR:
+    if (trans->state != 0
+     || !twopence_protocol_dissect_int(payload, &trans->status.major))
+      return TWOPENCE_RECEIVE_FILE_ERROR;
 
-  // Receive a chunk of data
-  bp = __twopence_pipe_read_packet(handle);
-  if (bp == NULL)
-    return TWOPENCE_PROTOCOL_ERROR;
+    /* Unplug the local source file so that we can start the transfer */
+    if (trans->local_sources)
+      trans->local_sources->plugged = false;
+    trans->state = 1;
+    break;
 
-  if ((hdr = twopence_protocol_dissect(bp, &payload)) != NULL
-   && hdr->type == packet_type
-   && twopence_protocol_dissect_int(&payload, status_word))
-    rc = 0;
+  case TWOPENCE_PROTO_TYPE_MINOR:
+    if (trans->state != 1
+     || !twopence_protocol_dissect_int(payload, &trans->status.minor))
+      return TWOPENCE_RECEIVE_FILE_ERROR;
+    trans->state = 2;
+    trans->done = true;
+    break;
 
-  twopence_buf_free(bp);
-  return rc;
-}
-
-static int
-_twopence_read_major(struct twopence_pipe_target *handle, int link_fd, int *major)
-{
-  return __twopence_wait_status_packet(handle, TWOPENCE_PROTO_TYPE_MAJOR, major);
-}
-
-// Read minor error code
-//
-// Returns 0 if everything went fine, or a negative error code if failed
-static int
-_twopence_read_minor(struct twopence_pipe_target *handle, int link_fd, int *minor)
-{
-  return __twopence_wait_status_packet(handle, TWOPENCE_PROTO_TYPE_MINOR, minor);
-}
-
-// Send a file in chunks to the link; iostream version
-//
-// Returns 0 if everything went fine, or a negative error code if failed
-int _twopence_send_file_iostream
-  (struct twopence_pipe_target *handle, twopence_iostream_t *file_stream, int link_fd)
-{
-  int received, rv = 0;
-  int total = 0;
-
-  do {
-    twopence_buf_t *bp;
-
-    /* Allocate a new packet with room reserved for the header */
-    bp = twopence_protocol_command_buffer_new();
-
-    received = twopence_iostream_read(file_stream,
-		    twopence_buf_tail(bp),
-		    twopence_buf_tailroom(bp));
-    if (received < 0) {
-      twopence_buf_free(bp);
-      if (errno == EINTR)
-	continue;
-      goto local_file_error;
-    }
-
-    if (received == 0) {
-      // Send an EOF packet to the remote host
-      twopence_buf_free(bp);
-      rv = __twopence_pipe_send_eof(handle, NULL);
-      break;
-    }
-
-    twopence_buf_advance_tail(bp, received);
-    twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_DATA);
-    if (__twopence_pipe_send(handle, bp) < 0)
-      goto send_file_error;
-
-    __twopence_pipe_output(handle, '.');     // Progression dots
-    total += received;
-  } while (received != 0);
-
-out:
-  if (total)
-    __twopence_pipe_output(handle, '\n');
-  return rv;
-
-local_file_error:
-  rv = TWOPENCE_LOCAL_FILE_ERROR;
-  goto out;
-
-send_file_error:
-  rv = TWOPENCE_SEND_FILE_ERROR;
-  goto out;
-}
-
-// Receive a file in chunks from the link and write it to a file
-//
-// Returns 0 if everything went fine, or a negative error code if failed
-int _twopence_receive_file
-  (struct twopence_pipe_target *handle, twopence_iostream_t *local_stream, int link_fd, int *remote_rc)
-{
-  int rv = 0;
-  twopence_buf_t *bp = NULL;
-  int total = 0;
-
-  while (true) {
-    const twopence_hdr_t *hdr;
-    twopence_buf_t payload;
-
-    if (bp)
-      twopence_buf_free(bp);
-
-    bp = __twopence_pipe_read_packet(handle);
-    if (bp == NULL)
-      goto recv_file_error;
-
-    hdr = twopence_protocol_dissect(bp, &payload);
-    if (hdr == NULL)
-      goto recv_file_error;
-
-    switch (hdr->type) {
-    case TWOPENCE_PROTO_TYPE_MAJOR:
-      /* Remote error occurred, usually when trying to open the file */
-      (void) twopence_protocol_dissect_int(&payload, remote_rc);
-      goto recv_file_error;
-
-    case TWOPENCE_PROTO_TYPE_EOF:
-      /* End of data */
-      goto out;
-
-    case TWOPENCE_PROTO_TYPE_DATA:
-      /* Write data to the file */
-      if (__twopence_pipe_write_stream(local_stream, &payload) < 0)
-        goto local_file_error;
-      total += twopence_buf_count(&payload);
-      __twopence_pipe_output(handle, '.');   // Progression dots
-      break;
-
-    default:
-      goto recv_file_error;
-    }
+  default:
+    return TWOPENCE_RECEIVE_FILE_ERROR;
   }
-
-out:
-  if (total)
-    __twopence_pipe_output(handle, '\n');
-  if (bp)
-    twopence_buf_free(bp);
-  return rv;
-
-recv_file_error:
-  rv = TWOPENCE_RECEIVE_FILE_ERROR;
-  goto out;
-
-local_file_error:
-  rv = TWOPENCE_LOCAL_FILE_ERROR;
-  goto out;
+  return 0;
 }
+
+/*
+ * Callback function that handles incoming packets for a recvfile transaction.
+ */
+static int
+__twopence_pipe_extract_process_packet(struct twopence_pipe_target *handle, twopence_pipe_transaction_t *trans,
+		const twopence_hdr_t *hdr, twopence_buf_t *payload)
+{
+  switch (hdr->type) {
+  case TWOPENCE_PROTO_TYPE_MAJOR:
+    /* Remote error occurred, usually when trying to open the file */
+    (void) twopence_protocol_dissect_int(payload, &trans->status.major);
+    trans->done = true;
+    return TWOPENCE_RECEIVE_FILE_ERROR;
+
+  case TWOPENCE_PROTO_TYPE_EOF:
+    /* End of data */
+    trans->done = true;
+    break;
+
+  default:
+    return TWOPENCE_RECEIVE_FILE_ERROR;
+  }
+  return 0;
+}
+
 
 ///////////////////////////// Top layer /////////////////////////////////////////
 
@@ -715,7 +765,6 @@ __twopence_pipe_command
   twopence_pipe_transaction_t trans;
   twopence_buf_t *bp;
   int rc;
-  int was_blocking = -1;
 
   // By default, no major and no minor
   memset(status_ret, 0, sizeof(*status_ret));
@@ -728,38 +777,22 @@ __twopence_pipe_command
   if (*linux_command == '\0')
     return TWOPENCE_PARAMETER_ERROR;
 
-  // Tune input so it is nonblocking
-  was_blocking = twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, false);
-  if (was_blocking < 0)
-    return TWOPENCE_OPEN_SESSION_ERROR;
-
   // Open communication link
-  if (__twopence_pipe_open_link(handle) < 0) {
-    twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
+  if (__twopence_pipe_open_link(handle) < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
-  }
 
   twopence_pipe_transaction_init(&trans, handle);
   trans.process_packet = __twopence_pipe_command_process_packet;
 
-  rc = twopence_pipe_transaction_attach_stdin(&trans, twopence_target_stream(&handle->base, TWOPENCE_STDIN));
-  if (rc < 0) {
-    twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
-    twopence_pipe_transaction_destroy(&trans);
-    return TWOPENCE_OPEN_SESSION_ERROR;
-  }
-
   // Prepare command to send to the remote host
   bp = twopence_protocol_build_command_packet(&trans.ps, username, linux_command, timeout);
   if (bp == NULL) {
-    twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     twopence_pipe_transaction_destroy(&trans);
     return TWOPENCE_PARAMETER_ERROR;
   }
 
   // Send command
   if (__twopence_pipe_send(handle, bp) < 0) {
-    twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
     twopence_pipe_transaction_destroy(&trans);
     return TWOPENCE_SEND_COMMAND_ERROR;
   }
@@ -774,14 +807,18 @@ __twopence_pipe_command
   if (handle->link_timeout < LINE_TIMEOUT)
     handle->link_timeout = LINE_TIMEOUT;
 
-  // Read "standard output" and "standard error"
-  do {
-    rc = __twopence_pipe_recvbuf_both(handle, &trans);
-  } while (!trans.done && rc >= 0);
-  *status_ret = trans.status;
+  rc = twopence_pipe_transaction_attach_stdin(&trans);
+  if (rc < 0) {
+    twopence_pipe_transaction_destroy(&trans);
+    return rc;
+  }
 
-  /* FIXME: we should really reset the sink on all exit paths from this function */
-  twopence_target_set_blocking(&handle->base, TWOPENCE_STDIN, was_blocking);
+  twopence_pipe_transaction_attach_stdout(&trans);
+  twopence_pipe_transaction_attach_stderr(&trans);
+
+  // Read "standard output" and "standard error"
+  rc = __twopence_pipe_transaction_run(&trans, status_ret);
+
   twopence_pipe_transaction_destroy(&trans);
   return rc;
 }
@@ -792,6 +829,8 @@ __twopence_pipe_command
 int __twopence_pipe_inject_file
   (struct twopence_pipe_target *handle, twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
+  twopence_pipe_transaction_t trans;
+  twopence_pipe_stream_t *pstream;
   twopence_buf_t *bp;
   int link_fd;
   int rc;
@@ -805,34 +844,28 @@ int __twopence_pipe_inject_file
   if (link_fd < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
+  twopence_pipe_transaction_init(&trans, handle);
+  trans.process_packet = __twopence_pipe_inject_process_packet;
+  trans.print_dots = xfer->print_dots;
+
   // Prepare command to send to the remote host
-  bp = twopence_protocol_build_inject_packet(xfer->user, xfer->remote.name, xfer->remote.mode);
+  bp = twopence_protocol_build_inject_packet(&trans.ps, xfer->user, xfer->remote.name, xfer->remote.mode);
 
   // Send command
   if (__twopence_pipe_send(handle, bp) < 0)
     return TWOPENCE_SEND_COMMAND_ERROR;
 
-  // Read first return code before we start transferring the file
-  // This enables to detect a remote problem even before we start the transfer
-  rc = _twopence_read_major(handle, link_fd, &status->major);
-  if (rc < 0)
-    return rc;
-  if (status->major != 0)
-    return TWOPENCE_SEND_FILE_ERROR;
+  pstream = twopence_pipe_transaction_attach_source(&trans, xfer->local_stream, TWOPENCE_PROTO_TYPE_DATA);
+  if (pstream)
+    pstream->plugged = true;
 
-  // Send the file
-  rc = _twopence_send_file_iostream(handle, xfer->local_stream, link_fd);
-  if (rc < 0)
-    return TWOPENCE_SEND_FILE_ERROR;
+  rc = __twopence_pipe_transaction_run(&trans, status);
 
-  // Read second return code from remote
-  rc = _twopence_read_minor(handle, link_fd, &status->minor);
-  if (rc < 0)
-  {
-    return TWOPENCE_SEND_FILE_ERROR;
-  }
+  if (trans.print_dots && trans.total_data != 0)
+    __twopence_pipe_output(trans.handle, '\n');
 
-  return 0;
+  twopence_pipe_transaction_destroy(&trans);
+  return rc;
 }
 
 // Extract a file from the remote host
@@ -841,8 +874,8 @@ int __twopence_pipe_inject_file
 int _twopence_extract_virtio_serial
   (struct twopence_pipe_target *handle, twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
+  twopence_pipe_transaction_t trans;
   twopence_buf_t *bp;
-  int link_fd;
   int rc;
 
   // Check that the username is valid
@@ -850,22 +883,29 @@ int _twopence_extract_virtio_serial
     return TWOPENCE_PARAMETER_ERROR;
 
   // Open link for transmitting the command
-  link_fd = __twopence_pipe_open_link(handle);
-  if (link_fd < 0)
+  if (__twopence_pipe_open_link(handle) < 0)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
+  twopence_pipe_transaction_init(&trans, handle);
+  trans.process_packet = __twopence_pipe_extract_process_packet;
+  trans.print_dots = xfer->print_dots;
+
   // Prepare command to send to the remote host
-  bp = twopence_protocol_build_extract_packet(xfer->user, xfer->remote.name);
+  bp = twopence_protocol_build_extract_packet(&trans.ps, xfer->user, xfer->remote.name);
 
   // Send command (including terminating NUL)
   if (__twopence_pipe_send(handle, bp) < 0)
     return TWOPENCE_SEND_COMMAND_ERROR;
 
-  rc = _twopence_receive_file(handle, xfer->local_stream, link_fd, &status->major);
-  if (rc < 0)
-    return TWOPENCE_RECEIVE_FILE_ERROR;
+  twopence_pipe_transaction_attach_sink(&trans, xfer->local_stream, TWOPENCE_PROTO_TYPE_DATA);
 
-  return 0;
+  rc = __twopence_pipe_transaction_run(&trans, status);
+
+  if (trans.print_dots && trans.total_data != 0)
+    __twopence_pipe_output(trans.handle, '\n');
+
+  twopence_pipe_transaction_destroy(&trans);
+  return rc;
 }
 
 // Tell the remote test server to exit

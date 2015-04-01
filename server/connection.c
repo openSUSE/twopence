@@ -145,7 +145,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 			/* kill the connection? */
 			return false;
 		}
-		TRACE("connection_process_packet cid=0x%04u xid=0x%04u type=%c len=%u\n",
+		TRACE("connection_process_packet cid=%u xid=%u type=%c len=%u\n",
 				ps.cid, ps.xid, hdr->type, twopence_buf_count(&payload));
 
 		if (hdr->type == TWOPENCE_PROTO_TYPE_HELLO) {

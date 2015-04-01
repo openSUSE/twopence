@@ -135,7 +135,7 @@ twopence_protocol_build_simple_packet(unsigned char type)
 twopence_buf_t *
 twopence_protocol_build_eof_packet(twopence_protocol_state_t *ps)
 {
-	return twopence_protocol_build_simple_packet(TWOPENCE_PROTO_TYPE_EOF);
+	return twopence_protocol_build_simple_packet_ps(ps, TWOPENCE_PROTO_TYPE_EOF);
 }
 
 twopence_buf_t *
@@ -196,7 +196,7 @@ twopence_protocol_build_hello_packet(unsigned int cid)
 }
 
 twopence_buf_t *
-twopence_protocol_build_inject_packet(const char *user, const char *remote_name, unsigned int remote_mode)
+twopence_protocol_build_inject_packet(const twopence_protocol_state_t *ps, const char *user, const char *remote_name, unsigned int remote_mode)
 {
 	twopence_buf_t *bp;
 
@@ -207,7 +207,7 @@ twopence_protocol_build_inject_packet(const char *user, const char *remote_name,
 	twopence_protocol_format_args(bp, "%s %d %s", user, remote_mode, remote_name);
 
 	/* Finalize the header */
-	twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_INJECT);
+	twopence_protocol_push_header_ps(bp, ps, TWOPENCE_PROTO_TYPE_INJECT);
 	return bp;
 }
 
@@ -229,7 +229,7 @@ twopence_protocol_build_command_packet(const twopence_protocol_state_t *ps, cons
 }
 
 twopence_buf_t *
-twopence_protocol_build_extract_packet(const char *user, const char *remote_name)
+twopence_protocol_build_extract_packet(const twopence_protocol_state_t *ps, const char *user, const char *remote_name)
 {
 	twopence_buf_t *bp;
 
@@ -240,7 +240,7 @@ twopence_protocol_build_extract_packet(const char *user, const char *remote_name
 	twopence_protocol_format_args(bp, "%s %s", user, remote_name);
 
 	/* Finalize the header */
-	twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_EXTRACT);
+	twopence_protocol_push_header_ps(bp, ps, TWOPENCE_PROTO_TYPE_EXTRACT);
 	return bp;
 }
 

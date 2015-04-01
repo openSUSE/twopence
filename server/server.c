@@ -714,7 +714,7 @@ child_handler(int sig)
 void
 server_run(socket_t *sock)
 {
-	static unsigned int global_client_id;
+	static unsigned int global_client_id = 1;
 	connection_pool_t *pool;
 	struct sigaction sa;
 	sigset_t mask, omask;
