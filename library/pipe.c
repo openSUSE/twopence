@@ -509,6 +509,10 @@ send_eof:
     twopence_protocol_push_header_ps(bp, &trans->ps, pstream->channel);
     if (__twopence_pipe_send(trans->handle, bp) < 0)
       return def_error;
+
+    trans->total_data += count;
+    if (trans->print_dots)
+      __twopence_pipe_output(trans->handle, '.');
     return count;
   }
 
@@ -613,10 +617,10 @@ __twopence_pipe_transaction_doio(twopence_pipe_transaction_t *trans)
 
       /* Sanity check: make sure this actually belongs to this transaction */
       if (ps.cid != trans->ps.cid || ps.xid != trans->ps.xid) {
-	fprintf(stderr, "%s: incoming '%c' packet with bad cid=0x%x or xid=0x%x\n",
+	fprintf(stderr, "%s: ignoring '%c' packet with bad cid=0x%x or xid=0x%x\n",
 			__func__, hdr->type, ps.cid, ps.xid);
         twopence_buf_free(bp);
-	return TWOPENCE_PROTOCOL_ERROR;
+	continue;
       }
 
       /* See if this is a generic data channel that we should just copy to
@@ -703,6 +707,9 @@ __twopence_pipe_inject_process_packet(struct twopence_pipe_target *handle, twope
   case TWOPENCE_PROTO_TYPE_MAJOR:
     if (trans->state != 0
      || !twopence_protocol_dissect_int(payload, &trans->status.major))
+      return TWOPENCE_RECEIVE_FILE_ERROR;
+
+    if (trans->status.major != 0)
       return TWOPENCE_RECEIVE_FILE_ERROR;
 
     /* Unplug the local source file so that we can start the transfer */

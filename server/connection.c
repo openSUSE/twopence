@@ -246,7 +246,7 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 			if (trans == NULL) {
 				TRACE("unable to create transaction, send EPROTO error\n");
 				socket_queue_xmit(conn->client_sock,
-					 twopence_protocol_build_uint_packet(TWOPENCE_PROTO_TYPE_MAJOR, EPROTO));
+					 twopence_protocol_build_uint_packet_ps(&ps, TWOPENCE_PROTO_TYPE_MAJOR, EPROTO));
 			} else {
 				conn->current_transaction = trans;
 			}
