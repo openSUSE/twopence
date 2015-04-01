@@ -29,7 +29,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <unistd.h>
 
 #include "twopence.h"
-#include "protocol.h"
+#include "pipe.h"
 
 struct twopence_virtio_target {
   struct twopence_pipe_target pipe;

@@ -29,7 +29,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <unistd.h>
 
 #include "twopence.h"
-#include "protocol.h"
+#include "pipe.h"
 
 #define BUFFER_SIZE 32768              // Size in bytes of the work buffer for receiving data from the remote
 #define LINE_TIMEOUT 60000             // Maximum silence on the line in milliseconds

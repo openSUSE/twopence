@@ -1,10 +1,25 @@
 /*
  * Generic functions implementing the twopence protocol
  * for serial, virtio etc.
+ *
+ * Copyright (C) 2014-2015 SUSE
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, version 2.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef PROTOCOL_H
-#define PROTOCOL_H
+#ifndef PIPE_H
+#define PIPE_H
 
 /* Base class for all targets using the twopence pipe protocol */
 struct twopence_pipe_target {
@@ -33,4 +48,4 @@ extern int	twopence_pipe_interrupt_command(struct twopence_target *);
 extern int	twopence_pipe_exit_remote(struct twopence_target *);
 extern void	twopence_pipe_end(struct twopence_target *);
 
-#endif /* PROTOCOL_H */
+#endif /* PIPE_H */
