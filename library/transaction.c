@@ -291,6 +291,23 @@ twopence_transaction_channel_write_data(twopence_trans_channel_t *sink, twopence
 	return true;
 }
 
+int
+twopence_transaction_channel_flush(twopence_trans_channel_t *sink)
+{
+	twopence_sock_t *sock;
+
+	if ((sock = sink->socket) == NULL)
+		return 0;
+
+	while (twopence_sock_xmit_queue_bytes(sock) != 0) {
+		int n;
+
+		if ((n = twopence_sock_send_queued(sock)) < 0)
+			return n;
+	}
+	return 0;
+}
+
 static void
 twopence_transaction_channel_write_eof(twopence_trans_channel_t *sink)
 {

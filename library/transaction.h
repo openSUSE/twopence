@@ -74,5 +74,6 @@ extern bool			twopence_transaction_channel_is_read_eof(const twopence_trans_chan
 extern void			twopence_transaction_channel_set_callback_read_eof(twopence_trans_channel_t *, void (*fn)(twopence_transaction_t *, twopence_trans_channel_t *));
 extern void			twopence_transaction_channel_set_callback_write_eof(twopence_trans_channel_t *, void (*fn)(twopence_transaction_t *, twopence_trans_channel_t *));
 extern void			twopence_transaction_channel_set_plugged(twopence_trans_channel_t *, bool);
+extern int			twopence_transaction_channel_flush(twopence_trans_channel_t *);
 
 #endif /* TRANSACTION_H */

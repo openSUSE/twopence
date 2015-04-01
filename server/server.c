@@ -449,6 +449,9 @@ failed:
 static void
 server_inject_file_write_eof(twopence_transaction_t *trans, twopence_trans_channel_t *channel)
 {
+	/* The channel may have data queued to it. For now, just flush it synchronously */
+	twopence_transaction_channel_flush(channel);
+
 	twopence_transaction_send_minor(trans, 0);
 	trans->done = true;
 }
