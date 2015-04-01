@@ -709,7 +709,7 @@ bad_packet:
 	return false;
 }
 
-static semantics_t	server_ops = {
+static twopence_conn_semantics_t	server_ops = {
 	.process_request	= server_process_request,
 };
 
@@ -722,7 +722,7 @@ void
 server_run(twopence_sock_t *sock)
 {
 	static unsigned int global_client_id = 1;
-	connection_pool_t *pool;
+	twopence_conn_pool_t *pool;
 	struct sigaction sa;
 	sigset_t mask, omask;
 
