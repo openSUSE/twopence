@@ -234,7 +234,17 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 
 			case TWOPENCE_PROTO_TYPE_QUIT:
 				semantics->request_quit();
-				break;
+				continue;
+
+			case TWOPENCE_PROTO_TYPE_DATA:
+			case TWOPENCE_PROTO_TYPE_STDIN:
+			case TWOPENCE_PROTO_TYPE_EOF:
+				/* Due to bad timing, we may receive the stdin EOF indication from the
+				 * client after the process as exited. In this case, the transaction
+				 * may no longer exist.
+				 * However, we do not want to send a duplicate status response,
+				 * so skip the EPROTO thing a few lines down. */
+				continue;
 
 			default:
 				twopence_debug("Unknown command code '%c' in global context\n", hdr->type);
