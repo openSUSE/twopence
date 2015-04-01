@@ -62,6 +62,8 @@ extern twopence_transaction_t *	twopence_transaction_new_ex(twopence_sock_t *, u
 extern twopence_transaction_t *	twopence_transaction_new(twopence_sock_t *client, unsigned int type, const twopence_protocol_state_t *ps);
 extern void			twopence_transaction_free(twopence_transaction_t *trans);
 extern const char *		twopence_transaction_describe(const twopence_transaction_t *);
+extern int			twopence_transaction_send_extract(twopence_transaction_t *, const char *user, const char *remote_name);
+extern int			twopence_transaction_send_inject(twopence_transaction_t *, const char *user, const char *remote_name, int remote_mode);
 extern twopence_trans_channel_t *twopence_transaction_attach_local_sink(twopence_transaction_t *trans, int fd, unsigned char channel);
 extern twopence_trans_channel_t *twopence_transaction_attach_local_source(twopence_transaction_t *trans, int fd, unsigned char channel);
 extern twopence_trans_channel_t *twopence_transaction_attach_local_sink_stream(twopence_transaction_t *trans, unsigned char channel, twopence_iostream_t *);

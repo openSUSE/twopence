@@ -993,8 +993,6 @@ int __twopence_pipe_inject_file
 {
   twopence_transaction_t *trans;
   twopence_trans_channel_t *channel;
-  twopence_buf_t *bp;
-  int fd;
   int rc;
 
   // Check that the username is valid
@@ -1014,22 +1012,14 @@ int __twopence_pipe_inject_file
   trans.print_dots = xfer->print_dots;
 #endif
 
-  // Prepare command to send to the remote host
-  bp = twopence_protocol_build_inject_packet(&trans->ps, xfer->user, xfer->remote.name, xfer->remote.mode);
+  // Send inject command packet
+  if ((rc = twopence_transaction_send_inject(trans, xfer->user, xfer->remote.name, xfer->remote.mode)) < 0)
+    goto out;
 
-  // Send command
-  if (__twopence_pipe_send(handle, bp) < 0)
-    return TWOPENCE_SEND_COMMAND_ERROR;
-
-  if ((fd = twopence_iostream_getfd(xfer->local_stream)) >= 0) {
-    channel = twopence_transaction_attach_local_source(trans, fd, TWOPENCE_PROTO_TYPE_DATA);
-    if (channel) {
-      twopence_transaction_channel_set_callback_read_eof(channel, __twopence_pipe_inject_read_eof);
-      twopence_transaction_channel_set_plugged(channel, true);
-    }
-  } else {
-    /* Unable to use polling. Just send all data right away */
-    return -100;
+  channel = twopence_transaction_attach_local_source_stream(trans, TWOPENCE_PROTO_TYPE_DATA, xfer->local_stream);
+  if (channel) {
+    twopence_transaction_channel_set_callback_read_eof(channel, __twopence_pipe_inject_read_eof);
+    twopence_transaction_channel_set_plugged(channel, true);
   }
 
   rc = __twopence_transaction_run(handle, trans, status);
@@ -1039,6 +1029,7 @@ int __twopence_pipe_inject_file
     __twopence_pipe_output(trans.handle, '\n');
 #endif
 
+out:
   twopence_transaction_free(trans);
   return rc;
 }
@@ -1051,11 +1042,12 @@ int _twopence_extract_virtio_serial
 {
   twopence_transaction_t *trans;
   twopence_trans_channel_t *sink;
-  twopence_buf_t *bp;
   int rc;
 
   // Check that the username is valid
   if (_twopence_invalid_username(xfer->user))
+    return TWOPENCE_PARAMETER_ERROR;
+  if (xfer->remote.name == NULL)
     return TWOPENCE_PARAMETER_ERROR;
 
   // Open link for transmitting the command
@@ -1069,12 +1061,9 @@ int _twopence_extract_virtio_serial
   trans.print_dots = xfer->print_dots;
 #endif
 
-  // Prepare command to send to the remote host
-  bp = twopence_protocol_build_extract_packet(&trans->ps, xfer->user, xfer->remote.name);
-
-  // Send command (including terminating NUL)
-  if (__twopence_pipe_send(handle, bp) < 0)
-    return TWOPENCE_SEND_COMMAND_ERROR;
+  // Send command packet
+  if ((rc = twopence_transaction_send_extract(trans, xfer->user, xfer->remote.name)) < 0)
+    goto out;
 
   sink = twopence_transaction_attach_local_sink_stream(trans, TWOPENCE_PROTO_TYPE_DATA, xfer->local_stream);
   twopence_transaction_channel_set_callback_write_eof(sink, __twopence_pipe_extract_eof);
@@ -1086,6 +1075,7 @@ int _twopence_extract_virtio_serial
     __twopence_pipe_output(trans.handle, '\n');
 #endif
 
+out:
   twopence_transaction_free(trans);
   return rc;
 }

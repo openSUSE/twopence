@@ -255,6 +255,28 @@ twopence_transaction_num_channels(const twopence_transaction_t *trans)
 	return count;
 }
 
+int
+twopence_transaction_send_extract(twopence_transaction_t *trans, const char *user, const char *remote_name)
+{
+	twopence_buf_t *bp;
+
+	bp = twopence_protocol_build_extract_packet(&trans->ps, user, remote_name);
+	if (twopence_sock_xmit(trans->client_sock, bp) < 0)
+		return TWOPENCE_SEND_COMMAND_ERROR;
+	return 0;
+}
+
+int
+twopence_transaction_send_inject(twopence_transaction_t *trans, const char *user, const char *remote_name, int remote_mode)
+{
+	twopence_buf_t *bp;
+
+	bp = twopence_protocol_build_inject_packet(&trans->ps, user, remote_name, remote_mode);
+	if (twopence_sock_xmit(trans->client_sock, bp) < 0)
+		return TWOPENCE_SEND_COMMAND_ERROR;
+	return 0;
+}
+
 /* FIXME: swap fd and id arguments */
 twopence_trans_channel_t *
 twopence_transaction_attach_local_sink(twopence_transaction_t *trans, int fd, unsigned char id)
@@ -302,6 +324,19 @@ twopence_transaction_attach_local_source(twopence_transaction_t *trans, int fd, 
 
 	source = twopence_transaction_channel_from_fd(fd, O_RDONLY);
 	source->id = channel_id;
+
+	source->next = trans->local_source;
+	trans->local_source = source;
+	return source;
+}
+
+twopence_trans_channel_t *
+twopence_transaction_attach_local_source_stream(twopence_transaction_t *trans, unsigned char id, twopence_iostream_t *stream)
+{
+	twopence_trans_channel_t *source;
+
+	source = twopence_transaction_channel_from_stream(stream, O_RDONLY);
+	source->id = id;
 
 	source->next = trans->local_source;
 	trans->local_source = source;
@@ -403,6 +438,54 @@ twopence_transaction_channel_poll(twopence_trans_channel_t *channel, struct poll
 	return 0;
 }
 
+/* This should be executed for source channels only! */
+static void
+twopence_transaction_channel_forward(twopence_transaction_t *trans, twopence_trans_channel_t *channel)
+{
+	twopence_iostream_t *stream = channel->stream;
+
+	if (!channel->plugged && stream != NULL) {
+		while (twopence_sock_xmit_queue_allowed(trans->client_sock) && !twopence_iostream_eof(stream)) {
+			twopence_buf_t *bp;
+			int count;
+
+			bp = twopence_protocol_command_buffer_new();
+			do {
+				count = twopence_iostream_read(stream,
+						twopence_buf_tail(bp),
+						twopence_buf_tailroom(bp));
+			} while (count < 0 && errno == EINTR);
+
+			if (count > 0) {
+				twopence_buf_advance_tail(bp, count);
+				twopence_protocol_push_header_ps(bp, &trans->ps, channel->id);
+				twopence_transaction_send_client(trans, bp);
+
+#ifdef later
+				/* print dots */
+#endif
+				continue;
+			}
+
+			twopence_buf_free(bp);
+			if (count == 0)
+				break;
+			if (count < 0) {
+				twopence_log_error("%s: error on channel %c", twopence_transaction_describe(trans), channel->id);
+				twopence_transaction_set_error(trans, count);
+				return;
+			}
+		}
+
+		if (twopence_iostream_eof(stream) && channel->callbacks.read_eof) {
+			twopence_debug("%s: EOF on channel %c", twopence_transaction_describe(trans), channel->id);
+			channel->callbacks.read_eof(trans, channel);
+			channel->callbacks.read_eof = NULL;
+			channel->stream = NULL;
+		}
+	}
+}
+
 static void
 twopence_transaction_channel_doio(twopence_transaction_t *trans, twopence_trans_channel_t *channel)
 {
@@ -459,9 +542,15 @@ twopence_transaction_fill_poll(twopence_transaction_t *trans, struct pollfd *pfd
 		twopence_trans_channel_t *source;
 
 		for (source = trans->local_source; source; source = source->next) {
-			twopence_debug("%s: poll channel %c", twopence_transaction_describe(trans), source->id);
-			if (nfds < max && twopence_transaction_channel_poll(source, pfd + nfds))
+			if (nfds < max && twopence_transaction_channel_poll(source, pfd + nfds)) {
 				nfds++;
+			} else {
+				/* This is a source not backed by a file descriptor but
+				 * something else (such as a buffer).
+				 * This means we cannot poll, so we just forward all data
+				 * we have. */
+				twopence_transaction_channel_forward(trans, source);
+			}
 		}
 	}
 
