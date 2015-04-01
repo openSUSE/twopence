@@ -187,6 +187,9 @@ connection_process_packet(connection_t *conn, twopence_buf_t *bp)
 		if (trans != NULL) {
 			if (trans->done) {
 				/* Coming late to the party, uh? */
+			} else if (trans->recv == NULL) {
+				twopence_log_error("Unexpected packet type '%c' in transaction context\n", hdr->type);
+				transaction_fail(trans, EPROTO);
 			} else {
 				trans->recv(trans, hdr, &payload);
 			}

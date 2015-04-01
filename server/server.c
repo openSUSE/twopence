@@ -499,18 +499,6 @@ server_inject_file(transaction_t *trans, const char *username, const char *filen
 	return true;
 }
 
-bool
-server_extract_file_recv(transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
-{
-	switch (hdr->type) {
-	default:
-		twopence_log_error("Unknown command code '%c' in transaction context\n", hdr->type);
-		transaction_fail(trans, EPROTO);
-		break;
-	}
-	return true;
-}
-
 void
 server_extract_file_source_read_eof(transaction_t *trans, transaction_channel_t *channel)
 {
@@ -542,8 +530,7 @@ server_extract_file(transaction_t *trans, const char *username, const char *file
 
 	transaction_channel_set_callback_read_eof(source, server_extract_file_source_read_eof);
 
-	trans->recv = server_extract_file_recv;
-
+	/* We don't expect to receive any packets; sending is taken care of at the channel level */
 	return true;
 }
 
