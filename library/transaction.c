@@ -19,9 +19,8 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
 #include <sys/socket.h>
-#include <sys/un.h>
+#include <sys/time.h>
 #include <netinet/in.h> /* for htons */
 
 #include <pwd.h>
@@ -29,7 +28,6 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <time.h>
-#include <termios.h>
 #include <errno.h>
 #include <signal.h>
 #include <unistd.h>
@@ -42,7 +40,6 @@
 #include <stdint.h>
 #include <assert.h>
 #include <ctype.h>
-#include <limits.h>
 
 #include "protocol.h"
 #include "transaction.h"
@@ -233,6 +230,21 @@ twopence_transaction_set_dot_stream(twopence_transaction_t *trans, twopence_iost
 	if (trans->client.dot_stream != NULL && trans->client.dots_printed)
 		twopence_iostream_putc(trans->client.dot_stream, '\n');
 	trans->client.dot_stream = stream;
+}
+
+void
+twopence_transaction_set_timeout(twopence_transaction_t *trans, long timeout)
+{
+	if (timeout > 0) {
+		gettimeofday(&trans->client.deadline, NULL);
+		trans->client.deadline.tv_sec += timeout;
+	}
+}
+
+bool
+twopence_transaction_update_timeout(const twopence_transaction_t *trans, twopence_timeout_t *tmo)
+{
+	return twopence_timeout_update(tmo, &trans->client.deadline);
 }
 
 static inline void

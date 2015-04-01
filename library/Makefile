@@ -22,7 +22,8 @@ LIB_OBJS= twopence.o \
 	  protocol.o \
 	  socket.o \
 	  buffer.o \
-	  logging.o
+	  logging.o \
+	  utils.o
 
 all: libtwopence.so
 

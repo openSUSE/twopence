@@ -32,6 +32,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "protocol.h"
 #include "transaction.h"
 #include "pipe.h"
+#include "utils.h"
 
 #define BUFFER_SIZE 32768              // Size in bytes of the work buffer for receiving data from the remote
 #define LINE_TIMEOUT 60000             // Maximum silence on the line in milliseconds
@@ -248,6 +249,7 @@ __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transac
 		{
 			struct pollfd pfd[16];
 			unsigned int nfds = 0, max = 16;
+			twopence_timeout_t timeout;
 
 			twopence_sock_prepare_poll(sock);
 
@@ -257,10 +259,16 @@ __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transac
 			if (nfds < max && twopence_sock_fill_poll(sock, pfd + nfds))
 				nfds++;
 
+			twopence_timeout_init(&timeout);
+			if (!twopence_transaction_update_timeout(trans, &timeout)) {
+				/* expired */
+				twopence_transaction_set_error(trans, TWOPENCE_COMMAND_TIMEOUT_ERROR);
+				break;
+			}
+
 			nfds += twopence_transaction_fill_poll(trans, pfd + nfds, max - nfds);
 
-			/* FIXME: timeout handling */
-			poll(pfd, nfds, -1);
+			poll(pfd, nfds, twopence_timeout_msec(&timeout));
 		}
 
 		/* This is connection_doio() */
@@ -473,6 +481,8 @@ __twopence_pipe_command(struct twopence_pipe_target *handle, twopence_command_t 
    * For now, we make sure that the link timeout is the maximum of LINE_TIMEOUT
    * and (command timeout + 1).
    */
+  if (cmd->timeout)
+    twopence_transaction_set_timeout(trans, cmd->timeout);
   handle->link_timeout = (cmd->timeout + 1) * 1000;
   if (handle->link_timeout < LINE_TIMEOUT)
     handle->link_timeout = LINE_TIMEOUT;

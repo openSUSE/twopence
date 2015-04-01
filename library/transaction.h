@@ -23,6 +23,7 @@
 
 #include <stdint.h>
 #include "socket.h"
+#include "utils.h"
 
 typedef struct twopence_transaction twopence_transaction_t;
 typedef struct twopence_trans_channel twopence_trans_channel_t;
@@ -53,6 +54,8 @@ struct twopence_transaction {
 	twopence_trans_channel_t *local_source;
 
 	struct {
+		struct timeval		deadline;
+
 		twopence_status_t	status_ret;
 		int			exception;
 
@@ -90,6 +93,8 @@ extern twopence_trans_channel_t *twopence_transaction_find_source(twopence_trans
 /* Client side functions */
 extern void			twopence_transaction_set_error(twopence_transaction_t *, int);
 extern void			twopence_transaction_set_dot_stream(twopence_transaction_t *, twopence_iostream_t *);
+extern void			twopence_transaction_set_timeout(twopence_transaction_t *, long timeout);
+extern bool			twopence_transaction_update_timeout(const twopence_transaction_t *, twopence_timeout_t *);
 
 extern bool			twopence_transaction_channel_is_read_eof(const twopence_trans_channel_t *);
 extern void			twopence_transaction_channel_set_callback_read_eof(twopence_trans_channel_t *, void (*fn)(twopence_transaction_t *, twopence_trans_channel_t *));
