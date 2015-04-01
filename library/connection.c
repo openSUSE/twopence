@@ -57,6 +57,7 @@ struct twopence_connection {
 
 	/* We may want to have concurrent transactions later on */
 	twopence_transaction_t *	transactions;
+	twopence_transaction_t *	done_transactions;
 };
 
 twopence_conn_t *
@@ -93,12 +94,21 @@ twopence_conn_free(twopence_conn_t *conn)
 	free(conn);
 }
 
+int
+twopence_conn_xmit_packet(twopence_conn_t *conn, twopence_buf_t *bp)
+{
+	if (conn->client_sock == NULL)
+		return TWOPENCE_OPEN_SESSION_ERROR;
+	return twopence_sock_xmit(conn->client_sock, bp);
+}
+
 unsigned int
 twopence_conn_fill_poll(twopence_conn_t *conn, twopence_pollinfo_t *pinfo)
 {
 	unsigned int current_num_fds = pinfo->num_fds;
 	twopence_transaction_t *trans;
 	twopence_sock_t *sock;
+	int rc;
 
 	sock = conn->client_sock;
 	if (sock && twopence_sock_is_dead(sock)) {
@@ -108,8 +118,12 @@ twopence_conn_fill_poll(twopence_conn_t *conn, twopence_pollinfo_t *pinfo)
 		return 0;
 	}
 
-	for (trans = conn->transactions; trans; trans = trans->next)
-		twopence_transaction_fill_poll(trans, pinfo);
+	for (trans = conn->transactions; trans; trans = trans->next) {
+		if ((rc = twopence_transaction_fill_poll(trans, pinfo)) < 0) {
+			/* most likely a timeout */
+			twopence_transaction_set_error(trans, rc);
+		}
+	}
 
 	if ((sock = conn->client_sock) != NULL) {
 		twopence_sock_prepare_poll(sock);
@@ -134,6 +148,41 @@ twopence_conn_add_transaction(twopence_conn_t *conn, twopence_transaction_t *tra
 	conn->transactions = trans;
 }
 
+void
+twopence_conn_add_transaction_done(twopence_conn_t *conn, twopence_transaction_t *trans)
+{
+	trans->next = conn->done_transactions;
+	conn->done_transactions = trans;
+}
+
+twopence_transaction_t *
+twopence_conn_reap_transaction(twopence_conn_t *conn, const twopence_transaction_t *wait_for)
+{
+	twopence_transaction_t **pos, *rover;
+
+	for (pos = &conn->done_transactions; (rover = *pos) != NULL; pos = &rover->next) {
+		if (wait_for == NULL || rover == wait_for) {
+			*pos = rover->next;
+			rover->next = NULL;
+			return rover;
+		}
+	}
+	return NULL;
+}
+
+void
+twopence_conn_remove_transaction(twopence_conn_t *conn, twopence_transaction_t *trans)
+{
+	twopence_transaction_t **pos, *rover;
+
+	for (pos = &conn->transactions; (rover = *pos) != NULL; pos = &rover->next) {
+		if (rover == trans) {
+			*pos = rover->next;
+			break;
+		}
+	}
+}
+
 /*
  * Find the transaction corresponding to a given XID.
  */
@@ -148,6 +197,12 @@ twopence_conn_find_transaction(twopence_conn_t *conn, uint16_t xid)
 	}
 
 	return NULL;
+}
+
+twopence_transaction_t *
+twopence_conn_transaction_new(twopence_conn_t *conn, unsigned int type, const twopence_protocol_state_t *ps)
+{
+	return twopence_transaction_new(conn->client_sock, type, ps);
 }
 
 static bool
@@ -271,7 +326,7 @@ twopence_conn_process_incoming(twopence_conn_t *conn)
 	return true;
 }
 
-void
+int
 twopence_conn_doio(twopence_conn_t *conn)
 {
 	twopence_transaction_t **pos, *trans;
@@ -279,9 +334,9 @@ twopence_conn_doio(twopence_conn_t *conn)
 
 	if ((sock = conn->client_sock) != NULL) {
 		if (twopence_sock_doio(sock) < 0) {
-			twopence_debug("I/O error on socket: %m\n");
+			twopence_log_error("I/O error on socket: %m\n");
 			twopence_conn_close(conn);
-			return;
+			return -1;
 		}
 
 		/* See if we have received one or more complete packets */
@@ -304,7 +359,7 @@ twopence_conn_doio(twopence_conn_t *conn)
 
 		if (twopence_sock_is_dead(sock)) {
 			twopence_conn_close(conn);
-			return;
+			return -1;
 		}
 	}
 
@@ -312,13 +367,25 @@ twopence_conn_doio(twopence_conn_t *conn)
 		twopence_transaction_doio(trans);
 
 		if (trans->done) {
-			twopence_debug("%s: transaction done, free it", twopence_transaction_describe(trans));
 			*pos = trans->next;
-			twopence_transaction_free(trans);
+			trans->next = NULL;
+
+			/* In the server, we're no longer interested in the transaction once
+			 * we're finished with it. On the client side, we do not dispose of it
+			 * immediately, but put it on a separate list from which it can be
+			 * reaped later. */
+			if (conn->semantics && conn->semantics->end_transaction) {
+				conn->semantics->end_transaction(conn, trans);
+			} else {
+				twopence_debug("%s: transaction done, free it", twopence_transaction_describe(trans));
+				twopence_transaction_free(trans);
+			}
 		} else {
 			pos = &trans->next;
 		}
 	}
+
+	return 0;
 }
 
 struct twopence_connection_pool {

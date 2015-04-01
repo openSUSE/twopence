@@ -32,13 +32,22 @@ typedef struct twopence_connection_pool twopence_conn_pool_t;
 typedef const struct semantics twopence_conn_semantics_t;
 struct semantics {
 	bool		(*process_request)(twopence_transaction_t *, twopence_buf_t *);
+	void		(*end_transaction)(twopence_conn_t *, twopence_transaction_t *);
 };
 
 extern twopence_conn_t *	twopence_conn_new(twopence_conn_semantics_t *semantics, twopence_sock_t *sock, unsigned int client_id);
 extern void			twopence_conn_free(twopence_conn_t *conn);
 extern unsigned int		twopence_conn_fill_poll(twopence_conn_t *conn, twopence_pollinfo_t *pinfo);
+extern int			twopence_conn_doio(twopence_conn_t *conn);
 extern bool			twopence_conn_process_packet(twopence_conn_t *conn, twopence_buf_t *bp);
 extern bool			twopence_conn_process(twopence_conn_t *conn);
+extern twopence_transaction_t *	twopence_conn_transaction_new(twopence_conn_t *, unsigned int type, const twopence_protocol_state_t *);
+extern int			twopence_conn_xmit_packet(twopence_conn_t *, twopence_buf_t *);
+
+extern void			twopence_conn_add_transaction(twopence_conn_t *conn, twopence_transaction_t *trans);
+extern void			twopence_conn_add_transaction_done(twopence_conn_t *conn, twopence_transaction_t *trans);
+extern twopence_transaction_t *	twopence_conn_reap_transaction(twopence_conn_t *conn, const twopence_transaction_t *wait_for);
+extern void			twopence_conn_remove_transaction(twopence_conn_t *conn, twopence_transaction_t *trans);
 
 extern twopence_conn_pool_t *	twopence_conn_pool_new(void);
 extern void			twopence_conn_pool_add_connection(twopence_conn_pool_t *pool, twopence_conn_t *conn);

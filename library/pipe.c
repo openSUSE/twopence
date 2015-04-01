@@ -39,7 +39,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define COMMAND_BUFFER_SIZE 8192       // Size in bytes of the work buffer for sending data to the remote
 
 
-static int	__twopence_pipe_handshake(struct twopence_pipe_target *handle);
+static int				__twopence_pipe_handshake(twopence_sock_t *sock, unsigned int *client_id);
+static void				__twopence_pipe_end_transaction(twopence_conn_t *, twopence_transaction_t *);
+
+static twopence_conn_semantics_t	twopence_client_semantics = {
+	.end_transaction	= __twopence_pipe_end_transaction,
+};
 
 /*
  * Class initialization
@@ -54,7 +59,6 @@ twopence_pipe_target_init(struct twopence_pipe_target *target, int plugin_type, 
   target->base.ops = plugin_ops;
   target->link_timeout = LINE_TIMEOUT;
   target->link_ops = link_ops;
-  target->link_sock = NULL;
 }
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
@@ -83,17 +87,24 @@ _twopence_invalid_username(const char *username)
 static int
 __twopence_pipe_open_link(struct twopence_pipe_target *handle)
 {
-  if (handle->link_sock == NULL) {
+  if (handle->connection == NULL) {
+    unsigned int client_id = 0;
+    twopence_sock_t *sock;
+
     /* The socket we are given should be set up for blocking I/O */
-    handle->link_sock = handle->link_ops->open(handle);
-    if (handle->link_sock == NULL)
+    sock = handle->link_ops->open(handle);
+    if (sock == NULL)
       return TWOPENCE_OPEN_SESSION_ERROR;
 
-    if (__twopence_pipe_handshake(handle) < 0) {
-      twopence_sock_free(handle->link_sock);
-      handle->link_sock = NULL;
+    if (__twopence_pipe_handshake(sock, &client_id) < 0) {
+      twopence_sock_free(sock);
       return TWOPENCE_OPEN_SESSION_ERROR;
     }
+
+    twopence_debug("handshake complete, my client id is %d", client_id);
+    handle->connection = twopence_conn_new(&twopence_client_semantics, sock, client_id);
+    handle->ps.cid = client_id;
+    handle->ps.xid = 1;
   }
 
   return 0;
@@ -109,13 +120,13 @@ __twopence_pipe_send(struct twopence_pipe_target *handle, twopence_buf_t *bp)
   int count = twopence_buf_count(bp);
   int rc = 0;
 
-  if (handle->link_sock == NULL)
+  if (handle->connection == NULL)
     return TWOPENCE_PROTOCOL_ERROR; /* SESSION_ERROR? */
 
   /* FIXME: heed the link timeout */
 
   /* Transmit and free the buffer */
-  rc = twopence_sock_xmit(handle->link_sock, bp);
+  rc = twopence_conn_xmit_packet(handle->connection, bp);
   if (rc < 0)
     return rc;
 
@@ -126,13 +137,10 @@ __twopence_pipe_send(struct twopence_pipe_target *handle, twopence_buf_t *bp)
  * Read a chunk (normally called a packet or frame) from the link
  */
 static twopence_buf_t *
-__twopence_pipe_read_packet(struct twopence_pipe_target *handle)
+__twopence_pipe_read_packet(twopence_sock_t *sock)
 {
-  twopence_sock_t *sock;
   twopence_buf_t *bp;
 
-  if ((sock = handle->link_sock) == NULL)
-    return NULL;
   bp = twopence_sock_get_recvbuf(sock);
 
   /* Receive more data from the link until we have at least one
@@ -161,25 +169,27 @@ __twopence_pipe_read_packet(struct twopence_pipe_target *handle)
  * Perform the initial exchange of HELLO packets
  */
 static int
-__twopence_pipe_handshake(struct twopence_pipe_target *handle)
+__twopence_pipe_handshake(twopence_sock_t *sock, unsigned int *client_id)
 {
   twopence_buf_t *bp, payload;
   const twopence_hdr_t *hdr;
   twopence_protocol_state_t ps;
   int rc = 0;
 
-  rc = __twopence_pipe_send(handle, twopence_protocol_build_hello_packet(0));
+  /* Transmit and free the buffer */
+  rc = twopence_sock_xmit(sock, twopence_protocol_build_hello_packet(0));
   if (rc < 0)
     return rc;
 
-  twopence_sock_post_recvbuf_if_needed(handle->link_sock, 4 * TWOPENCE_PROTO_MAX_PACKET);
+  twopence_sock_post_recvbuf_if_needed(sock, 4 * TWOPENCE_PROTO_MAX_PACKET);
 
-  if ((bp = __twopence_pipe_read_packet(handle)) == NULL)
+  if ((bp = __twopence_pipe_read_packet(sock)) == NULL)
     return TWOPENCE_PROTOCOL_ERROR;
 
+  memset(&ps, 0, sizeof(ps));
   if ((hdr = twopence_protocol_dissect_ps(bp, &payload, &ps)) != NULL
    && hdr->type == TWOPENCE_PROTO_TYPE_HELLO) {
-    handle->ps = ps;
+    *client_id = ps.cid;
     rc = 0;
   } else {
     rc = TWOPENCE_PROTOCOL_ERROR;
@@ -195,7 +205,7 @@ __twopence_pipe_handshake(struct twopence_pipe_target *handle)
 twopence_transaction_t *
 twopence_pipe_transaction_new(struct twopence_pipe_target *handle, unsigned int type)
 {
-	return twopence_transaction_new(handle->link_sock, type, &handle->ps);
+  return twopence_conn_transaction_new(handle->connection, type, &handle->ps);
 }
 
 /*
@@ -239,86 +249,28 @@ twopence_pipe_transaction_attach_stderr(twopence_transaction_t *trans, twopence_
   twopence_transaction_attach_local_sink_stream(trans, TWOPENCE_PROTO_TYPE_STDERR, stream);
 }
 
+static void
+__twopence_pipe_end_transaction(twopence_conn_t *conn, twopence_transaction_t *trans)
+{
+	twopence_debug("%s: transaction done, move it to wait list", twopence_transaction_describe(trans));
+	twopence_conn_add_transaction_done(conn, trans);
+}
+
 static int
 __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transaction_t *trans, twopence_status_t *status)
 {
-	twopence_sock_t *sock = handle->link_sock;
-	int rc;
+	twopence_conn_add_transaction(handle->connection, trans);
 
-	while (!trans->done) {
-		/* This is connection_fill_poll() */
-		{
-			struct pollfd pfd[16];
-			twopence_pollinfo_t poll_info;
+	while (twopence_conn_reap_transaction(handle->connection, trans) == NULL) {
+		twopence_pollinfo_t poll_info;
+		struct pollfd pfd[16];
 
-			twopence_pollinfo_init(&poll_info, pfd, 16);
+		twopence_pollinfo_init(&poll_info, pfd, 16);
+		twopence_conn_fill_poll(handle->connection, &poll_info);
 
-			twopence_sock_prepare_poll(sock);
-
-			/* Make sure we have a receive buffer posted. */
-			twopence_sock_post_recvbuf_if_needed(sock, TWOPENCE_PROTO_MAX_PACKET);
-
-			twopence_sock_fill_poll(sock, &poll_info);
-			if ((rc = twopence_transaction_fill_poll(trans, &poll_info)) < 0) {
-				/* most likely a timeout */
-				twopence_transaction_set_error(trans, rc);
-				break;
-			}
-
-			twopence_pollinfo_poll(&poll_info);
-		}
-
-		/* This is connection_doio() */
-		{
-			twopence_buf_t *bp;
-
-			if (twopence_sock_doio(sock) < 0) {
-				twopence_log_error("I/O error on socket: %m\n");
-				goto protocol_error;
-			}
-
-			bp = twopence_sock_get_recvbuf(sock);
-			while (bp && twopence_protocol_buffer_complete(bp)) {
-				const twopence_hdr_t *hdr;
-				twopence_protocol_state_t ps;
-				twopence_buf_t payload;
-
-				hdr = twopence_protocol_dissect_ps(bp, &payload, &ps);
-				if (hdr == NULL) {
-					twopence_log_error("%s: received invalid packet\n", __func__);
-					goto protocol_error;
-				}
-
-				twopence_debug("%s: cid=%u xid=%u type=%s len=%u\n", __func__,
-						ps.cid, ps.xid,
-						twopence_protocol_packet_type_to_string(hdr->type),
-						twopence_buf_count(&payload));
-
-				if (ps.xid != trans->ps.xid) {
-					twopence_log_error("%s: xid mismatch", __func__);
-					continue;
-				}
-
-				twopence_transaction_recv_packet(trans, hdr, &payload);
-			}
-
-			if (twopence_buf_count(bp) == 0) {
-				/* All data has been used. Just reset the buffer */
-				twopence_buf_reset(bp);
-			} else {
-				/* There's an incomplete packet after the end of
-				* the one(s) we just processed.
-				* Make sure we still have ample tailroom
-				* to receive the rest of the packet.
-				*/
-				if (twopence_buf_tailroom_max(bp) < TWOPENCE_PROTO_MAX_PACKET)
-					twopence_buf_compact(bp);
-			}
-
-			if (!trans->done)
-				twopence_transaction_doio(trans);
-		}
-
+		twopence_pollinfo_poll(&poll_info);
+		if (twopence_conn_doio(handle->connection) < 0)
+			goto protocol_error;
 	}
 
 	*status = trans->client.status_ret;
@@ -329,6 +281,7 @@ __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transac
 
 protocol_error:
 	/* kill the connection? */
+	twopence_conn_remove_transaction(handle->connection, trans);
 	return TWOPENCE_PROTOCOL_ERROR;
 }
 
@@ -616,7 +569,7 @@ int _twopence_interrupt_virtio_serial
     return 0;
 
   /* If the link is not open, there's nothing to interrupt */
-  if (handle->link_sock == NULL)
+  if (handle->connection == NULL)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
   if (__twopence_pipe_send(handle, twopence_protocol_build_simple_packet_ps(&trans->ps, TWOPENCE_PROTO_TYPE_INTR)) < 0)
@@ -712,9 +665,9 @@ twopence_pipe_end(struct twopence_target *opaque_handle)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
-  if (handle->link_sock != NULL) {
-    twopence_sock_free(handle->link_sock);
-    handle->link_sock = NULL;
+  if (handle->connection != NULL) {
+    twopence_conn_free(handle->connection);
+    handle->connection = NULL;
   }
 
   free(handle);

@@ -23,7 +23,7 @@
 
 #include "protocol.h"
 #include "transaction.h"
-#include "socket.h"
+#include "connection.h"
 
 /* Base class for all targets using the twopence pipe protocol */
 struct twopence_pipe_target {
@@ -34,7 +34,7 @@ struct twopence_pipe_target {
 
   /* This holds the fd of the serial port/the socket or whatever else we use to
    * communicate with the server. */
-  twopence_sock_t *		link_sock;
+  twopence_conn_t *		connection;
 
   twopence_protocol_state_t	ps;
 
