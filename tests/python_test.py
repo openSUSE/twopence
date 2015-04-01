@@ -24,6 +24,7 @@ if not targetSpec:
 
 target = twopence.Target(targetSpec);
 
+allErrorsFatal = True
 testCaseRunning = False
 testCaseStatus = None
 numFailed = 0
@@ -87,6 +88,7 @@ def testCaseException():
 
 def testCaseReport():
 	global testCaseStatus, testCaseRunning, numFailed, numSkipped
+	global allErrorsFatal
 
 	if testCaseStatus:
 		print "### " + testCaseStatus
@@ -99,6 +101,9 @@ def testCaseReport():
 	print
 
 	testCaseRunning = False
+
+	if allErrorsFatal and testCaseStatus == "FAILED":
+		testSuiteExit()
 
 def testSuiteExit():
 	global testCaseRunning, numTests, numFailed, numErrors
