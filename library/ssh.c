@@ -111,33 +111,6 @@ __twopence_ssh_error(struct twopence_ssh_target *handle, char c)
   return twopence_target_putc(&handle->base, TWOPENCE_STDERR, c);
 }
 
-#if 0
-// Process chunk of data sent by the remote host
-//
-// Returns 0 if everything went fine, a negative error code otherwise
-static int
-__twopence_ssh_process_chunk(struct twopence_ssh_target *handle, const char *buffer, int size, bool error)
-{
-  twopence_iofd_t dst = error? TWOPENCE_STDERR : TWOPENCE_STDOUT;
-  int written;
-
-  written = twopence_target_write(&handle->base, dst, buffer, size);
-  return written < 0? written : 0;
-}
-
-// Avoid active wait by sleeping
-static void
-__twopence_ssh_sleep()
-{
-  struct timespec t;
-
-  t.tv_sec = 0;
-  t.tv_nsec = 20000000L;               // 1/50th of a second
-
-  nanosleep(&t, NULL);
-}
-#endif
-
 static int
 __twopence_ssh_channel_eof(struct twopence_ssh_target *handle)
 {
@@ -302,40 +275,6 @@ __twopence_ssh_read_input(struct twopence_ssh_transaction *trans)
   return 0;
 }
 
-#if 0
-// Read the output of the system under test
-//   'fd': 1 for stdout, 2 for stderr
-//
-// Returns 0 if everything went fine, a negative error code otherwise
-static int
-__twopence_ssh_read_output(struct twopence_ssh_target *handle, ssh_channel channel, bool error, bool *nothing, bool *eof)
-{
-  char buffer[BUFFER_SIZE];
-  int size;
-
-  size = ssh_channel_read_nonblocking
-           (channel, buffer, BUFFER_SIZE, error? 1: 0);
-  switch (size)
-  {
-    case SSH_ERROR:
-      return -1;
-    case SSH_EOF:
-      *nothing = true;
-      *eof = true;
-      break;
-    case 0:
-      *nothing = true;
-      break;
-    default:
-      if (__twopence_ssh_process_chunk(handle, buffer, size, error) < 0)
-	      return -2;
-      *nothing = false;
-  }
-  return 0;
-}
-#endif
-
-#if 1
 static int
 __twopence_ssh_stdin_cb(socket_t fd, int revents, void *userdata)
 {
@@ -493,75 +432,6 @@ __twopence_ssh_read_results(struct twopence_ssh_target *handle, long timeout, ss
 
   return rv;
 }
-#else
-// Read the results of a command
-static int
-__twopence_ssh_read_results(struct twopence_ssh_target *handle, long timeout, ssh_channel channel)
-{
-  bool nothing_0, eof_0,
-       nothing_1, eof_1,
-       nothing_2, eof_2;
-  time_t command_too_late;
-
-  eof_0 = eof_1 = eof_2 = false;
-  command_too_late = time(NULL);
-  command_too_late += timeout;
-
-  // While there might still be something to read from the remote host
-  while (!eof_1 || !eof_2)
-  {
-    // If we have received a SIGINT, exit and close the channel without
-    // further delay.
-    if (handle->interrupted) {
-      fprintf(stderr, "interrupt: break out of read loop\n");
-      return -6;
-    }
-
-    // Nonblocking read from stdin
-    if (!eof_0)
-    {
-      if (__twopence_ssh_read_input(handle, channel, &nothing_0, &eof_0) < 0)
-        return -1;
-    }
-
-    // Nonblocking read from stdout
-    if (!eof_1)
-    {
-      if (__twopence_ssh_read_output(handle, channel, false, &nothing_1, &eof_1) < 0)
-        return -2;
-    }
-
-    // Nonblocking read from stderr
-    if (!eof_2)
-    {
-      if (__twopence_ssh_read_output(handle, channel, true, &nothing_2, &eof_2) < 0)
-        return -3;
-    }
-
-    /* The following looks wrong to me. There has to be some select based
-     * mechanism to handle this sort of sleep/poll cycle. --okir 
-     *
-     * Yes. There is ssh_select(), see
-     *   http://api.libssh.org/stable/group__libssh__channel.html.
-     * For the TODO. --ebischoff
-     */
-
-    // If we had nothing to read
-    if (nothing_0 && nothing_1 && nothing_2)
-    {
-      // Then avoid active wait
-      __twopence_ssh_sleep();
-
-      if (time(NULL) > command_too_late)
-      {
-        __twopence_ssh_interrupt_ssh(handle);
-        return -5;
-      }
-    }
-  }
-  return 0;
-}
-#endif
 
 // Send a file in chunks through SCP
 //
