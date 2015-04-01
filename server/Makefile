@@ -10,7 +10,6 @@ BINDIR ?= /usr/bin
 SERVER	= twopence_test_server
 OBJS	= main.o \
 	  connection.o \
-	  protocol.o \
 	  server.o \
 	  socket.o \
 	  transaction.o
