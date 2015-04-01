@@ -25,11 +25,16 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "twopence.h"
 
+
+static PyObject *	twopence_setDebugLevel(PyObject *, PyObject *, PyObject *);
+
 /*
  * Methods belonging to the module itself.
- * None so far
  */
 static PyMethodDef twopence_methods[] = {
+      {	"setDebugLevel", (PyCFunction) twopence_setDebugLevel, METH_VARARGS | METH_KEYWORDS,
+	"Set the debug level (0 is no debugging)"
+      },
       {	NULL }
 };
 
@@ -48,6 +53,24 @@ twopence_Exception(const char *msg, int rc)
 	snprintf(buffer, sizeof(buffer), "%s: %s", msg, twopence_strerror(rc));
 	PyErr_SetString(PyExc_SystemError, buffer);
 	return NULL;
+}
+
+static PyObject *
+twopence_setDebugLevel(PyObject *self, PyObject *args, PyObject *kwds)
+{
+	static char *kwlist[] = {
+		"level",
+		NULL
+	};
+	int level;
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "i", kwlist, &level))
+		return NULL;
+
+	twopence_debug_level = level;
+	Py_INCREF(Py_None);
+	return Py_None;
+
 }
 
 static void
