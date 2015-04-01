@@ -205,7 +205,12 @@ __twopence_pipe_handshake(twopence_sock_t *sock, unsigned int *client_id)
 twopence_transaction_t *
 twopence_pipe_transaction_new(struct twopence_pipe_target *handle, unsigned int type)
 {
-  return twopence_conn_transaction_new(handle->connection, type, &handle->ps);
+  twopence_transaction_t *trans;
+
+  trans = twopence_conn_transaction_new(handle->connection, type, &handle->ps);
+  if (trans)
+	  handle->ps.xid++;
+  return trans;
 }
 
 /*
