@@ -322,6 +322,11 @@ server_run_command_as(const char *username, unsigned int timeout, const char *cm
 	if (pid == 0) {
 		int fd, numfds;
 
+		if (setsid() < 0) {
+			twopence_log_error("unable to set session id of child process: %m");
+			exit(127);
+		}
+
 		/* Child */
 		__close_fds(parent_fds);
 
@@ -497,7 +502,8 @@ server_run_command_recv(twopence_transaction_t *trans, const twopence_hdr_t *hdr
 		 * it has to say, not even "aargh".
 		 */
 		if (trans->pid && !trans->done) {
-			kill(trans->pid, SIGKILL);
+			/* Send the KILL signal to all processes in the process group */
+			kill(-trans->pid, SIGKILL);
 			twopence_transaction_close_sink(trans, 0);
 			twopence_transaction_close_source(trans, 0); /* ID zero means all */
 		}
