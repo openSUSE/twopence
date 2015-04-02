@@ -3,10 +3,6 @@ BUGS
      buffer allocation errors are not handled anymore
      (calloc() returning NULL)
 
-   o test server:
-     Display used port when using --audit
-     Make --audit the default
-
    o Re-enable "line timeout"
      Add option to set it (see below)
 

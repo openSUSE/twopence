@@ -55,7 +55,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 static void		service_connection(int);
 static void		server_daemonize(void);
 
-bool			server_audit = false;
+bool			server_audit = true;
 unsigned int		server_audit_seq;
 
 
@@ -66,15 +66,18 @@ unsigned int		server_audit_seq;
 // Returns the file descriptor if successful, -1 otherwise.
 int open_serial_port(const char *filename)
 {
+  static bool reported_port = false;
   int serial_fd;
   struct termios tio;
 
   if (filename == NULL)
     filename = TWOPENCE_SERIAL_PORT_DEFAULT;
 
-  // TODO: print only once, at startup of server
-  if (!server_audit)
-    printf("Listening on %s\n", filename);
+  // print only once, at startup of server
+  if (server_audit && !reported_port) {
+    twopence_trace("Listening on %s\n", filename);
+    reported_port = true;
+  }
 
   // Open the port
   serial_fd = open(filename, O_RDWR | O_NONBLOCK | O_CLOEXEC | O_NOCTTY);
@@ -153,9 +156,8 @@ int open_unix_port(const char *filename)
   if (filename == NULL)
     filename = TWOPENCE_UNIX_PORT_DEFAULT;
 
-  // TODO: print only once, at startup of server
-  if (!server_audit)
-    printf("Listening on %s\n", filename);
+  if (server_audit)
+    twopence_trace("Listening on %s\n", filename);
 
   memset(&sun, 0, sizeof(sun));
   sun.sun_family = AF_LOCAL;
@@ -205,14 +207,16 @@ accept_unix_connection(int listen_fd)
 // Main entry point.
 int main(int argc, char *argv[])
 {
+  enum { OPT_ONESHOT, OPT_AUDIT, OPT_NOAUDIT };
   static struct option long_opts[] = {
-    { "one-shot", no_argument, NULL, '1' },
+    { "one-shot", no_argument, NULL, OPT_ONESHOT },
     { "port-serial", required_argument, NULL, 'S' },
     { "port-pty", no_argument, NULL, 'P' },
     { "port-unix", required_argument, NULL, 'U' },
     { "daemon", no_argument, NULL, 'D' },
     { "debug", no_argument, NULL, 'd' },
-    { "audit", no_argument, NULL, 't' },
+    { "audit", no_argument, NULL, OPT_AUDIT },
+    { "no-audit", no_argument, NULL, OPT_NOAUDIT },
     { NULL }
   };
   int opt_oneshot = 0;
@@ -229,7 +233,7 @@ int main(int argc, char *argv[])
 
   while ((c = getopt_long(argc, argv, "DdPS:U:", long_opts, NULL)) != -1) {
     switch (c) {
-    case '1':
+    case OPT_ONESHOT:
       opt_oneshot = 1;
       break;
 
@@ -261,8 +265,12 @@ int main(int argc, char *argv[])
       opt_port_path = optarg;
       break;
 
-    case 't':
+    case OPT_AUDIT:
       server_audit = true;
+      break;
+
+    case OPT_NOAUDIT:
+      server_audit = false;
       break;
 
     case 'U':
@@ -299,9 +307,11 @@ int main(int argc, char *argv[])
 		"--debug, -d\n"
 		"    Increase debugging verbosity\n"
 		"--one-shot\n"
-		"    Service one incoming connection, then exit\n"
+		"    Service one incoming connection, then exit (only supported with serial ports)\n"
 		"--audit\n"
-		"    Print an audit trail of operations to the log\n"
+		"    Print an audit trail of operations to the log (default)\n"
+		"--no-audit\n"
+		"    Disable the audit trail\n"
 		"\n"
 		"The default serial port is %s\n"
 		, argv[0], TWOPENCE_SERIAL_PORT_DEFAULT);
