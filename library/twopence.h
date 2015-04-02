@@ -183,7 +183,7 @@ struct twopence_command {
 	 * the background.
 	 */
 	bool			background;
-	void *			userdata;
+	void *			__obsolete_remove_me;
 
 	/* FIXME: support passing environment variables to the command --okir
 	 *
