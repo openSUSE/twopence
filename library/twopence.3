@@ -20,6 +20,12 @@ The library is instructed to connect to a target using the
 function, which takes a string as its first argument, specifying the
 target to connect to.
 .PP
+.in +2
+.nf
+.B "int  twopence_target_new(const char *target_spec, struct twopence_target **ret);
+.fi
+.ni
+.PP
 The target specification consists of a target type and an argument,
 separated by a colon.
 At the moment, twopence supports the following target types:

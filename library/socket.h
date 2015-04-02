@@ -56,6 +56,9 @@ extern void		twopence_sock_post_recvbuf(twopence_sock_t *sock, twopence_buf_t *b
 extern twopence_buf_t *	twopence_sock_take_recvbuf(twopence_sock_t *);
 extern twopence_buf_t *	twopence_sock_get_recvbuf(twopence_sock_t *);
 
+extern void		twopence_sock_enable_xmit_ts(twopence_sock_t *);
+extern bool		twopence_sock_get_xmit_ts(const twopence_sock_t *, struct timeval *);
+
 extern const char *	twopence_sock_state_desc(const twopence_sock_t *sock);
 
 #endif /* SOCKET_H */

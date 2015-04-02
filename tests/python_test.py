@@ -608,30 +608,6 @@ else:
 	testCaseException()
 testCaseReport()
 
-# There's a "line timeout" in the ssh target plugin that wreaks havoc with the regular
-# timeout handling.
-# If that problem is still present, the following will result in a python exception
-# from target.run()
-testCaseBegin("Verify long command timeout")
-try:
-	import time
-
-	print "The next command should sleep for 65 seconds"
-
-	t0 = time.time()
-	st = target.run("sleep 65", timeout = 120)
-	delay = time.time() - t0
-
-	if delay < 65:
-		testCaseFail("command slept for less than 65 seconds (only %u sec)" % delay)
-	elif delay > 67:
-		testCaseFail("command slept for way more than 65 seconds (overall %u sec)" % delay)
-	else:
-		print "Good: Slept for %u seconds" % delay
-except:
-	testCaseException()
-testCaseReport()
-
 testCaseBegin("Verify twopence.Transfer attributes")
 try:
 	xfer = twopence.Transfer("/remote/filename", localfile = "/local/filename", permissions = 0421);

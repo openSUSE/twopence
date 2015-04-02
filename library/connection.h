@@ -37,6 +37,7 @@ struct semantics {
 };
 
 extern twopence_conn_t *	twopence_conn_new(twopence_conn_semantics_t *semantics, twopence_sock_t *sock, unsigned int client_id);
+extern void			twopence_conn_set_keepalive(twopence_conn_t *, int);
 extern void			twopence_conn_free(twopence_conn_t *conn);
 extern unsigned int		twopence_conn_fill_poll(twopence_conn_t *conn, twopence_pollinfo_t *pinfo);
 extern int			twopence_conn_doio(twopence_conn_t *conn);
@@ -46,11 +47,14 @@ extern twopence_transaction_t *	twopence_conn_transaction_new(twopence_conn_t *,
 extern int			twopence_conn_xmit_packet(twopence_conn_t *, twopence_buf_t *);
 extern twopence_sock_t *	twopence_conn_accept(twopence_conn_t *);
 extern bool			twopence_conn_is_closed(const twopence_conn_t *);
+extern void			twopence_conn_update_send_keepalive(twopence_conn_t *conn);
+extern void			twopence_conn_update_recv_keepalive(twopence_conn_t *conn);
 
 extern void			twopence_conn_add_transaction(twopence_conn_t *conn, twopence_transaction_t *trans);
 extern void			twopence_conn_add_transaction_done(twopence_conn_t *conn, twopence_transaction_t *trans);
 extern twopence_transaction_t *	twopence_conn_reap_transaction(twopence_conn_t *conn, int wait_for);
 extern bool			twopence_conn_has_pending_transactions(const twopence_conn_t *conn);
+extern void			twopence_conn_cancel_transactions(twopence_conn_t *conn, int error);
 
 extern twopence_conn_pool_t *	twopence_conn_pool_new(void);
 extern void			twopence_conn_pool_add_connection(twopence_conn_pool_t *pool, twopence_conn_t *conn);

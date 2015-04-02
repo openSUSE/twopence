@@ -403,6 +403,28 @@ elif [ $elapsed -gt 11 ]; then
 fi
 test_case_report
 
+# Run a command that takes longer than the default keepalive timeout.
+# This should "just work"
+test_case_begin "making sure that link keepalives are delivered"
+case $TARGET in
+ssh:*)	test_case_skip "Keepalives are not available with ssh; so no testing them";;
+*)	twopence_command --timeout=120 $TARGET "sleep 65"
+	test_case_check_status $? 0
+esac
+test_case_report
+
+# Run a command that takes longer than the default keepalive timeout, and disable
+# sending of keepalives on the client side.
+# This should cause the server to close the connection due to inactivity.
+test_case_begin "make sure that the server drops the link in the absence of keepalives"
+case $TARGET in
+ssh:*)	test_case_skip "Keepalives are not available with ssh; so no testing them";;
+*)	twopence_command --keepalive=no --timeout=120 $TARGET "sleep 65"
+	test_case_check_status $? 8
+esac
+test_case_report
+
+
 test_case_begin "test SIGINT handling"
 t0=`date +%s`
 twopence_command_background $TARGET "sleep 5"

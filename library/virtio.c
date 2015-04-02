@@ -126,6 +126,7 @@ const struct twopence_plugin twopence_virtio_ops = {
 	.name		= "virtio",
 
 	.init = twopence_virtio_init,
+	.set_option = twopence_pipe_set_option,
 	.run_test = twopence_pipe_run_test,
 	.wait = twopence_pipe_wait,
 	.inject_file = twopence_pipe_inject_file,

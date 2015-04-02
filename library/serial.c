@@ -131,6 +131,7 @@ const struct twopence_plugin twopence_serial_ops = {
 	.name		= "serial",
 
 	.init = twopence_serial_init,
+	.set_option = twopence_pipe_set_option,
 	.run_test = twopence_pipe_run_test,
 	.wait = twopence_pipe_wait,
 	.inject_file = twopence_pipe_inject_file,

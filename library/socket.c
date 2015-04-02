@@ -20,6 +20,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/time.h>
 
 #include <fcntl.h>
 #include <poll.h>
@@ -56,6 +57,11 @@ struct twopence_socket {
 	unsigned int		bytes_sent;
 
 	twopence_queue_t	xmit_queue;
+	struct {
+		bool		enabled;
+		struct timeval	when;	/* time stamp of last xmit */
+	} xmit_ts;
+
 	twopence_buf_t *	recv_buf;
 
 	bool			read_eof;
@@ -317,8 +323,11 @@ twopence_sock_write(twopence_sock_t *sock, twopence_buf_t *bp, unsigned int coun
 		count = twopence_buf_count(bp);
 
 	n = write(sock->fd, twopence_buf_head(bp), count);
-	if (n > 0)
+	if (n > 0) {
+		if (sock->xmit_ts.enabled)
+			gettimeofday(&sock->xmit_ts.when, NULL);
 		sock->bytes_sent += n;
+	}
 	return n;
 }
 
@@ -555,6 +564,21 @@ twopence_sock_is_dead(twopence_sock_t *sock)
 	return sock->read_eof && sock->write_eof == SHUTDOWN_SENT;
 }
 
+void
+twopence_sock_enable_xmit_ts(twopence_sock_t *sock)
+{
+	sock->xmit_ts.enabled = true;
+}
+
+bool
+twopence_sock_get_xmit_ts(const twopence_sock_t *sock, struct timeval *tv)
+{
+	if (!sock->xmit_ts.enabled)
+		return false;
+	*tv = sock->xmit_ts.when;
+	return tv->tv_sec != 0;
+}
+
 const char *
 twopence_sock_state_desc(const twopence_sock_t *sock)
 {
@@ -652,7 +676,7 @@ twopence_sock_fill_poll(twopence_sock_t *sock, twopence_pollinfo_t *pinfo)
 	}
 	if (!sock->read_eof) {
 		if (sock->recv_buf != NULL && twopence_buf_tailroom_max(sock->recv_buf) != 0)
-			events |= POLLIN;
+			events |= POLLIN | POLLHUP;
 	}
 
 	if (events == 0)

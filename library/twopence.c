@@ -165,6 +165,21 @@ twopence_target_free(struct twopence_target *target)
 }
 
 /*
+ * Set target specific options
+ */
+int
+twopence_target_set_option(struct twopence_target *target, int option, const void *value_p)
+{
+  if (target->ops->set_option == NULL)
+    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
+
+  if (value_p == NULL)
+    return TWOPENCE_PARAMETER_ERROR;
+
+  return target->ops->set_option(target, option, value_p);
+}
+
+/*
  * target level output functions
  */
 twopence_iostream_t *

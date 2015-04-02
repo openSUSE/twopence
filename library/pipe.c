@@ -57,7 +57,7 @@ twopence_pipe_target_init(struct twopence_pipe_target *target, int plugin_type, 
 
   target->base.plugin_type = plugin_type;
   target->base.ops = plugin_ops;
-  target->link_timeout = LINE_TIMEOUT;
+  target->keepalive = -1;
   target->link_ops = link_ops;
 }
 
@@ -105,6 +105,8 @@ __twopence_pipe_open_link(struct twopence_pipe_target *handle)
     handle->connection = twopence_conn_new(&twopence_client_semantics, sock, client_id);
     handle->ps.cid = client_id;
     handle->ps.xid = 1;
+
+    twopence_conn_set_keepalive(handle->connection, handle->keepalive);
 
     if (twopence_pipe_connection_pool == NULL) {
       twopence_pipe_connection_pool = twopence_conn_pool_new();
@@ -285,7 +287,7 @@ __twopence_pipe_doio(struct twopence_pipe_target *handle)
 {
 	twopence_conn_pool_poll(twopence_pipe_connection_pool);
 	if (twopence_conn_is_closed(handle->connection))
-		return TWOPENCE_OPEN_SESSION_ERROR;
+		return TWOPENCE_TRANSPORT_ERROR;
 
 	return 0;
 }
@@ -298,12 +300,10 @@ __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transac
 
 	while (twopence_conn_reap_transaction(handle->connection, xid) == NULL) {
 		if ((rc = __twopence_pipe_doio(handle)) < 0) {
-			/* Kill the connection? */
-			twopence_conn_free(handle->connection);
-			handle->connection = NULL;
-
-			twopence_transaction_unlink(trans);
-			return rc;
+			/* Oops, transport error.
+			 * Cancel all transaction and mark them as failed */
+			twopence_conn_cancel_transactions(handle->connection, rc);
+			continue;
 		}
 	}
 
@@ -457,17 +457,8 @@ __twopence_pipe_command(struct twopence_pipe_target *handle, twopence_command_t 
   if ((rc = twopence_transaction_send_command(trans, cmd->user, cmd->command, cmd->timeout)) < 0)
     goto out;
 
-  /* This entire line timeout business seems not very useful, at least while
-   * waiting for a command to finish - that command may sleep for minutes
-   * without producing any output.
-   * For now, we make sure that the link timeout is the maximum of LINE_TIMEOUT
-   * and (command timeout + 1).
-   */
   if (cmd->timeout)
     twopence_transaction_set_timeout(trans, cmd->timeout);
-  handle->link_timeout = (cmd->timeout + 1) * 1000;
-  if (handle->link_timeout < LINE_TIMEOUT)
-    handle->link_timeout = LINE_TIMEOUT;
 
   twopence_pipe_transaction_attach_stdin(trans, cmd);
   twopence_pipe_transaction_attach_stdout(trans, cmd);
@@ -622,6 +613,29 @@ int _twopence_interrupt_virtio_serial
 }
 
 ///////////////////////////// Public interface //////////////////////////////////
+
+int
+twopence_pipe_set_option(struct twopence_target *opaque_handle, int option, const void *value_p)
+{
+  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
+
+  switch (option) {
+  case TWOPENCE_TARGET_OPTION_KEEPALIVE:
+    if (handle->connection != NULL) {
+      twopence_log_error("%s: cannot set keepalive option; connection already established", handle->base.ops->name);
+      return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR; /* not quite */
+    }
+
+    handle->keepalive = *(const int *) value_p;
+    break;
+
+  default:
+    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
+
+  }
+
+  return 0;
+}
 
 /*
  * Run a command

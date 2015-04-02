@@ -85,6 +85,8 @@ twopence_protocol_packet_type_to_string(unsigned int type)
 		return "minor";
 	case TWOPENCE_PROTO_TYPE_TIMEOUT:
 		return "timeout";
+	case TWOPENCE_PROTO_TYPE_KEEPALIVE:
+		return "keepalive";
 	default:
 		snprintf(descbuf, sizeof(descbuf), "trans-type-%d", type);
 		return descbuf;

@@ -665,8 +665,11 @@ server_listen_doio(twopence_conn_pool_t *poll, twopence_conn_t *conn)
 
 	sock = twopence_conn_accept(conn);
 	if (sock != NULL) {
+		twopence_conn_t *new_conn = server_new_connection(sock, &server_ops);
+
 		twopence_debug("Accepted incoming connection");
-		twopence_conn_pool_add_connection(poll, server_new_connection(sock, &server_ops));
+		twopence_conn_set_keepalive(new_conn, -1);
+		twopence_conn_pool_add_connection(poll, new_conn);
 	}
 	return 0;
 }

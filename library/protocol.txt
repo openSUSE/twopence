@@ -7,11 +7,14 @@ the system under tests.
 
 Packet structure:
 
-  Byte 0        Packet type
-  Byte 1        (reserved for future use - "port" number)
-  Byte 2        length, high order byte
-  Byte 3        length, low order byte
-  Byte 4+       data
+  0:	byte	Packet type
+  1:	byte	Reserved
+  2:	word	overall packet length
+  4:	word	client ID
+  6:	word	transaction ID
+  8:		data
+
+All header words are in network byte order (aka big-endian)
 
 
 Packet types:
@@ -34,7 +37,9 @@ Packet types:
   'E'           end of file during extract transaction
 
             both directions
+  'h'		hello packet (used to establish the client ID for all subsequent packets)
   'd'           file data
+  'K'		keepalive packet
 
 The length includes the 4 bytes of the header.
 

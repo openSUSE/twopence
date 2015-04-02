@@ -23,9 +23,8 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
 #include <sys/socket.h>
-#include <sys/un.h>
+#include <sys/time.h>
 #include <netinet/in.h> /* for htons */
 
 #include <errno.h>
@@ -58,10 +57,22 @@ struct twopence_connection {
 	twopence_sock_t *		client_sock;
 	unsigned int			client_id;
 
+	struct {
+		unsigned int		send_timeout;
+		struct timeval		send_deadline;
+		unsigned int		recv_timeout;
+		struct timeval		recv_deadline;
+	} keepalive;
+
 	/* We may want to have concurrent transactions later on */
 	twopence_transaction_list_t	transactions;
 	twopence_transaction_list_t	done_transactions;
 };
+
+/* When keepalives are enabled, we will shut down the link
+ * if there's no traffic for 60 seconds */
+#define TWOPENCE_KEEPALIVE_RECV_TIMEOUT	60
+#define TWOPENCE_KEEPALIVE_SEND_TIMEOUT	(TWOPENCE_KEEPALIVE_RECV_TIMEOUT / 4)
 
 static void
 twopence_conn_list_insert(twopence_conn_list_t *list, twopence_conn_t *conn)
@@ -85,6 +96,33 @@ twopence_conn_new(twopence_conn_semantics_t *semantics, twopence_sock_t *client_
 	conn->client_id = client_id;
 
 	return conn;
+}
+
+void
+twopence_conn_set_keepalive(twopence_conn_t *conn, int keepalive)
+{
+	if (keepalive == 0) {
+		twopence_debug("disable keepalives");
+		memset(&conn->keepalive, 0, sizeof(conn->keepalive));
+		/* twopence_sock_disable_xmit_ts(conn->client_sock); */
+	} else {
+		if (keepalive < 0)
+			keepalive = TWOPENCE_KEEPALIVE_RECV_TIMEOUT;
+
+		if (keepalive < 10)
+			keepalive = 10;
+
+		twopence_debug("using keepalives, set idle timeout to %d seconds", keepalive);
+
+		/* Send at least 3 keepalives during timeout interval */
+		conn->keepalive.send_timeout = keepalive / 4;
+		twopence_sock_enable_xmit_ts(conn->client_sock);
+
+		conn->keepalive.recv_timeout = keepalive;
+
+		twopence_conn_update_send_keepalive(conn);
+		twopence_conn_update_recv_keepalive(conn);
+	}
 }
 
 void
@@ -124,6 +162,35 @@ twopence_conn_free(twopence_conn_t *conn)
 		twopence_transaction_free(trans);
 	}
 	free(conn);
+}
+
+void
+twopence_conn_update_send_keepalive(twopence_conn_t *conn)
+{
+	if (conn->keepalive.send_timeout != 0
+	 && conn->client_sock != NULL
+	 && twopence_sock_get_xmit_ts(conn->client_sock, &conn->keepalive.send_deadline))
+		conn->keepalive.send_deadline.tv_sec += conn->keepalive.send_timeout;
+}
+
+void
+twopence_conn_update_recv_keepalive(twopence_conn_t *conn)
+{
+	if (conn->keepalive.recv_timeout != 0) {
+		gettimeofday(&conn->keepalive.recv_deadline, NULL);
+		conn->keepalive.recv_deadline.tv_sec += conn->keepalive.recv_timeout;
+	}
+}
+
+void
+twopence_conn_send_keepalive(twopence_conn_t *conn)
+{
+	twopence_protocol_state_t ps = { .cid = conn->client_id, .xid = 0 };
+
+	twopence_debug("send a keepalive packet");
+	twopence_sock_xmit(conn->client_sock,
+			twopence_protocol_build_simple_packet_ps(&ps, TWOPENCE_PROTO_TYPE_KEEPALIVE));
+	twopence_conn_update_send_keepalive(conn);
 }
 
 int
@@ -174,6 +241,21 @@ twopence_conn_fill_poll(twopence_conn_t *conn, twopence_pollinfo_t *pinfo)
 		twopence_sock_fill_poll(sock, pinfo);
 	}
 
+	/* Check the keepalive timers */
+	if (!twopence_timeout_update(&pinfo->timeout, &conn->keepalive.send_deadline)) {
+		/* FIXME: If the socket's send queue is jammed, warn about it */
+
+		/* Transmit a keepalive packet */
+		twopence_conn_send_keepalive(conn);
+
+		twopence_timeout_update(&pinfo->timeout, &conn->keepalive.send_deadline);
+	}
+	if (!twopence_timeout_update(&pinfo->timeout, &conn->keepalive.recv_deadline)) {
+		twopence_log_error("link is idle for too long, closing");
+		twopence_conn_close(conn);
+		return 0;
+	}
+
 	/* Return the number of fds we've added */
 	return pinfo->num_fds - current_num_fds;
 }
@@ -211,6 +293,38 @@ bool
 twopence_conn_has_pending_transactions(const twopence_conn_t *conn)
 {
 	return conn->transactions.head != NULL;
+}
+
+static void
+twopence_conn_transaction_complete(twopence_conn_t *conn, twopence_transaction_t *trans)
+{
+	twopence_transaction_unlink(trans);
+
+	/* In the server, we're no longer interested in the transaction once
+	 * we're finished with it. On the client side, we do not dispose of it
+	 * immediately, but put it on a separate list from which it can be
+	 * reaped later. */
+	if (conn->semantics && conn->semantics->end_transaction) {
+		conn->semantics->end_transaction(conn, trans);
+	} else {
+		twopence_debug("%s: transaction done, free it", twopence_transaction_describe(trans));
+		twopence_transaction_free(trans);
+	}
+}
+
+void
+twopence_conn_cancel_transactions(twopence_conn_t *conn, int error)
+{
+	twopence_transaction_t *trans;
+
+	if (conn->transactions.head)
+		twopence_log_error("remote closed the connection while there were pending transactions");
+
+	twopence_debug("%s()", __func__);
+	while ((trans = conn->transactions.head) != NULL) {
+		twopence_transaction_set_error(trans, error);
+		twopence_conn_transaction_complete(conn, trans);
+	}
 }
 
 /*
@@ -285,7 +399,7 @@ twopence_conn_process_packet(twopence_conn_t *conn, twopence_buf_t *bp)
 		twopence_debug("connection_process_packet cid=%u xid=%u type=%c len=%u\n",
 				ps.cid, ps.xid, hdr->type, twopence_buf_count(&payload));
 
-		if (hdr->type == TWOPENCE_PROTO_TYPE_HELLO) {
+		if (hdr->type == TWOPENCE_PROTO_TYPE_HELLO && ps.cid == 0) {
 			/* Process HELLO packet from client */
 			ps.cid = conn->client_id;
 			twopence_conn_process_request(conn, hdr, &payload, &ps);
@@ -294,6 +408,12 @@ twopence_conn_process_packet(twopence_conn_t *conn, twopence_buf_t *bp)
 
 		if (conn->client_id != ps.cid) {
 			twopence_debug("ignoring packet with mismatched client id");
+			continue;
+		}
+
+		twopence_conn_update_recv_keepalive(conn);
+		if (hdr->type == TWOPENCE_PROTO_TYPE_KEEPALIVE) {
+			twopence_debug("received keepalive from peer");
 			continue;
 		}
 
@@ -382,12 +502,12 @@ twopence_conn_doio(twopence_conn_t *conn)
 			 * Otherwise, we are really done with this socket and
 			 * can close it.
 			 */
-			if (twopence_sock_xmit_queue_bytes(sock) == 0
-			 && twopence_transaction_list_empty(&conn->transactions))
+			if (twopence_sock_xmit_queue_bytes(sock) == 0)
 				twopence_sock_mark_dead(sock);
 		}
 
 		if (twopence_sock_is_dead(sock)) {
+			twopence_conn_cancel_transactions(conn, TWOPENCE_TRANSPORT_ERROR);
 			twopence_conn_close(conn);
 			return 0;
 		}
@@ -398,20 +518,17 @@ twopence_conn_doio(twopence_conn_t *conn)
 
 		twopence_transaction_doio(trans);
 		if (trans->done) {
-			twopence_transaction_unlink(trans);
-
-			/* In the server, we're no longer interested in the transaction once
-			 * we're finished with it. On the client side, we do not dispose of it
-			 * immediately, but put it on a separate list from which it can be
-			 * reaped later. */
-			if (conn->semantics && conn->semantics->end_transaction) {
-				conn->semantics->end_transaction(conn, trans);
-			} else {
-				twopence_debug("%s: transaction done, free it", twopence_transaction_describe(trans));
-				twopence_transaction_free(trans);
-			}
+			/* Remove the transaction from the list of pending.
+			 * Depending on the semantics, this may free the
+			 * transaction, or move it to the list of completed
+			 * transactions, or doing something yet entirely
+			 * different. */
+			twopence_conn_transaction_complete(conn, trans);
 		}
 	}
+
+	/* If anything has been sent down the socket, update our keepalive xmit timer */
+	twopence_conn_update_send_keepalive(conn);
 
 	return 0;
 }

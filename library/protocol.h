@@ -51,6 +51,7 @@ struct header {
 #define TWOPENCE_PROTO_TYPE_MAJOR	'M'
 #define TWOPENCE_PROTO_TYPE_MINOR	'm'
 #define TWOPENCE_PROTO_TYPE_TIMEOUT	'T'
+#define TWOPENCE_PROTO_TYPE_KEEPALIVE	'K'
 
 typedef struct twopence_protocol_state {
 	uint16_t	cid;

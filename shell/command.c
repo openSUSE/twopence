@@ -21,6 +21,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <getopt.h>
 #include <signal.h>
 
@@ -28,6 +29,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "twopence.h"
 
 struct twopence_target *twopence_handle;
+
+enum { OPT_KEEPALIVE };
 
 char *short_options = "u:t:o:1:2:qbdvh";
 struct option long_options[] = {
@@ -38,6 +41,7 @@ struct option long_options[] = {
   { "stderr", 1, NULL, '2' },
   { "quiet", 0, NULL, 'q' },
   { "batch", 0, NULL, 'b' },
+  { "keepalive", required_argument, NULL, OPT_KEEPALIVE },
   { "debug", 0, NULL, 'd' },
   { "version", 0, NULL, 'v' },
   { "help", 0, NULL, 'h' },
@@ -139,6 +143,7 @@ int main(int argc, char *argv[])
   const char *opt_output, *opt_stdout, *opt_stderr;
   bool opt_quiet, opt_batch;
   const char *opt_target;
+  int opt_keepalive = -1;
 
   twopence_command_t cmd;
   struct twopence_target *target;
@@ -176,6 +181,12 @@ int main(int argc, char *argv[])
               exit(RC_OK);
     case 'h': usage(argv[0]);
               exit(RC_OK);
+    case OPT_KEEPALIVE:
+	      if (!strcmp(optarg, "no"))
+		opt_keepalive = 0;
+	      else
+		opt_keepalive = atoi(optarg);
+	      break;
 
     invalid_options:
     default: usage(argv[0]);
@@ -235,6 +246,15 @@ int main(int argc, char *argv[])
   {
     twopence_perror("Error while initializing library", rc);
     exit(RC_LIBRARY_INIT_ERROR);
+  }
+
+  if (opt_keepalive >= 0) {
+    rc = twopence_target_set_option(target, TWOPENCE_TARGET_OPTION_KEEPALIVE,
+		    &opt_keepalive);
+    if (rc < 0) {
+      twopence_perror("Unable to set connection keepalive", rc);
+      exit(RC_LIBRARY_INIT_ERROR);
+    }
   }
 
   // Install signal handler

@@ -1,7 +1,4 @@
 BUGS
-   o Re-enable "line timeout"
-     Add option to set it (see below)
-
    o Mention --debug option in shell/*.1 manpages
 
    o server: in open_file_as, be careful with user accounts
@@ -11,6 +8,8 @@ REFACTORING
    o not sure there is much point in having two concurrent APIs to do the same:
      refactor shell and ruby wrappers to use directly twopence_run_test()?
      [DONE for shell/command.c]
+
+   o remove target.current {} stuff which is no longer needed (I hope)
 
 FUNCTIONALITY
    o write help pages
@@ -25,8 +24,10 @@ FUNCTIONALITY
    o be able to inject or extract a full directory tree
      -r --recursive
 
-   o be able to tune the line timeout for receiving the results
-     -s --silence
+   o currently, only shell/command supports the --keepalive option
+     Not sure whether it makes sense to also support this in the
+     other shell commands, as the only reason to add it to command(1)
+     was the ability to test keepalives...
 
    o when injecting files, be able to set up the permission mask
      -m --mask
@@ -48,9 +49,7 @@ FUNCTIONALITY
    o protocol: use the HELLO command to ensure that both ends of the
      communication use the same protocol version
 
-   o protocol: add keepalive packets (and use them to implement the
-     former link timeout)
-
+     Use HELLO to request certain protocol features, such as keepalives?
 
 FUTURE DIRECTIONS
    o Twopence could be extended by writing new plugins,

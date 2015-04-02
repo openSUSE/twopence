@@ -29,8 +29,10 @@
 struct twopence_pipe_target {
   struct twopence_target base;
 
-  unsigned long link_timeout;
   const struct twopence_pipe_ops *link_ops;
+
+  /* Timeout for keepalives. Set to 0 to disable; -1 to use the default settings */
+  int				keepalive;
 
   /* This holds the fd of the serial port/the socket or whatever else we use to
    * communicate with the server. */
@@ -51,6 +53,7 @@ struct twopence_pipe_ops {
 extern void	twopence_pipe_target_init(struct twopence_pipe_target *, int plugin_type, const struct twopence_plugin *,
 			const struct twopence_pipe_ops *);
 
+extern int	twopence_pipe_set_option(struct twopence_target *target, int option, const void *value_p);
 extern int	twopence_pipe_run_test(struct twopence_target *, twopence_command_t *, twopence_status_t *);
 extern int	twopence_pipe_wait(struct twopence_target *, int, twopence_status_t *);
 extern int	twopence_pipe_inject_file (struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);

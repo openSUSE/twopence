@@ -82,6 +82,8 @@ struct twopence_plugin {
 	const char *		name;
 
 	struct twopence_target *(*init)(const char *);
+	int			(*set_option)(struct twopence_target *, int, const void *);
+
 	int			(*run_test)(struct twopence_target *, struct twopence_command *, twopence_status_t *);
 	int			(*wait)(struct twopence_target *, int, twopence_status_t *);
 
@@ -249,6 +251,21 @@ struct twopence_target {
  *   or NULL in case of a problem.
  */
 extern int		twopence_target_new(const char *target_spec, struct twopence_target **ret);
+
+/*
+ * Set target-specific options
+ *
+ * Currently, the only use we have for this is to tune the keepalive
+ * values; and the only reason we want to do this is to test keepalive :-)
+ * Not sure whether this warrant a first-class interface, but I had
+ * no better idea.
+ */
+extern int		twopence_target_set_option(struct twopence_target *,
+					int option, const void *value_p);
+
+enum {
+	TWOPENCE_TARGET_OPTION_KEEPALIVE = 0,	/* value_p is an int pointer */
+};
 
 /*
  * Run the specified command and wait for it to complete.
