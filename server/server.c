@@ -147,6 +147,26 @@ server_change_hats_permanently(const struct passwd *user, int *status)
 	return true;
 }
 
+static bool
+server_change_to_home(const struct passwd *user)
+{
+	const char *homedir;
+
+	if ((homedir = user->pw_dir) == NULL || homedir[0] != '/') {
+		twopence_debug("user %s has a home directory of \"%s\", substituting \"/\"",
+				user->pw_name, user->pw_dir);
+		homedir = "/";
+	}
+
+	if (chdir(homedir) < 0) {
+		twopence_log_error("Cannot change to user %s's home directory: chdir(%s) failed: %m",
+				user->pw_name, user->pw_dir);
+		return false;
+	}
+
+	return true;
+}
+
 int
 server_open_file_as(const char *username, const char *filename, unsigned int filemode, int oflags, int *status)
 {
@@ -338,7 +358,8 @@ server_run_command_as(const char *username, unsigned int timeout, const char *cm
 		for (fd = 3; fd < numfds; ++fd)
 			close(fd);
 
-		if (!server_change_hats_permanently(user, status))
+		if (!server_change_hats_permanently(user, status)
+		 || !server_change_to_home(user))
 			exit(126);
 
 		alarm(timeout? timeout : DEFAULT_COMMAND_TIMEOUT);
