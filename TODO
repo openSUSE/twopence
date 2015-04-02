@@ -16,7 +16,6 @@ REFACTORING
      refactor shell and ruby wrappers to use directly twopence_run_test()?
      [DONE for shell/command.c]
 
-
 FUNCTIONALITY
    o write help pages
      Ruby
@@ -49,6 +48,12 @@ FUNCTIONALITY
      but may require a bit more work for ssh.
 
    o Document the tests we're doing in tests/
+
+   o protocol: use the HELLO command to ensure that both ends of the
+     communication use the same protocol version
+
+   o protocol: add keepalive packets (and use them to implement the
+     former link timeout)
 
 
 FUTURE DIRECTIONS
