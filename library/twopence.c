@@ -28,6 +28,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <sys/poll.h>
 
 #include "twopence.h"
+#include "utils.h"
 
 
 static void	__twopence_setup_stdout(struct twopence_target *target);
@@ -146,7 +147,7 @@ twopence_target_new(const char *target_spec, struct twopence_target **ret)
   char *spec_copy;
   int rv;
 
-  spec_copy = strdup(target_spec);
+  spec_copy = twopence_strdup(target_spec);
   rv = __twopence_target_new(spec_copy, ret);
   free(spec_copy);
 
@@ -640,7 +641,7 @@ twopence_iostream_new(void)
 {
   twopence_iostream_t *stream;
 
-  stream = calloc(1, sizeof(*stream));
+  stream = twopence_calloc(1, sizeof(*stream));
   return stream;
 }
 
@@ -984,7 +985,7 @@ __twopence_substream_new(const twopence_io_ops_t *ops)
 {
   twopence_substream_t *substream;
 
-  substream = calloc(1, sizeof(*substream));
+  substream = twopence_calloc(1, sizeof(*substream));
   substream->ops = ops;
 
   return substream;

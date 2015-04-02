@@ -49,6 +49,7 @@
 #include <limits.h>
 
 #include "server.h"
+#include "utils.h"
 
 
 static twopence_conn_t *	server_new_connection(twopence_sock_t *, twopence_conn_semantics_t *);
@@ -285,7 +286,7 @@ server_build_shell_argv(const char *cmdline)
 	int argc = 0;
 
 	twopence_debug("%s(\"%s\")\n", __func__, cmdline);
-	argv = calloc(4, sizeof(argv[0]));
+	argv = twopence_calloc(4, sizeof(argv[0]));
 	argv[argc++] = "/bin/sh";
 	argv[argc++] = "-c";
 	argv[argc++] = (char *) cmdline;

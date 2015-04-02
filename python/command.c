@@ -23,6 +23,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <fcntl.h>
 
 #include "twopence.h"
+#include "utils.h"
 
 static void		Command_dealloc(twopence_Command *self);
 static PyObject *	Command_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
@@ -145,8 +146,8 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 				&background))
 		return -1;
 
-	self->command = strdup(command);
-	self->user = user? strdup(user) : NULL;
+	self->command = twopence_strdup(command);
+	self->user = user? twopence_strdup(user) : NULL;
 	self->timeout = timeout? timeout: 60L;
 	self->stdout = NULL;
 	self->stderr = NULL;
@@ -176,7 +177,7 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 
 		if ((s = PyString_AsString(stdinObject)) == NULL)
 			return -1;
-		self->stdinPath = strdup(s);
+		self->stdinPath = twopence_strdup(s);
 	} else {
 		Py_INCREF(stdinObject);
 		self->stdin = stdinObject;

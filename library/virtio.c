@@ -106,7 +106,7 @@ twopence_virtio_init(const char *filename)
   struct twopence_virtio_target *handle;
 
   // Allocate the opaque handle
-  handle = calloc(1, sizeof(struct twopence_virtio_target));
+  handle = twopence_calloc(1, sizeof(struct twopence_virtio_target));
   if (handle == NULL)
     return NULL;
 

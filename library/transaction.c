@@ -79,7 +79,7 @@ twopence_transaction_channel_from_fd(int fd, int flags)
 
 	sock = twopence_sock_new_flags(fd, flags);
 
-	sink = calloc(1, sizeof(*sink));
+	sink = twopence_calloc(1, sizeof(*sink));
 	sink->socket = sock;
 
 	return sink;
@@ -90,7 +90,7 @@ twopence_transaction_channel_from_stream(twopence_iostream_t *stream, int flags)
 {
 	twopence_trans_channel_t *sink;
 
-	sink = calloc(1, sizeof(*sink));
+	sink = twopence_calloc(1, sizeof(*sink));
 	sink->stream = stream;
 
 	return sink;
@@ -191,7 +191,7 @@ twopence_transaction_new(twopence_sock_t *transport, unsigned int type, const tw
 {
 	twopence_transaction_t *trans;
 
-	trans = calloc(1, sizeof(*trans));
+	trans = twopence_calloc(1, sizeof(*trans));
 	trans->ps = *ps;
 	trans->id = ps->xid;
 	trans->type = type;

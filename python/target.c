@@ -24,6 +24,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <sys/wait.h>
 
 #include "twopence.h"
+#include "utils.h"
 
 static void		Target_dealloc(twopence_Target *self);
 static PyObject *	Target_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
@@ -133,7 +134,7 @@ Target_init(twopence_Target *self, PyObject *args, PyObject *kwds)
 		Py_INCREF(attrDict);
 	}
 	if (name)
-		self->name = strdup(name);
+		self->name = twopence_strdup(name);
 
 	return 0;
 }
@@ -243,7 +244,7 @@ backgroundedCommandNew(twopence_Command *cmdObject)
 {
 	struct backgroundedCommand *bg;
 
-	bg = calloc(1, sizeof(*bg));
+	bg = twopence_calloc(1, sizeof(*bg));
 	bg->object = cmdObject;
 	Py_INCREF(cmdObject);
 

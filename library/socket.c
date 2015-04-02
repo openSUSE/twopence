@@ -80,7 +80,7 @@ twopence_packet_new(twopence_buf_t *bp)
 {
 	twopence_packet_t *pkt;
 
-	pkt = calloc(1, sizeof(*pkt));
+	pkt = twopence_calloc(1, sizeof(*pkt));
 	pkt->buffer = bp;
 	pkt->bytes = twopence_buf_count(bp);
 	return pkt;
@@ -165,7 +165,7 @@ __twopence_socket_new(int fd, int oflags)
 	twopence_sock_t *sock;
 	int f;
 
-	sock = calloc(1, sizeof(*sock));
+	sock = twopence_calloc(1, sizeof(*sock));
 	sock->fd = fd;
 	sock->closeit = true;
 

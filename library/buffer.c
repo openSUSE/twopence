@@ -23,6 +23,7 @@
 #include <assert.h>
 
 #include "buffer.h"
+#include "utils.h"
 
 void
 twopence_buf_init(twopence_buf_t *bp)
@@ -49,7 +50,7 @@ twopence_buf_new(size_t size)
 {
 	twopence_buf_t *bp;
 
-	bp = calloc(1, sizeof(*bp) + size);
+	bp = twopence_calloc(1, sizeof(*bp) + size);
 	bp->base = (char *)(bp + 1);
 	bp->size = size;
 	return bp;
@@ -146,7 +147,7 @@ twopence_buf_resize(twopence_buf_t *bp, unsigned int want_size)
 
 	assert(want_size <= new_size);
 
-	bp->base = realloc(bp->base, new_size);
+	bp->base = twopence_realloc(bp->base, new_size);
 	assert(bp->base);
 
 	bp->size = new_size;

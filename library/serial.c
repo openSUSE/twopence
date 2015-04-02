@@ -112,7 +112,7 @@ twopence_serial_init(const char *filename)
   struct twopence_serial_target *handle;
 
   // Allocate the opaque handle
-  handle = calloc(1, sizeof(struct twopence_serial_target));
+  handle = twopence_calloc(1, sizeof(struct twopence_serial_target));
   if (handle == NULL) return NULL;
 
   // Initialize the handle

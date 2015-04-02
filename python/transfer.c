@@ -23,6 +23,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <fcntl.h>
 
 #include "twopence.h"
+#include "utils.h"
 
 static void		Transfer_dealloc(twopence_Transfer *self);
 static PyObject *	Transfer_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
@@ -128,9 +129,9 @@ Transfer_init(twopence_Transfer *self, PyObject *args, PyObject *kwds)
 	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|ssllO", kwlist, &remotefile, &user, &localfile, &permissions, &timeout, &bufferObject))
 		return -1;
 
-	self->remote_filename = strdup(remotefile);
-	self->local_filename = localfile? strdup(localfile) : NULL;
-	self->user = user? strdup(user) : NULL;
+	self->remote_filename = twopence_strdup(remotefile);
+	self->local_filename = localfile? twopence_strdup(localfile) : NULL;
+	self->user = user? twopence_strdup(user) : NULL;
 	self->permissions = permissions;
 	self->timeout = timeout;
 	self->buffer = bufferObject;

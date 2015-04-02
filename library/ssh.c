@@ -239,7 +239,7 @@ __twopence_ssh_transaction_new(struct twopence_ssh_target *handle, unsigned long
 {
   twopence_ssh_transaction_t *trans;
 
-  trans = calloc(1, sizeof(*trans));
+  trans = twopence_calloc(1, sizeof(*trans));
   if (trans == NULL)
     return NULL;
 
@@ -1155,7 +1155,7 @@ __twopence_ssh_init(const char *hostname, unsigned int port)
   ssh_session template;
 
   // Allocate the opaque handle
-  handle = calloc(1, sizeof(struct twopence_ssh_target));
+  handle = twopence_calloc(1, sizeof(struct twopence_ssh_target));
   if (handle == NULL) return NULL;
 
   // Store the plugin type
@@ -1209,7 +1209,7 @@ twopence_ssh_init(const char *arg)
     return __twopence_ssh_init(arg, 22);
   }
 
-  copy_spec = strdup(arg);
+  copy_spec = twopence_strdup(arg);
   s = strrchr(copy_spec, ':');
   *s++ = '\0';
  

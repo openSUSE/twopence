@@ -1,8 +1,4 @@
 BUGS
-   o library, shell and ruby wrappers:
-     buffer allocation errors are not handled anymore
-     (calloc() returning NULL)
-
    o Re-enable "line timeout"
      Add option to set it (see below)
 

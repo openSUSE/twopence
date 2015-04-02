@@ -79,7 +79,7 @@ twopence_conn_new(twopence_conn_semantics_t *semantics, twopence_sock_t *client_
 {
 	twopence_conn_t *conn;
 
-	conn = calloc(1, sizeof(*conn));
+	conn = twopence_calloc(1, sizeof(*conn));
 	conn->semantics = semantics;
 	conn->client_sock = client_sock;
 	conn->client_id = client_id;
@@ -429,7 +429,7 @@ twopence_conn_pool_new(void)
 {
 	twopence_conn_pool_t *pool;
 
-	pool = calloc(1, sizeof(*pool));
+	pool = twopence_calloc(1, sizeof(*pool));
 	pool->callbacks.close_connection = twopence_conn_free;
 	return pool;
 }

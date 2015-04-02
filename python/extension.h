@@ -25,6 +25,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <Python.h>
 #include <twopence.h>
 #include <string.h>
+#include "utils.h"
 
 typedef struct {
 	PyObject_HEAD
@@ -110,7 +111,7 @@ assign_string(char **var, char *str)
 	if (*var == str)
 		return;
 	if (str)
-		str = strdup(str);
+		str = twopence_strdup(str);
 	if (*var)
 		free(*var);
 	*var = str;
