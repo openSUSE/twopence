@@ -1,0 +1,444 @@
+.\" Process this file with
+.\" groff -man -Tascii server.1
+.\"
+.\"
+.TH TWOPENCE "3" "March 2015" "Twopence 0.3.2" "twopence C library"
+
+.SH NAME
+twopence \- library routines for orchestrating multi-node tests
+
+.SH SYNOPSIS AND DESCRIPTION
+The twopence library allows an application to execute commands remotely
+in a multi-node testing scenario.
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Targets
+Conceptually, a System Under Test (SUT) is referred to as a "target".
+The library is instructed to connect to a target using the
+.BR twopence_target_new (3)
+function, which takes a string as its first argument, specifying the
+target to connect to.
+.PP
+The target specification consists of a target type and an argument,
+separated by a colon.
+At the moment, twopence supports the following target types:
+.PP
+.TP
+.B ssh
+Execution via SSH, using libssh to talk to the remote SSH server.
+The argument is the name of the host to connect to, optionally followed
+by the port number:
+.IB hostname [: portnum ] \fR.
+.IP
+The \fIhostname\fP portion may be a name (to be resolved using
+regular hostname lookup), but it can also be an IP address. IPv6
+addresses must be enclosed in square brackets, like \fB[::1]\fP,
+to disambiguate the use of colons.
+.TP
+.B virtio
+This will open an \fBAF_LOCAL\fP socket to talk to a twopence
+server (see \fBtwopence_test_server\fP(1)). The argument is the
+path of the socket to connect to.
+.TP
+.B serial
+This will open a serial device to talk to a twopence server.
+The argument is the path of the serial device.
+.PP
+Once a handle for the desired target has been obtained, the
+application can interact with the SUT in three major ways:
+injecting files, extracting files, and executing commands. These
+operations and their API calls will be described below
+.PP
+In addition to these, you there are API calls to close the
+handle for a target, and to ask the target's twopence server
+to exit (this is a no-op in the ssh case).
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Security
+The twopence library doesn't really care much about security.
+You have been warned! :)
+.PP
+When using SSH, it expects authentication to "just work", which
+means you need to configure public key authentication. On the
+controlling node (which is where the twopence application runs),
+you need a private key without passphrase in \fB~/.ssh\fP. On
+each SUT, in each of the user accounts you want to be able to
+access, you need to add the public portion of that key to the
+\fBauthorized_keys\fB file.
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Twopence Status Struct
+.\" --------------------------------------------------------------
+.\"
+.\"
+.I "Explain twopence_status_t
+.PP
+.SS File Uploads and Downloads
+File uploads and downloads are fairly straightforward. In both
+cases, the path of the remote file name and a local "iostream"
+are needed. These iostreams are not your regular libc \fBFILE\fP
+objects, but specific to twopence. In short, these iostreams
+encapsulate buffers and regular file descriptors, or a combination
+thereof. See the section \(dqTwopence Streams\(dq below for details.
+.PP
+The primary functions for sending and receiving files are
+.PP
+.in +2
+.nf
+\fB
+int  twopence_send_file(struct twopence_target *target,
+                          twopence_file_xfer_t *xfer,
+                          twopence_status_t *status);
+int  twopence_recv_file(struct twopence_target *target,
+                          twopence_file_xfer_t *xfer,
+                          twopence_status_t *status);
+
+typedef struct twopence_remote_file twopence_remote_file_t;
+struct twopence_remote_file {
+  const char *            name;
+  unsigned int            mode;
+};
+
+typedef struct twopence_file_xfer twopence_file_xfer_t;
+struct twopence_file_xfer {
+  twopence_iostream_t *   local_stream;
+  twopence_remote_file_t  remote;
+  const char *            user;
+  bool                    print_dots;
+};
+\fP
+.fi
+.in
+.PP
+The members of \fBtwopence_file_xfer_t\fP have the following semantics:
+.TP
+.B user
+The name of a user's account on the SUT. The server will change its
+uid, gid and supplementary groups before opening the file, in order
+to ensure correct ownership of the uploaded file, and proper access
+rights when downloading.
+.IP
+If left empty, this will default to \(dq\fBroot\fP\(dq.
+.TP
+.B local_stream
+The local iostream to read from, or write to, respectively. When
+sending a file, twopence will read all data from this iostream
+until it hits an EOF condition.
+.IP
+Not setting \fBlocal_stream\fP is an error.
+.TP
+.B remote
+This specifies the remote file's name and permissions. If
+\fBremote.name\fP is not absolute (i.e. it does not start with '/'),
+it is interpreted relative to the home directory of \fBuser\fP.
+.IP
+When uploading a file, \fBremote.permissions\fP are used to set
+the permissions of the file. If the file exists already, its
+permissions are adjusted nevertheless.
+\fBremote.permissions\fP default to \fB0644\fP unless the field is
+set to a non-zero value by the caller.
+.IP
+Not setting \fBremote.name\fP is an error.
+.TP
+.B print_dots
+If set to true, the library will print a single '.' character for
+every block of data transferred. The size of these blocks is
+arbitrary, so do not expect to be able to use these as an indication
+for the amount of data transferred.
+.PP
+\fBCaveats:\fP 
+Note that both the twopence server and SSH will refuse to open anything
+but regular files. When using SSH, downloading files from \fB/proc\fP
+or similar virtual file systems will result in empty files. This is due
+to a problem in the SSH daemon.
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Running commands
+When running a command on the SUT, it is connected to three iostream
+objects - for standard input, output and error, respectively.
+The content of the stdin stream is transmitted to the SUT and piped
+into the running command, whereas the command's standard output and
+error is transferred back to the control node and written to the
+stdout and stderr streams.  This happens whenever data is available,
+so that it is possible to handle remote commands interactively.
+.PP
+Note, however, that the twopence command execution is not intended
+to be a full-blown replacement for a remote shell. For instance,
+most terminal applications using libraries like ncurses will not
+work very well, if at all.
+.PP
+The primary function for executing a command is
+.PP
+.in +2
+.nf
+\fB
+int              twopence_run_test(struct twopence_target *target,
+                          twopence_command_t *cmd,
+                          twopence_status_t *status);
+
+typedef struct twopence_command twopence_command_t;
+struct twopence_command {
+  const char *            command;
+  const char *            user;
+  long                    timeout;
+  bool                    request_tty;
+  bool                    background;
+
+  twopence_iostream_t     iostream[__TWOPENCE_IO_MAX];
+  twopence_buf_t          buffer[__TWOPENCE_IO_MAX];
+};
+
+void             twopence_command_init(twopence_command_t *cmd,
+                          const char *cmdline);
+void             twopence_command_destroy(twopence_command_t *cmd);
+\fP
+.fi
+.in
+.PP
+In order to run a command remotely, you need to set up a
+\fBtwopence_command_t\fP struct. This is done by calling
+\fBtwopence_command_init\fP and pass in the command line
+to execute. Other fields of the command struct can be modified
+subsequently, either by accessing them directly or by using
+.PP
+After the command has completed, the command object should
+be disposed of by calling \fBtwopence_command_destroy\fP.
+It is not safe to modify or destroy the command while
+execution is still in progress.
+.PP
+The members of \fBtwopence_command_t\fP have the following semantics:
+.TP
+.B command
+This specifies the command line to be executed. It is passed to
+\fB/bin/sh\fP on the remote host for execution, so that shell wildcards
+etc work.
+.TP
+.B user
+The name of the user to run this command as. The command will be
+executed with the privileges of this user, and the current working
+directory set to the account's home directory.
+.IP
+If not set, this defaults to \fBroot\fP.
+.TP
+.B timeout
+The timeout, in seconds, within which the command is expected to
+complete. If the runtime exceeds this limit, the command is
+terminated and a \fBCOMMAND_TIMEOUT\dP error is returned.
+.IP
+The default timeout is 60 seconds.
+.TP
+.B request_tty
+If this is false, the remote command is run with standard input and output
+connected to normal unnamed pipes. If this flag is set, a pseudo-tty pair
+is allocated instead, and the command is runs with its stdio connected to
+the slave tty. However, there are currently no provisions for transmitting
+the \fBTERM\fP variable, the terminal size or SIGWINCH signals.
+.IP
+This option is currently only implemented for the ssh target type.
+It defaults to false.
+.TP
+.B background
+If set, requests that the command is run asynchronously, meaning that
+\fBtwopence_run_test\fP returns immediately without waiting for the
+command to complete. The return value is a positive integer
+uniquely identifying the running transaction, similar to a Linux
+process ID.  See below for a description on how to wait wait
+for and retrieve the exit status of backgrounded commands.
+.TP
+.B iostream
+This array containts the three twopence iostreams connected to the command,
+ indexed by \fBTWOPENCE_STDIN\fP, \fBTWOPENCE_STDOUT\fP, and \fBTWOPENCE_STDERR\fP.
+.TP
+.B buffer
+These buffer objects can be used to set up any of the three iostreams
+to read from or write to a memory buffer.
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Setting up the Command's iostreams
+After initializing a command object, its iostreams can be set up
+using a number of utility functions.
+.PP
+Note that output streams can be connected to more than one
+"substream". For instance, your application may want the output
+of the test programs to be written to your application's standard
+output, while at the same time capturing the data in a buffer.
+Currently, an iostream will support up to 4 substreams.
+.PP
+.in +2
+.nf
+\fB
+typedef enum {
+  TWOPENCE_STDIN,
+  TWOPENCE_STDOUT,
+  TWOPENCE_STDERR
+} twopence_iofd_t;
+
+void             twopence_command_iostream_redirect(twopence_command_t *cmd,
+                          twopence_iofd_t which, int fd, bool closeit);
+twopence_buf_t * twopence_command_alloc_buffer(twopence_command_t *cmd,
+                          twopence_iofd_t which, size_t size);
+void             twopence_command_ostream_capture(twopence_command_t *cmd,
+                          twopence_iofd_t which, twopence_buf_t *bp);
+void             twopence_command_ostreams_reset(twopence_command_t *cmd);
+void             twopence_command_ostream_reset(twopence_command_t *cmd,
+                          twopence_iofd_t which);
+\fP
+.fi
+.in
+.PP
+If you want to connect a stream to a regular file descriptor, you would
+just use \fBtwopence_command_iostream_redirect\fP like this:
+.PP
+.nf
+.B "  twopence_command_iostream_redirect(&cmd, TWOPENCE_STDOUT, 1, false);
+.fi
+.PP
+This would cause the output of the remote command to be written to the
+local standard output of your application. The \fBcloseit\fP flag tells
+twopence whether to close the file descriptor when the stream is destroyed.
+In this case, you probably want to hang onto file descriptor 1, and
+thus you would pass \fBfalse\fP as \fBcloseit\fP parameter.
+.PP
+Similarly, you can redirect the remote command's standard output
+to a buffer. This can happen instead of or in addition to redirecting
+the output to a file. To do so, you would allocate a buffer using
+\fBtwopence_command_alloc_buffer\fP, and connect the iostream to
+this buffer using \fBtwopence_command_ostream_capture\fP.
+.PP
+Note that the buffer being \(dqallocated\(dq is a \fBbuffer\fP
+member of the command struct, which is just being resized to the
+requested size.
+.PP
+.nf
+.in +2m
+.B "twopence_command_t cmd;
+.B "twopence_status_t status;
+.B "twopence_buf_t *bp;
+.B ""
+.B "/* Initialize the command */
+.B "twopence_command_init(cmd, "ps lax");
+.B ""
+.B "/* Resize the stdout buffer */
+.B "bp = twopence_command_alloc_buffer(&cmd, TWOPENCE_STDOUT, 128 * 1024);
+.B ""
+.B "/* Capture stdout and stderr in this buffer */
+.B "twopence_command_ostream_capture(&cmd, TWOPENCE_STDOUT, bp);
+.B "twopence_command_ostream_capture(&cmd, TWOPENCE_STDERR, bp);
+.B "rc = twopence_run_test(target, &cmd, &status);
+.B ""
+.B "/* Do something with the content of the buffer */
+.B "...
+.B "/* Done! */
+.B "twopence_command_destroy(&cmd);
+.in
+.fi
+.PP
+Just like the stdout and stderr streams, you can redirect standard
+input. However, stdin does not really support multiple substreams -
+you cannot read from several substreams concurrently, and reading them
+sequentially turns out to make things pretty complicated. Which is
+why, right now, you can connect stdin to \fIeither\fP a buffer or
+a file descriptor. The functions to be used are the same as in the
+stdout/stderr case described above:
+.PP
+.nf
+.in +2m
+.B "twopence_command_t cmd;
+.B "twopence_status_t status;
+.B "twopence_buf_t *bp;
+.B ""
+.B "/* Initialize the command */
+.B "twopence_command_init(cmd, "fdisk /dev/sdc");
+.B ""
+.B "/* Stick the fdisk command in a buffer */
+.B "bp = twopence_command_alloc_buffer(&cmd, TWOPENCE_STDIN, data_len);
+.B "twopence_buf_append(bp, data, data_len);
+.B ""
+.B "/* Make stdin read from this buffer */
+.B "twopence_command_ostream_capture(&cmd, TWOPENCE_STDIN, bp);
+.B "rc = twopence_run_test(target, &cmd, &status);
+.B ""
+.B "/* Done! You've destroyed your partition table! :-) */
+.B "twopence_command_destroy(&cmd);
+.in
+.fi
+.PP
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Running commands asynchronously
+Twopence supports \fIbackgrounding\fP commands, i.e. running them
+asynchrounously. This can be requested simply by setting the \fBbackground\fP
+member of the command struct to \fBtrue\fP.
+.PP
+When backgrounding a command, \fBtwopence_run_test\fP will return
+immediately, allowing you to schedule more commands. The return value
+will be a \(qdtransaction id\(qd that identifies the command. This
+is an integer value. Commands scheduled on the same target will have
+different IDs, but commands scheduled on different targets may be
+assigned the same ID.
+.PP
+Once you have created all commands you want to run, you have to wait
+for them using the \fBtwopence_wait\fP function:
+.PP
+.in +2
+.nf
+.B "int  twopence_wait(struct twopence_target *, int xid, twopence_status_t *);
+.fi
+.in
+.PP
+The \fBxid\fP argument should be either 0, telling twopence to wait for
+just any command to complete, or should be a transaction ID returned
+by a previous call to \fBtwopence_run_test\fP on this target.
+.PP
+If there are no pending commands, \fBtwopence_wait\fP will return 0.
+If an error occured while executing a transaction, or while waiting
+for it, a negative erorr code will be returned. If a command
+completed without local error, its exit status will be copied to the
+\fBtwopence_status_t\fP argument, and its transaction ID will be returned.
+.PP
+Note, by the time \fBtwopence_run_test\fP returns, it is not guaranteed
+that the backgrounded command has actually been started on the SUT. Remote
+commands will only be started, and will only be able to perform I/O,
+while the client application is executing the internal twopence event
+loop. This is currently only guaranteed to happen when twopence is
+actively waiting for a command to complete, i.e. either while in
+\fBtwopence_run_test\fP (executing another command synchronously),
+or while in \fBtwopence_wait\fP.
+.PP
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Interrupting a Command
+Twopence provides a mechanism to interrupt a command that is
+being run synchronously (i.e. \fBbackground\fP is set to \fBfalse\fP),
+using this function:
+.PP
+.in +2
+.nf
+.B "int  twopence_interrupt_command(struct twopence_target *target);
+.fi
+.in
+.PP
+This will not work equally well on all targets. In particular, while the
+SSH protocol does provide for commands to deliver signals to a command
+remotely, this is currently not implemented in openssh's sshd. A workaround
+exists in the twopence library, but it is far from perfect.
+
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SH SEE ALSO
+.BR twopence_command(1) ,
+.BR twopence_inject(1) ,
+.BR twopence_extract(1) ,
+.BR twopence_test_server(1) .
+.SH AUTHORS
+Twopence was conceived and written by Eric Bischoff, with contributions
+from a few others.
+This manpage was written by Olaf Kirch.
