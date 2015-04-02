@@ -52,7 +52,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define TWOPENCE_SERVER_SOCKET_ERROR -2
 #define TWOPENCE_SERVER_FORK_ERROR -3
 
-static void		service_connection(int);
 static void		server_daemonize(void);
 
 bool			server_audit = true;
