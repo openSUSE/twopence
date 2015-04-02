@@ -47,4 +47,9 @@ extern int		twopence_pollinfo_ppoll(const twopence_pollinfo_t *, const sigset_t 
 
 extern int		twopence_name_to_signal(const char *signal_name);
 
+extern void *		twopence_malloc(size_t size);
+extern void *		twopence_realloc(void *p, size_t size);
+extern void *		twopence_calloc(size_t nmemb, size_t size);
+extern char *		twopence_strdup(const char *s);
+
 #endif /* UTILS_H */

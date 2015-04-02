@@ -20,6 +20,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <sys/time.h>
 #include <string.h>
 #include <signal.h>
+#include <stdlib.h>
+#include <assert.h>
 #include "twopence.h"
 #include "utils.h"
 
@@ -164,4 +166,60 @@ twopence_name_to_signal(const char *signal_name)
   }
 
   return -1;
+}
+
+/*
+ * Wrappers for malloc and friends, checking for allocation erros
+ */
+#define check_and_return(p) \
+	do { \
+		assert(p); \
+		return p; \
+	} while (0)
+
+void *
+twopence_malloc(size_t size)
+{
+  void *p;
+
+  if (size == 0)
+    return NULL;
+
+  p = malloc(size);
+  check_and_return(p);
+}
+
+void *
+twopence_realloc(void *p, size_t size)
+{
+  if (p == NULL)
+    return twopence_malloc(size);
+
+  if (size == 0) {
+    free(p);
+    return NULL;
+  }
+
+  p = realloc(p, size);
+  check_and_return(p);
+}
+
+void *
+twopence_calloc(size_t nmemb, size_t size)
+{
+  void *p;
+
+  if (size == 0 || nmemb == 0)
+    return NULL;
+  p = calloc(nmemb, size);
+  check_and_return(p);
+}
+
+char *
+twopence_strdup(const char *s)
+{
+  /* Note, strdup just crashes if s is NULL. We're not trying to be cleverer than that */
+  char *p = strdup(s);
+
+  check_and_return(p);
 }
