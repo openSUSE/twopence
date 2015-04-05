@@ -410,7 +410,7 @@ server_inject_file(twopence_transaction_t *trans, const char *username, const ch
 		return false;
 	}
 
-	sink = twopence_transaction_attach_local_sink(trans, fd, TWOPENCE_PROTO_TYPE_DATA);
+	sink = twopence_transaction_attach_local_sink(trans, fd, 0);
 	if (sink == NULL) {
 		/* Something is wrong */
 		close(fd);
@@ -429,7 +429,10 @@ server_inject_file(twopence_transaction_t *trans, const char *username, const ch
 void
 server_extract_file_source_read_eof(twopence_transaction_t *trans, twopence_trans_channel_t *channel)
 {
-	twopence_transaction_send_client(trans, twopence_protocol_build_eof_packet(&trans->ps));
+	uint16_t channel_id = twopence_transaction_channel_id(channel);
+
+	twopence_transaction_send_client(trans, twopence_protocol_build_eof_packet(&trans->ps, channel_id));
+	twopence_transaction_send_minor(trans, 0);
 	trans->done = true;
 }
 
@@ -446,7 +449,7 @@ server_extract_file(twopence_transaction_t *trans, const char *username, const c
 		return false;
 	}
 
-	source = twopence_transaction_attach_local_source(trans, fd, TWOPENCE_PROTO_TYPE_DATA);
+	source = twopence_transaction_attach_local_source(trans, fd, 0);
 	if (source == NULL) {
 		/* Something is wrong */
 		twopence_transaction_fail(trans, EIO);
@@ -469,10 +472,10 @@ server_run_command_send(twopence_transaction_t *trans)
 	bool pending_output;
 
 	pending_output = false;
-	if ((channel = twopence_transaction_find_source(trans, TWOPENCE_PROTO_TYPE_STDOUT)) != NULL
+	if ((channel = twopence_transaction_find_source(trans, TWOPENCE_STDOUT)) != NULL
 	 && !twopence_transaction_channel_is_read_eof(channel))
 		pending_output = true;
-	if ((channel = twopence_transaction_find_source(trans, TWOPENCE_PROTO_TYPE_STDERR)) != NULL
+	if ((channel = twopence_transaction_find_source(trans, TWOPENCE_STDERR)) != NULL
 	 && !twopence_transaction_channel_is_read_eof(channel))
 		pending_output = true;
 
@@ -508,12 +511,6 @@ server_run_command_send(twopence_transaction_t *trans)
 	return true;
 }
 
-static void
-server_run_command_stdin_eof(twopence_transaction_t *trans, twopence_trans_channel_t *sink)
-{
-	/* Nothing to be done. */
-}
-
 bool
 server_run_command_recv(twopence_transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
 {
@@ -542,7 +539,6 @@ server_run_command_recv(twopence_transaction_t *trans, const twopence_hdr_t *hdr
 bool
 server_run_command(twopence_transaction_t *trans, const char *username, unsigned int timeout, const char *cmdline)
 {
-	twopence_trans_channel_t *sink;
 	int status;
 	int command_fds[3];
 	int nattached = 0;
@@ -554,17 +550,15 @@ server_run_command(twopence_transaction_t *trans, const char *username, unsigned
 		return false;
 	}
 
-	sink = twopence_transaction_attach_local_sink(trans, command_fds[0], TWOPENCE_PROTO_TYPE_STDIN);
-	if (sink == NULL)
-		goto failed;
-	twopence_transaction_channel_set_callback_write_eof(sink, server_run_command_stdin_eof);
-	nattached++;
-
-	if (twopence_transaction_attach_local_source(trans, command_fds[1], TWOPENCE_PROTO_TYPE_STDOUT) == NULL)
+	if ((twopence_transaction_attach_local_sink(trans, command_fds[0], TWOPENCE_STDIN)) == NULL)
 		goto failed;
 	nattached++;
 
-	if (twopence_transaction_attach_local_source(trans, command_fds[2], TWOPENCE_PROTO_TYPE_STDERR) == NULL)
+	if (twopence_transaction_attach_local_source(trans, command_fds[1], TWOPENCE_STDOUT) == NULL)
+		goto failed;
+	nattached++;
+
+	if (twopence_transaction_attach_local_source(trans, command_fds[2], TWOPENCE_STDERR) == NULL)
 		goto failed;
 	nattached++;
 

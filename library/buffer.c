@@ -215,6 +215,17 @@ twopence_buf_append(twopence_buf_t *bp, const void *data, unsigned int len)
 }
 
 bool
+twopence_buf_get(twopence_buf_t *bp, void *data, unsigned int len)
+{
+	if (twopence_buf_count(bp) < len)
+		return false;
+
+	memcpy(data, bp->base + bp->head, len);
+	bp->head += len;
+	return true;
+}
+
+bool
 twopence_buf_puts(twopence_buf_t *bp, const char *s)
 {
 	if (!s)

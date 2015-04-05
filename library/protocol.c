@@ -67,15 +67,19 @@ twopence_protocol_packet_type_to_string(unsigned int type)
 		return "command";
 	case TWOPENCE_PROTO_TYPE_QUIT:
 		return "quit";
-	case TWOPENCE_PROTO_TYPE_STDIN:
-		return "stdin";
-	case TWOPENCE_PROTO_TYPE_STDOUT:
-		return "stdout";
-	case TWOPENCE_PROTO_TYPE_STDERR:
-		return "stderr";
-	case TWOPENCE_PROTO_TYPE_DATA:
+	case TWOPENCE_PROTO_TYPE_CHAN_DATA:
 		return "data";
-	case TWOPENCE_PROTO_TYPE_EOF:
+	case TWOPENCE_PROTO_TYPE_CHAN_EOF:
+		return "eof";
+	case TWOPENCE_PROTO_TYPE_STDIN_OLD:
+		return "stdin";
+	case TWOPENCE_PROTO_TYPE_STDOUT_OLD:
+		return "stdout";
+	case TWOPENCE_PROTO_TYPE_STDERR_OLD:
+		return "stderr";
+	case TWOPENCE_PROTO_TYPE_DATA_OLD:
+		return "data";
+	case TWOPENCE_PROTO_TYPE_EOF_OLD:
 		return "eof";
 	case TWOPENCE_PROTO_TYPE_INTR:
 		return "intr";
@@ -92,6 +96,7 @@ twopence_protocol_packet_type_to_string(unsigned int type)
 		return descbuf;
 	}
 }
+
 void
 __twopence_protocol_build_header(twopence_buf_t *bp, unsigned char type, unsigned int cid, unsigned int xid)
 {
@@ -173,10 +178,59 @@ twopence_protocol_build_simple_packet(unsigned char type)
 	return twopence_protocol_build_simple_packet_ps(NULL, type);
 }
 
-twopence_buf_t *
-twopence_protocol_build_eof_packet(twopence_protocol_state_t *ps)
+static inline bool
+__encode_u16(twopence_buf_t *bp, uint16_t word)
 {
-	return twopence_protocol_build_simple_packet_ps(ps, TWOPENCE_PROTO_TYPE_EOF);
+	word = htons(word);
+	return twopence_buf_append(bp, &word, sizeof(word));
+}
+
+static inline bool
+__decode_u16(twopence_buf_t *bp, uint16_t *word)
+{
+	if (!twopence_buf_get(bp, word, sizeof(*word)))
+		return false;
+	*word = ntohs(*word);
+	return true;
+}
+
+/*
+ * Channel packets:
+ *  CHANNEL_DATA:	sending data during a file transfer, or on any of the standard fds
+ *			associated with a command
+ *  CHANNEL_EOF:	indicating EOF on this channel
+ *  CHANNEL_ERROR:	indicating an error on the indicated channel.
+ */
+twopence_buf_t *
+twopence_protocol_build_data_header(twopence_buf_t *bp, twopence_protocol_state_t *ps, uint16_t channel_id)
+{
+	assert(bp->head == TWOPENCE_PROTO_HEADER_SIZE + 2);
+
+	channel_id = htons(channel_id);
+
+	/* This should go to buffer.c */
+	bp->head -= 2;
+	memcpy((void *) twopence_buf_head(bp), &channel_id, 2);
+
+	twopence_protocol_push_header_ps(bp, ps, TWOPENCE_PROTO_TYPE_CHAN_DATA);
+	return bp;
+}
+
+twopence_buf_t *
+twopence_protocol_build_eof_packet(twopence_protocol_state_t *ps, uint16_t channel)
+{
+	twopence_buf_t *bp;
+
+	bp = twopence_protocol_command_buffer_new();
+	__encode_u16(bp, channel);
+	twopence_protocol_push_header_ps(bp, ps, TWOPENCE_PROTO_TYPE_CHAN_EOF);
+	return bp;
+}
+
+bool
+twopence_protocol_dissect_eof_packet(twopence_buf_t *bp, uint16_t *channel_ret)
+{
+	return __decode_u16(bp, channel_ret);
 }
 
 twopence_buf_t *

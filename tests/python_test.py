@@ -15,6 +15,8 @@ import sys
 import os
 import traceback
 
+twopence.setDebugLevel(0)
+
 targetSpec = None
 if len(sys.argv) > 1:
 	targetSpec = sys.argv[1]

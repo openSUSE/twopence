@@ -48,7 +48,7 @@
 struct twopence_trans_channel {
 	struct twopence_trans_channel *next;
 
-	unsigned char		id;		/* corresponds to a packet type (eg '0' or 'd') */
+	uint16_t		id;		/* The channel ID is a 16bit number; usually 0, 1, 2 for commands */
 	bool			sync;		/* if true, all writes are fully synchronous */
 
 	twopence_sock_t *	socket;
@@ -97,11 +97,22 @@ twopence_transaction_channel_from_stream(twopence_iostream_t *stream, int flags)
 }
 
 static const char *
-__twopence_transaction_channel_name(unsigned char id)
+__twopence_transaction_channel_name(uint16_t id)
 {
-	if (id == 0)
+	static char namebuf[16];
+
+	switch (id) {
+	case TWOPENCE_STDIN:
+		return "stdin";
+	case TWOPENCE_STDOUT:
+		return "stdout";
+	case TWOPENCE_STDERR:
+		return "stderr";
+	case TWOPENCE_TRANSACTION_CHANNEL_ID_ALL:
 		return "all";
-	return twopence_protocol_packet_type_to_string(id);
+	}
+	snprintf(namebuf, sizeof(namebuf), "chan%u", id);
+	return namebuf;
 }
 
 static const char *
@@ -169,12 +180,12 @@ twopence_transaction_channel_list_purge(twopence_trans_channel_t **list)
 }
 
 static void
-twopence_transaction_channel_list_close(twopence_trans_channel_t **list, unsigned char id)
+twopence_transaction_channel_list_close(twopence_trans_channel_t **list, uint16_t id)
 {
 	twopence_trans_channel_t *channel;
 
 	while ((channel = *list) != NULL) {
-		if (id == 0 || channel->id == id) {
+		if (id == TWOPENCE_TRANSACTION_CHANNEL_ID_ALL || channel->id == id) {
 			*list = channel->next;
 			twopence_transaction_channel_free(channel);
 		} else {
@@ -208,8 +219,8 @@ twopence_transaction_free(twopence_transaction_t *trans)
 
 	/* Do not free trans->socket, we don't own it */
 
-	twopence_transaction_channel_list_close(&trans->local_sink, 0);
-	twopence_transaction_channel_list_close(&trans->local_source, 0);
+	twopence_transaction_channel_list_close(&trans->local_sink, TWOPENCE_TRANSACTION_CHANNEL_ID_ALL);
+	twopence_transaction_channel_list_close(&trans->local_source, TWOPENCE_TRANSACTION_CHANNEL_ID_ALL);
 
 	memset(trans, 0, sizeof(*trans));
 	free(trans);
@@ -313,7 +324,7 @@ twopence_transaction_send_command(twopence_transaction_t *trans, const char *use
 
 /* FIXME: swap fd and id arguments */
 twopence_trans_channel_t *
-twopence_transaction_attach_local_sink(twopence_transaction_t *trans, int fd, unsigned char id)
+twopence_transaction_attach_local_sink(twopence_transaction_t *trans, int fd, uint16_t id)
 {
 	twopence_trans_channel_t *sink;
 
@@ -329,7 +340,7 @@ twopence_transaction_attach_local_sink(twopence_transaction_t *trans, int fd, un
 }
 
 twopence_trans_channel_t *
-twopence_transaction_attach_local_sink_stream(twopence_transaction_t *trans, unsigned char id, twopence_iostream_t *stream)
+twopence_transaction_attach_local_sink_stream(twopence_transaction_t *trans, uint16_t id, twopence_iostream_t *stream)
 {
 	twopence_trans_channel_t *sink;
 	int fd;
@@ -350,14 +361,14 @@ twopence_transaction_attach_local_sink_stream(twopence_transaction_t *trans, uns
 }
 
 void
-twopence_transaction_close_sink(twopence_transaction_t *trans, unsigned char id)
+twopence_transaction_close_sink(twopence_transaction_t *trans, uint16_t id)
 {
 	twopence_debug("%s: close sink %s\n", twopence_transaction_describe(trans), __twopence_transaction_channel_name(id));
 	twopence_transaction_channel_list_close(&trans->local_sink, id);
 }
 
 twopence_trans_channel_t *
-twopence_transaction_attach_local_source(twopence_transaction_t *trans, int fd, unsigned char channel_id)
+twopence_transaction_attach_local_source(twopence_transaction_t *trans, int fd, uint16_t channel_id)
 {
 	twopence_trans_channel_t *source;
 
@@ -373,7 +384,7 @@ twopence_transaction_attach_local_source(twopence_transaction_t *trans, int fd, 
 }
 
 twopence_trans_channel_t *
-twopence_transaction_attach_local_source_stream(twopence_transaction_t *trans, unsigned char id, twopence_iostream_t *stream)
+twopence_transaction_attach_local_source_stream(twopence_transaction_t *trans, uint16_t id, twopence_iostream_t *stream)
 {
 	twopence_trans_channel_t *source;
 	int fd;
@@ -394,7 +405,7 @@ twopence_transaction_attach_local_source_stream(twopence_transaction_t *trans, u
 }
 
 void
-twopence_transaction_close_source(twopence_transaction_t *trans, unsigned char id)
+twopence_transaction_close_source(twopence_transaction_t *trans, uint16_t id)
 {
 	twopence_debug("%s: close source %s\n", twopence_transaction_describe(trans), __twopence_transaction_channel_name(id));
 	twopence_transaction_channel_list_close(&trans->local_source, id);
@@ -443,6 +454,12 @@ twopence_transaction_channel_flush(twopence_trans_channel_t *sink)
 	return twopence_sock_xmit_queue_flush(sock);
 }
 
+uint16_t
+twopence_transaction_channel_id(const twopence_trans_channel_t *channel)
+{
+	return channel->id;
+}
+
 static void
 twopence_transaction_channel_write_eof(twopence_trans_channel_t *sink)
 {
@@ -476,7 +493,7 @@ twopence_transaction_channel_poll(twopence_trans_channel_t *channel, twopence_po
 			 * protocol header, which we just tack on once we have the data.
 			 */
 			bp = twopence_buf_new(TWOPENCE_PROTO_MAX_PACKET);
-			twopence_buf_reserve_head(bp, TWOPENCE_PROTO_HEADER_SIZE);
+			twopence_buf_reserve_head(bp, TWOPENCE_PROTO_HEADER_SIZE + 2);
 
 			twopence_sock_post_recvbuf(sock, bp);
 		}
@@ -500,6 +517,7 @@ twopence_transaction_channel_forward(twopence_transaction_t *trans, twopence_tra
 			int count;
 
 			bp = twopence_protocol_command_buffer_new();
+			twopence_buf_reserve_head(bp, TWOPENCE_PROTO_HEADER_SIZE + 2); /* ugly */
 			do {
 				count = twopence_iostream_read(stream,
 						twopence_buf_tail(bp),
@@ -508,7 +526,7 @@ twopence_transaction_channel_forward(twopence_transaction_t *trans, twopence_tra
 
 			if (count > 0) {
 				twopence_buf_advance_tail(bp, count);
-				twopence_protocol_push_header_ps(bp, &trans->ps, channel->id);
+				twopence_protocol_build_data_header(bp, &trans->ps, channel->id);
 				twopence_transaction_send_client(trans, bp);
 
 				twopence_transaction_channel_trace_io(trans);
@@ -557,11 +575,9 @@ twopence_transaction_channel_doio(twopence_transaction_t *trans, twopence_trans_
 		 * to them. If that is non-empty, queue it to the transport
 		 * socket. */
 		if ((bp = twopence_sock_take_recvbuf(sock)) != NULL) {
-			unsigned int count = twopence_buf_count(bp) - TWOPENCE_PROTO_HEADER_SIZE;
-
 			twopence_debug2("%s: %u bytes from local source %s", twopence_transaction_describe(trans),
-					count, twopence_transaction_channel_name(channel));
-			twopence_protocol_push_header_ps(bp, &trans->ps, channel->id);
+					twopence_buf_count(bp), twopence_transaction_channel_name(channel));
+			twopence_protocol_build_data_header(bp, &trans->ps, channel->id);
 			twopence_sock_queue_xmit(trans->socket, bp);
 
 			twopence_transaction_channel_trace_io(trans);
@@ -650,26 +666,59 @@ twopence_transaction_recv_packet(twopence_transaction_t *trans, const twopence_h
 		return;
 	}
 
-	sink = twopence_transaction_find_sink(trans, hdr->type);
-	if (sink != NULL) {
-		twopence_debug("%s: received %u bytes of data on channel %s\n",
+	if (hdr->type == TWOPENCE_PROTO_TYPE_CHAN_DATA) {
+		uint16_t channel_id;
+
+		/* This should go to protocol.c */
+		if (!twopence_buf_get(payload, &channel_id, sizeof(channel_id)))
+			return;
+
+		channel_id = ntohs(channel_id);
+		sink = twopence_transaction_find_sink(trans, channel_id);
+		if (sink != NULL) {
+			twopence_debug("%s: received %u bytes of data on channel %s\n",
+					twopence_transaction_describe(trans), twopence_buf_count(payload),
+					twopence_transaction_channel_name(sink));
+			if (sink && !twopence_transaction_channel_write_data(trans, sink, payload))
+				twopence_transaction_fail(trans, errno);
+			return;
+		}
+
+		twopence_debug("%s: received %u bytes of data on unknown channel %u\n",
 				twopence_transaction_describe(trans), twopence_buf_count(payload),
-				twopence_transaction_channel_name(sink));
-		if (sink && !twopence_transaction_channel_write_data(trans, sink, payload))
-			twopence_transaction_fail(trans, errno);
+				channel_id);
 		return;
 	}
 
-	if (hdr->type == TWOPENCE_PROTO_TYPE_EOF
-	 && (sink = trans->local_sink) != NULL
-	 && sink->callbacks.write_eof) {
-		twopence_debug("%s: received EOF", twopence_transaction_describe(trans));
+	if (hdr->type == TWOPENCE_PROTO_TYPE_CHAN_EOF) {
+		uint16_t channel_id;
 
-		/* Passing the EOF indication to what is essentially a random local sink
-		 * is not correct, but right now, we're just handling one local sink at most. */
+		/* This should go to protocol.c */
+		if (!twopence_buf_get(payload, &channel_id, sizeof(channel_id)))
+			return;
+
+		channel_id = ntohs(channel_id);
+		sink = twopence_transaction_find_sink(trans, channel_id);
+		if (sink == NULL) {
+			twopence_debug("%s: received %u bytes of data on unknown channel %u\n",
+					twopence_transaction_describe(trans), twopence_buf_count(payload),
+					channel_id);
+			return;
+		}
+
+		twopence_debug("%s: received EOF on channel %s\n",
+				twopence_transaction_describe(trans),
+				twopence_transaction_channel_name(sink));
+
 		twopence_transaction_channel_write_eof(sink);
-		sink->callbacks.write_eof(trans, sink);
-		sink->callbacks.write_eof = NULL;
+		if (sink->callbacks.write_eof) {
+			sink->callbacks.write_eof(trans, sink);
+			sink->callbacks.write_eof = NULL;
+		}
+
+		/* Do NOT close the sink yet; it may have data queued to it.
+		 * Strictly speaking, we also should not send a success notification
+		 * to the client yet. */
 		return;
 	}
 
@@ -773,7 +822,7 @@ twopence_transaction_send_timeout(twopence_transaction_t *trans)
  * For now, the "id" is a packet type, such as '0' or 'd'
  */
 twopence_trans_channel_t *
-twopence_transaction_find_sink(twopence_transaction_t *trans, unsigned char id)
+twopence_transaction_find_sink(twopence_transaction_t *trans, uint16_t id)
 {
 	twopence_trans_channel_t *sink;
 
@@ -785,7 +834,7 @@ twopence_transaction_find_sink(twopence_transaction_t *trans, unsigned char id)
 }
 
 twopence_trans_channel_t *
-twopence_transaction_find_source(twopence_transaction_t *trans, unsigned char id)
+twopence_transaction_find_source(twopence_transaction_t *trans, uint16_t id)
 {
 	twopence_trans_channel_t *channel;
 

@@ -39,6 +39,8 @@ Packet types:
             both directions
   'h'		hello packet (used to establish the client ID for all subsequent packets)
   'd'           file data
+  'D'		channel data
+  'X'		channel eof
   'K'		keepalive packet
 
 The length includes the 4 bytes of the header.
@@ -50,3 +52,8 @@ Parameters are separated with spaces:
   insert file   username filemode filename
   extract file  username filename
 
+New-style commands
+
+  chan_data	uint16:	channel_id (commands: 0, 1, 2; extract/inject: 0)
+  		followed by the payload
+  chan_eof	uint16: channel_id (commands: 0, 1, 2; extract/inject: 0)

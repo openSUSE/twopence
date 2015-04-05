@@ -42,11 +42,13 @@ struct header {
 #define TWOPENCE_PROTO_TYPE_EXTRACT	'e'
 #define TWOPENCE_PROTO_TYPE_COMMAND	'c'
 #define TWOPENCE_PROTO_TYPE_QUIT	'q'
-#define TWOPENCE_PROTO_TYPE_STDIN	'0'
-#define TWOPENCE_PROTO_TYPE_STDOUT	'1'
-#define TWOPENCE_PROTO_TYPE_STDERR	'2'
-#define TWOPENCE_PROTO_TYPE_DATA	'd'
-#define TWOPENCE_PROTO_TYPE_EOF		'E'
+#define TWOPENCE_PROTO_TYPE_STDIN_OLD	'0'
+#define TWOPENCE_PROTO_TYPE_STDOUT_OLD	'1'
+#define TWOPENCE_PROTO_TYPE_STDERR_OLD	'2'
+#define TWOPENCE_PROTO_TYPE_CHAN_DATA	'D'
+#define TWOPENCE_PROTO_TYPE_DATA_OLD	'd'
+#define TWOPENCE_PROTO_TYPE_CHAN_EOF	'X'
+#define TWOPENCE_PROTO_TYPE_EOF_OLD	'E'
 #define TWOPENCE_PROTO_TYPE_INTR	'I'
 #define TWOPENCE_PROTO_TYPE_MAJOR	'M'
 #define TWOPENCE_PROTO_TYPE_MINOR	'm'
@@ -65,7 +67,8 @@ extern void		twopence_protocol_push_header_ps(twopence_buf_t *bp, const twopence
 extern twopence_buf_t *	twopence_protocol_command_buffer_new();
 extern twopence_buf_t *	twopence_protocol_build_simple_packet(unsigned char type);
 extern twopence_buf_t *	twopence_protocol_build_simple_packet_ps(twopence_protocol_state_t *, unsigned char);
-extern twopence_buf_t *	twopence_protocol_build_eof_packet(twopence_protocol_state_t *);
+extern twopence_buf_t *	twopence_protocol_build_data_header(twopence_buf_t *, twopence_protocol_state_t *, uint16_t);
+extern twopence_buf_t *	twopence_protocol_build_eof_packet(twopence_protocol_state_t *, uint16_t);
 extern twopence_buf_t *	twopence_protocol_build_hello_packet(unsigned int cid);
 extern twopence_buf_t *	twopence_protocol_build_inject_packet(const twopence_protocol_state_t *ps, const char *user, const char *remote_name, unsigned int remote_mode);
 extern twopence_buf_t *	twopence_protocol_build_extract_packet(const twopence_protocol_state_t *ps, const char *user, const char *remote_name);

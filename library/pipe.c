@@ -223,27 +223,36 @@ twopence_pipe_transaction_new(struct twopence_pipe_target *handle, unsigned int 
 }
 
 /*
+ * A local source has hit EOF; send the EOF indication to the remote.
+ */
+static void
+__twopence_pipe_local_source_eof(twopence_transaction_t *trans, twopence_trans_channel_t *source)
+{
+  uint16_t channel_id = twopence_transaction_channel_id(source);
+  twopence_buf_t *bp;
+  int rc;
+
+  bp = twopence_protocol_build_eof_packet(&trans->ps, channel_id);
+  if ((rc = twopence_sock_xmit(trans->socket, bp)) < 0) {
+    twopence_transaction_set_error(trans, rc);
+    twopence_buf_free(bp);
+  }
+}
+
+
+/*
  * Attach a local source stream to the remote stdin
  * This can be fd 0, any other file, or even a buffer object.
  */
-static void
-__twopence_pipe_stdin_read_eof(twopence_transaction_t *trans, twopence_trans_channel_t *source)
-{
-  int rc;
-
-  if ((rc = twopence_sock_xmit(trans->socket, twopence_protocol_build_eof_packet(&trans->ps))) < 0)
-    twopence_transaction_set_error(trans, rc);
-}
-
 static void
 twopence_pipe_transaction_attach_stdin(twopence_transaction_t *trans, twopence_command_t *cmd)
 {
   twopence_iostream_t *stream = &cmd->iostream[TWOPENCE_STDIN];
   twopence_trans_channel_t *channel;
 
-  channel = twopence_transaction_attach_local_source_stream(trans, TWOPENCE_PROTO_TYPE_STDIN, stream);
+  channel = twopence_transaction_attach_local_source_stream(trans, TWOPENCE_STDIN, stream);
   if (channel) {
-    twopence_transaction_channel_set_callback_read_eof(channel, __twopence_pipe_stdin_read_eof);
+    twopence_transaction_channel_set_callback_read_eof(channel, __twopence_pipe_local_source_eof);
     twopence_iostream_set_blocking(stream, false);
     /* FIXME: need to set it back to original blocking state at some point */
   }
@@ -253,14 +262,14 @@ static void
 twopence_pipe_transaction_attach_stdout(twopence_transaction_t *trans, twopence_command_t *cmd)
 {
   twopence_iostream_t *stream = &cmd->iostream[TWOPENCE_STDOUT];
-  twopence_transaction_attach_local_sink_stream(trans, TWOPENCE_PROTO_TYPE_STDOUT, stream);
+  twopence_transaction_attach_local_sink_stream(trans, TWOPENCE_STDOUT, stream);
 }
 
 static void
 twopence_pipe_transaction_attach_stderr(twopence_transaction_t *trans, twopence_command_t *cmd)
 {
   twopence_iostream_t *stream = &cmd->iostream[TWOPENCE_STDERR];
-  twopence_transaction_attach_local_sink_stream(trans, TWOPENCE_PROTO_TYPE_STDERR, stream);
+  twopence_transaction_attach_local_sink_stream(trans, TWOPENCE_STDERR, stream);
 }
 
 static void
@@ -386,15 +395,6 @@ recv_file_error:
   return true;
 }
 
-static void
-__twopence_pipe_inject_read_eof(twopence_transaction_t *trans, twopence_trans_channel_t *source)
-{
-  int rc;
-
-  if ((rc = twopence_sock_xmit(trans->socket, twopence_protocol_build_eof_packet(&trans->ps))) < 0)
-    twopence_transaction_set_error(trans, rc);
-}
-
 static bool
 __twopence_pipe_extract_recv(twopence_transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
 {
@@ -405,7 +405,7 @@ __twopence_pipe_extract_recv(twopence_transaction_t *trans, const twopence_hdr_t
     twopence_transaction_set_error(trans, TWOPENCE_RECEIVE_FILE_ERROR);
     break;
 
-  case TWOPENCE_PROTO_TYPE_EOF:
+  case TWOPENCE_PROTO_TYPE_CHAN_EOF:
     /* End of data */
     trans->done = true;
     break;
@@ -510,9 +510,9 @@ int __twopence_pipe_inject_file
   if ((rc = twopence_transaction_send_inject(trans, xfer->user, xfer->remote.name, xfer->remote.mode)) < 0)
     goto out;
 
-  channel = twopence_transaction_attach_local_source_stream(trans, TWOPENCE_PROTO_TYPE_DATA, xfer->local_stream);
+  channel = twopence_transaction_attach_local_source_stream(trans, 0, xfer->local_stream);
   if (channel) {
-    twopence_transaction_channel_set_callback_read_eof(channel, __twopence_pipe_inject_read_eof);
+    twopence_transaction_channel_set_callback_read_eof(channel, __twopence_pipe_local_source_eof);
     twopence_transaction_channel_set_plugged(channel, true);
 
     if (xfer->print_dots)
@@ -556,7 +556,7 @@ int _twopence_extract_virtio_serial
   if ((rc = twopence_transaction_send_extract(trans, xfer->user, xfer->remote.name)) < 0)
     goto out;
 
-  sink = twopence_transaction_attach_local_sink_stream(trans, TWOPENCE_PROTO_TYPE_DATA, xfer->local_stream);
+  sink = twopence_transaction_attach_local_sink_stream(trans, 0, xfer->local_stream);
   if (sink) {
     twopence_transaction_channel_set_callback_write_eof(sink, __twopence_pipe_extract_eof);
 
