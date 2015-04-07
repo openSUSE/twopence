@@ -212,7 +212,7 @@ __twopence_pipe_handshake(twopence_sock_t *sock, unsigned int *client_id, unsign
      || server_version[1] < TWOPENCE_PROTOCOL_VERSMINOR) {
       twopence_log_error("Protocol version not compatible. We use %u.%u, server uses %u.%u",
 	      TWOPENCE_PROTOCOL_VERSMAJOR, TWOPENCE_PROTOCOL_VERSMINOR, server_version[0], server_version[1]);
-      return TWOPENCE_PROTOCOL_ERROR;
+      return TWOPENCE_INCOMPATIBLE_PROTOCOL_ERROR;
     }
     *client_id = ps.cid;
     if (*line_timeout == 0 || server_keepalive < *line_timeout)
