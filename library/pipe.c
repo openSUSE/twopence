@@ -19,13 +19,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include <sys/stat.h>
-#include <sys/poll.h>
-#include <stdio.h>                     // For snprintf() parsing facility. Most I/O is low-level and unbuffered.
 #include <stdlib.h>
 #include <string.h>
-#include <fcntl.h>
-#include <errno.h>
 #include <unistd.h>
 
 #include "twopence.h"
@@ -33,9 +28,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "transaction.h"
 #include "pipe.h"
 #include "utils.h"
-
-#define LINE_TIMEOUT 60000             // Maximum silence on the line in milliseconds
-
 
 static int				__twopence_pipe_handshake(twopence_sock_t *sock, unsigned int *client_id);
 static void				__twopence_pipe_end_transaction(twopence_conn_t *, twopence_transaction_t *);
@@ -284,52 +276,52 @@ twopence_pipe_transaction_attach_stderr(twopence_transaction_t *trans, twopence_
 static void
 __twopence_pipe_end_transaction(twopence_conn_t *conn, twopence_transaction_t *trans)
 {
-	twopence_debug("%s: transaction done, move it to wait list", twopence_transaction_describe(trans));
-	twopence_conn_add_transaction_done(conn, trans);
+  twopence_debug("%s: transaction done, move it to wait list", twopence_transaction_describe(trans));
+  twopence_conn_add_transaction_done(conn, trans);
 }
 
 static void
 __twopence_pipe_transaction_add_running(struct twopence_pipe_target *handle, twopence_transaction_t *trans)
 {
-	twopence_conn_add_transaction(handle->connection, trans);
+  twopence_conn_add_transaction(handle->connection, trans);
 }
 
 static twopence_transaction_t *
 __twopence_pipe_get_completed_transaction(struct twopence_pipe_target *handle, int xid)
 {
-	return twopence_conn_reap_transaction(handle->connection, xid);
+  return twopence_conn_reap_transaction(handle->connection, xid);
 }
 
 int
 __twopence_pipe_doio(struct twopence_pipe_target *handle)
 {
-	twopence_conn_pool_poll(twopence_pipe_connection_pool);
-	if (twopence_conn_is_closed(handle->connection))
-		return TWOPENCE_TRANSPORT_ERROR;
+  twopence_conn_pool_poll(twopence_pipe_connection_pool);
+  if (twopence_conn_is_closed(handle->connection))
+    return TWOPENCE_TRANSPORT_ERROR;
 
-	return 0;
+  return 0;
 }
 
 static int
 __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transaction_t *trans, twopence_status_t *status)
 {
-	int xid = trans->id;
-	int rc;
+  int xid = trans->id;
+  int rc;
 
-	while (twopence_conn_reap_transaction(handle->connection, xid) == NULL) {
-		if ((rc = __twopence_pipe_doio(handle)) < 0) {
-			/* Oops, transport error.
-			 * Cancel all transaction and mark them as failed */
-			twopence_conn_cancel_transactions(handle->connection, rc);
-			continue;
-		}
-	}
+  while (twopence_conn_reap_transaction(handle->connection, xid) == NULL) {
+    if ((rc = __twopence_pipe_doio(handle)) < 0) {
+      /* Oops, transport error.
+       * Cancel all transaction and mark them as failed */
+      twopence_conn_cancel_transactions(handle->connection, rc);
+      continue;
+    }
+  }
 
-	*status = trans->client.status_ret;
-	if (trans->client.exception < 0)
-		return trans->client.exception;
+  *status = trans->client.status_ret;
+  if (trans->client.exception < 0)
+    return trans->client.exception;
 
-	return 0;
+  return 0;
 }
 
 ///////////////////////////// Middle layer //////////////////////////////////////
