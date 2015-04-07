@@ -248,7 +248,7 @@ int main(int argc, char *argv[])
     exit(RC_LIBRARY_INIT_ERROR);
   }
 
-  if (opt_keepalive >= 0) {
+  if (opt_keepalive != -1) {
     rc = twopence_target_set_option(target, TWOPENCE_TARGET_OPTION_KEEPALIVE,
 		    &opt_keepalive);
     if (rc < 0) {

@@ -414,12 +414,13 @@ esac
 test_case_report
 
 # Run a command that takes longer than the default keepalive timeout, and disable
-# sending of keepalives on the client side.
+# sending of keepalives on the client side (the magic keepalive value of "-2" is
+# just for testing purposes).
 # This should cause the server to close the connection due to inactivity.
 test_case_begin "make sure that the server drops the link in the absence of keepalives"
 case $TARGET in
 ssh:*)	test_case_skip "Keepalives are not available with ssh; so no testing them";;
-*)	twopence_command --keepalive=no --timeout=120 $TARGET "sleep 65"
+*)	twopence_command --keepalive=-2 --timeout=120 $TARGET "sleep 65"
 	test_case_check_status $? 8
 esac
 test_case_report

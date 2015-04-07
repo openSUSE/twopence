@@ -71,7 +71,7 @@ struct twopence_connection {
 
 /* When keepalives are enabled, we will shut down the link
  * if there's no traffic for 60 seconds */
-#define TWOPENCE_KEEPALIVE_RECV_TIMEOUT	60
+#define TWOPENCE_KEEPALIVE_RECV_TIMEOUT	TWOPENCE_PROTO_DEFAULT_KEEPALIVE
 #define TWOPENCE_KEEPALIVE_SEND_TIMEOUT	(TWOPENCE_KEEPALIVE_RECV_TIMEOUT / 4)
 
 static void
@@ -350,6 +350,37 @@ twopence_conn_transaction_new(twopence_conn_t *conn, unsigned int type, const tw
 }
 
 static bool
+twopence_conn_process_hello(twopence_conn_t *conn, const twopence_hdr_t *hdr,
+		twopence_buf_t *payload, const twopence_protocol_state_t *ps)
+{
+	unsigned char client_version[2];
+	unsigned int his_keepalive, my_keepalive;
+
+	if (!twopence_protocol_dissect_hello_packet(payload, client_version, &his_keepalive)) {
+		twopence_debug("bad HELLO packet from client");
+		client_version[0] = client_version[1] = 0;
+		his_keepalive = 0;
+	}
+
+	twopence_debug("hello/%u received from client (version %u.%u, keepalive=%u)",
+			ps->xid, client_version[0], client_version[1], his_keepalive);
+
+	if (his_keepalive == 0xFFFF)
+		his_keepalive = TWOPENCE_PROTO_DEFAULT_KEEPALIVE;
+	my_keepalive = conn->keepalive.recv_timeout;
+
+	/* Use the smaller of the two keepalive values. Note that the client
+	 * may also disable keepalives by asking for a value of 0. */
+	if (his_keepalive < my_keepalive)
+		my_keepalive = his_keepalive;
+	twopence_conn_set_keepalive(conn, my_keepalive);
+
+	twopence_sock_queue_xmit(conn->client_sock,
+			twopence_protocol_build_hello_packet(conn->client_id, my_keepalive));
+	return true;
+}
+
+static bool
 twopence_conn_process_request(twopence_conn_t *conn, const twopence_hdr_t *hdr,
 		twopence_buf_t *payload, const twopence_protocol_state_t *ps)
 {
@@ -401,8 +432,7 @@ twopence_conn_process_packet(twopence_conn_t *conn, twopence_buf_t *bp)
 
 		if (hdr->type == TWOPENCE_PROTO_TYPE_HELLO && ps.cid == 0) {
 			/* Process HELLO packet from client */
-			ps.cid = conn->client_id;
-			twopence_conn_process_request(conn, hdr, &payload, &ps);
+			twopence_conn_process_hello(conn, hdr, &payload, &ps);
 			continue;
 		}
 

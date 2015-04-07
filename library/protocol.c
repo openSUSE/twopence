@@ -268,16 +268,38 @@ twopence_protocol_format_args(twopence_buf_t *bp, const char *fmt, ...)
 }
 
 twopence_buf_t *
-twopence_protocol_build_hello_packet(unsigned int cid)
+twopence_protocol_build_hello_packet(unsigned int cid, unsigned int keepalive_timeout)
 {
+	struct twopence_protocol_hello_pkt data;
 	twopence_buf_t *bp;
 
 	/* Allocate a large buffer with space reserved for the header */
 	bp = twopence_protocol_command_buffer_new();
 
+	memset(&data, 0, sizeof(data));
+	data.vers_major = TWOPENCE_PROTOCOL_VERSMAJOR;
+	data.vers_minor = TWOPENCE_PROTOCOL_VERSMINOR;
+	data.keepalive = htons(keepalive_timeout);
+
+	twopence_buf_append(bp, &data, sizeof(data));
+
 	/* Finalize the header */
 	__twopence_protocol_push_header(bp, TWOPENCE_PROTO_TYPE_HELLO, cid, 0);
 	return bp;
+}
+
+bool
+twopence_protocol_dissect_hello_packet(twopence_buf_t *payload, unsigned char *version, unsigned int *keepalive)
+{
+	struct twopence_protocol_hello_pkt data;
+
+	if (!twopence_buf_get(payload, &data, sizeof(data)))
+		return false;
+
+	version[0] = data.vers_major;
+	version[1] = data.vers_minor;
+	*keepalive = ntohs(data.keepalive);
+	return true;
 }
 
 twopence_buf_t *

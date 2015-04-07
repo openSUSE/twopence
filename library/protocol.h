@@ -25,6 +25,17 @@
 #include <stdint.h>
 #include "twopence.h"
 
+/*
+ * Increase the major number whenever old clients
+ * stop working with the updated server.
+ * Increase the minor number whenever a new client
+ * would stop working the the old server.
+ */
+#define TWOPENCE_PROTOCOL_VERSMAJOR	2
+#define TWOPENCE_PROTOCOL_VERSMINOR	0
+
+#define TWOPENCE_PROTOCOL_VERSION	((TWOPENCE_PROTOCOL_VERSMAJOR << 8) | TWOPENCE_PROTOCOL_VERSMINOR)
+
 typedef struct header twopence_hdr_t;
 struct header {
 	unsigned char	type;
@@ -55,6 +66,14 @@ typedef struct twopence_protocol_state {
 	uint16_t	xid;
 } twopence_protocol_state_t;
 
+#define TWOPENCE_PROTO_DEFAULT_KEEPALIVE 60
+
+struct twopence_protocol_hello_pkt {
+	unsigned char	vers_major;
+	unsigned char	vers_minor;
+	uint16_t	keepalive;
+} __attribute((packed));
+
 extern const char *	twopence_protocol_packet_type_to_string(unsigned int type);
 extern void		twopence_protocol_build_header(twopence_buf_t *bp, unsigned char type);
 extern void		twopence_protocol_push_header(twopence_buf_t *bp, unsigned char type);
@@ -64,7 +83,7 @@ extern twopence_buf_t *	twopence_protocol_build_simple_packet(unsigned char type
 extern twopence_buf_t *	twopence_protocol_build_simple_packet_ps(twopence_protocol_state_t *, unsigned char);
 extern twopence_buf_t *	twopence_protocol_build_data_header(twopence_buf_t *, twopence_protocol_state_t *, uint16_t);
 extern twopence_buf_t *	twopence_protocol_build_eof_packet(twopence_protocol_state_t *, uint16_t);
-extern twopence_buf_t *	twopence_protocol_build_hello_packet(unsigned int cid);
+extern twopence_buf_t *	twopence_protocol_build_hello_packet(unsigned int cid, unsigned int keepalive_interval);
 extern twopence_buf_t *	twopence_protocol_build_inject_packet(const twopence_protocol_state_t *ps, const char *user, const char *remote_name, unsigned int remote_mode);
 extern twopence_buf_t *	twopence_protocol_build_extract_packet(const twopence_protocol_state_t *ps, const char *user, const char *remote_name);
 extern twopence_buf_t *	twopence_protocol_build_command_packet(const twopence_protocol_state_t *ps, const char *user, const char *command, long timeout);
@@ -75,6 +94,7 @@ extern int		twopence_protocol_buffer_need_to_recv(const twopence_buf_t *bp);
 extern bool		twopence_protocol_buffer_complete(const twopence_buf_t *bp);
 extern const twopence_hdr_t *twopence_protocol_dissect(twopence_buf_t *bp, twopence_buf_t *payload);
 extern const twopence_hdr_t *twopence_protocol_dissect_ps(twopence_buf_t *bp, twopence_buf_t *payload, twopence_protocol_state_t *ps);
+extern bool		twopence_protocol_dissect_hello_packet(twopence_buf_t *payload, unsigned char version[2], unsigned int *keepalive);
 extern bool		twopence_protocol_dissect_string(twopence_buf_t *bp, char *stringbuf, unsigned int size);
 extern bool		twopence_protocol_dissect_string_delim(twopence_buf_t *bp, char *stringbuf, unsigned int size, char delimiter);
 extern bool		twopence_protocol_dissect_uint(twopence_buf_t *bp, unsigned int *retval);

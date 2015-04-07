@@ -601,12 +601,6 @@ server_process_request(twopence_transaction_t *trans, twopence_buf_t *payload)
 	unsigned int timeout = 0;
 
 	switch (trans->type) {
-	case TWOPENCE_PROTO_TYPE_HELLO:
-		twopence_sock_queue_xmit(trans->socket,
-				twopence_protocol_build_hello_packet(trans->ps.cid));
-		trans->done = true;
-		break;
-
 	case TWOPENCE_PROTO_TYPE_INJECT:
 		if (!twopence_protocol_dissect_string(payload, username, sizeof(username))
 		 || !twopence_protocol_dissect_uint(payload, &filemode)

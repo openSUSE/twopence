@@ -46,11 +46,6 @@ FUNCTIONALITY
 
    o Document the tests we're doing in tests/
 
-   o protocol: use the HELLO command to ensure that both ends of the
-     communication use the same protocol version
-
-     Use HELLO to request certain protocol features, such as keepalives?
-
 FUTURE DIRECTIONS
    o Twopence could be extended by writing new plugins,
      for example for running tests in Linux containers or chroot jails

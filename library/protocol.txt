@@ -48,6 +48,9 @@ Parameters are separated with spaces:
 
 New-style commands
 
+  hello		uint8: protocol major version
+  		uint8: protocol minor version
+		uint16: requested keepalive interval
   chan_data	uint16:	channel_id (commands: 0, 1, 2; extract/inject: 0)
   		followed by the payload
   chan_eof	uint16: channel_id (commands: 0, 1, 2; extract/inject: 0)

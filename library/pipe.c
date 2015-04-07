@@ -29,7 +29,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "pipe.h"
 #include "utils.h"
 
-static int				__twopence_pipe_handshake(twopence_sock_t *sock, unsigned int *client_id);
+static int				__twopence_pipe_handshake(twopence_sock_t *sock, unsigned int *client_id, unsigned int *keepalive);
 static void				__twopence_pipe_end_transaction(twopence_conn_t *, twopence_transaction_t *);
 
 static twopence_conn_pool_t *		twopence_pipe_connection_pool;
@@ -81,6 +81,7 @@ __twopence_pipe_open_link(struct twopence_pipe_target *handle)
 {
   if (handle->connection == NULL) {
     unsigned int client_id = 0;
+    unsigned int keepalive = 0;
     twopence_sock_t *sock;
 
     /* The socket we are given should be set up for blocking I/O */
@@ -88,17 +89,29 @@ __twopence_pipe_open_link(struct twopence_pipe_target *handle)
     if (sock == NULL)
       return TWOPENCE_OPEN_SESSION_ERROR;
 
-    if (__twopence_pipe_handshake(sock, &client_id) < 0) {
+    if (handle->keepalive < 0)
+      keepalive = 0xFFFF;		/* request keepalive but accept server's pick */
+    else
+      keepalive = handle->keepalive;
+    twopence_debug("using keepalive=%u", (int) keepalive);
+
+    if (__twopence_pipe_handshake(sock, &client_id, &keepalive) < 0) {
       twopence_sock_free(sock);
       return TWOPENCE_OPEN_SESSION_ERROR;
     }
 
-    twopence_debug("handshake complete, my client id is %d", client_id);
+    twopence_debug("handshake complete, my client id is %d, keepalive is %u", client_id, keepalive);
     handle->connection = twopence_conn_new(&twopence_client_semantics, sock, client_id);
     handle->ps.cid = client_id;
     handle->ps.xid = 1;
 
-    twopence_conn_set_keepalive(handle->connection, handle->keepalive);
+    /* If keepalive is -2, ignore the result of the keepalive negotiation and
+     * force them to off.
+     * This only exists so that we can test that keepalives work */
+    if (handle->keepalive == -2)
+      keepalive = 0;
+
+    twopence_conn_set_keepalive(handle->connection, keepalive);
 
     if (twopence_pipe_connection_pool == NULL) {
       twopence_pipe_connection_pool = twopence_conn_pool_new();
@@ -170,15 +183,17 @@ __twopence_pipe_read_packet(twopence_sock_t *sock)
  * Perform the initial exchange of HELLO packets
  */
 static int
-__twopence_pipe_handshake(twopence_sock_t *sock, unsigned int *client_id)
+__twopence_pipe_handshake(twopence_sock_t *sock, unsigned int *client_id, unsigned int *line_timeout)
 {
   twopence_buf_t *bp, payload;
   const twopence_hdr_t *hdr;
   twopence_protocol_state_t ps;
+  unsigned char server_version[2];
+  unsigned int server_keepalive;
   int rc = 0;
 
   /* Transmit and free the buffer */
-  rc = twopence_sock_xmit(sock, twopence_protocol_build_hello_packet(0));
+  rc = twopence_sock_xmit(sock, twopence_protocol_build_hello_packet(0, *line_timeout));
   if (rc < 0)
     return rc;
 
@@ -189,8 +204,19 @@ __twopence_pipe_handshake(twopence_sock_t *sock, unsigned int *client_id)
 
   memset(&ps, 0, sizeof(ps));
   if ((hdr = twopence_protocol_dissect_ps(bp, &payload, &ps)) != NULL
-   && hdr->type == TWOPENCE_PROTO_TYPE_HELLO) {
+   && hdr->type == TWOPENCE_PROTO_TYPE_HELLO
+   && twopence_protocol_dissect_hello_packet(&payload, server_version, &server_keepalive)) {
+    twopence_debug("received server HELLO reply: version %u.%u, keepalive=%u",
+		    server_version[0], server_version[1], server_keepalive);
+    if (server_version[0] != TWOPENCE_PROTOCOL_VERSMAJOR
+     || server_version[1] < TWOPENCE_PROTOCOL_VERSMINOR) {
+      twopence_log_error("Protocol version not compatible. We use %u.%u, server uses %u.%u",
+	      TWOPENCE_PROTOCOL_VERSMAJOR, TWOPENCE_PROTOCOL_VERSMINOR, server_version[0], server_version[1]);
+      return TWOPENCE_PROTOCOL_ERROR;
+    }
     *client_id = ps.cid;
+    if (*line_timeout == 0 || server_keepalive < *line_timeout)
+      *line_timeout = server_keepalive;
     rc = 0;
   } else {
     rc = TWOPENCE_PROTOCOL_ERROR;
