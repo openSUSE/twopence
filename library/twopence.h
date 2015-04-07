@@ -459,7 +459,7 @@ extern void		twopence_file_xfer_destroy(twopence_file_xfer_t *xfer);
 /*
  * Output handling functions
  */
-extern twopence_iostream_t *twopence_target_stream(struct twopence_target *, twopence_iofd_t);
+//extern twopence_iostream_t *twopence_target_stream(struct twopence_target *, twopence_iofd_t);
 extern int		twopence_target_set_blocking(struct twopence_target *, twopence_iofd_t, bool);
 extern int		twopence_target_putc(struct twopence_target *, twopence_iofd_t, char);
 extern int		twopence_target_write(struct twopence_target *, twopence_iofd_t, const char *, size_t);

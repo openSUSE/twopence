@@ -542,8 +542,7 @@ int __twopence_pipe_inject_file
     twopence_transaction_channel_set_callback_read_eof(channel, __twopence_pipe_local_source_eof);
     twopence_transaction_channel_set_plugged(channel, true);
 
-    if (xfer->print_dots)
-      twopence_transaction_set_dot_stream(trans, twopence_target_stream(&handle->base, TWOPENCE_STDOUT));
+    trans->client.print_dots = xfer->print_dots;
   }
 
   __twopence_pipe_transaction_add_running(handle, trans);
@@ -551,7 +550,6 @@ int __twopence_pipe_inject_file
   rc = __twopence_transaction_run(handle, trans, status);
 
 out:
-  twopence_transaction_set_dot_stream(trans, NULL);
   twopence_transaction_free(trans);
   return rc;
 }
@@ -587,8 +585,7 @@ int _twopence_extract_virtio_serial
   if (sink) {
     twopence_transaction_channel_set_callback_write_eof(sink, __twopence_pipe_extract_eof);
 
-    if (xfer->print_dots)
-      twopence_transaction_set_dot_stream(trans, twopence_target_stream(&handle->base, TWOPENCE_STDOUT));
+    trans->client.print_dots = xfer->print_dots;
   }
 
   __twopence_pipe_transaction_add_running(handle, trans);
@@ -596,7 +593,6 @@ int _twopence_extract_virtio_serial
   rc = __twopence_transaction_run(handle, trans, status);
 
 out:
-  twopence_transaction_set_dot_stream(trans, NULL);
   twopence_transaction_free(trans);
   return rc;
 }
@@ -674,7 +670,6 @@ twopence_pipe_run_test
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
-  handle->base.current.io = cmd->iostream;
   return __twopence_pipe_command(handle, cmd, status_ret);
 }
 
@@ -772,8 +767,6 @@ int
 twopence_pipe_exit_remote(struct twopence_target *opaque_handle)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
-
-  handle->base.current.io = NULL;
 
   return _twopence_exit_virtio_serial(handle);
 }

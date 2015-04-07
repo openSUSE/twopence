@@ -70,6 +70,8 @@ struct twopence_trans_channel {
 	} callbacks;
 };
 
+static void	twopence_transaction_channel_trace_io_eof(twopence_transaction_t *trans);
+
 /*
  * Transaction channel primitives
  */
@@ -221,6 +223,8 @@ twopence_transaction_free(twopence_transaction_t *trans)
 {
 	assert(trans->prev == NULL);
 
+	twopence_transaction_channel_trace_io_eof(trans);
+
 	/* Do not free trans->socket, we don't own it */
 
 	twopence_transaction_channel_list_close(&trans->local_sink, TWOPENCE_TRANSACTION_CHANNEL_ID_ALL);
@@ -241,14 +245,6 @@ twopence_transaction_describe(const twopence_transaction_t *trans)
 }
 
 void
-twopence_transaction_set_dot_stream(twopence_transaction_t *trans, twopence_iostream_t *stream)
-{
-	if (trans->client.dot_stream != NULL && trans->client.dots_printed)
-		twopence_iostream_putc(trans->client.dot_stream, '\n');
-	trans->client.dot_stream = stream;
-}
-
-void
 twopence_transaction_set_timeout(twopence_transaction_t *trans, long timeout)
 {
 	if (timeout > 0) {
@@ -264,11 +260,20 @@ twopence_transaction_update_timeout(const twopence_transaction_t *trans, twopenc
 }
 
 static inline void
-twopence_transaction_channel_trace_io(twopence_transaction_t *trans)
+twopence_transaction_channel_trace_io_data(twopence_transaction_t *trans)
 {
-	if (trans->client.dot_stream) {
-		twopence_iostream_putc(trans->client.dot_stream, '.');
+	if (trans->client.print_dots) {
+		write(1, ".", 1);
 		trans->client.dots_printed++;
+	}
+}
+
+static void
+twopence_transaction_channel_trace_io_eof(twopence_transaction_t *trans)
+{
+	if (trans->client.print_dots) {
+		trans->client.dots_printed = 0;
+		write(1, "\n", 1);
 	}
 }
 
@@ -437,7 +442,7 @@ twopence_transaction_channel_write_data(twopence_transaction_t *trans, twopence_
 		twopence_buf_advance_head(payload, count);
 	}
 
-	twopence_transaction_channel_trace_io(trans);
+	twopence_transaction_channel_trace_io_data(trans);
 	return true;
 }
 
@@ -532,7 +537,7 @@ twopence_transaction_channel_forward(twopence_transaction_t *trans, twopence_tra
 				twopence_protocol_build_data_header(bp, &trans->ps, channel->id);
 				twopence_transaction_send_client(trans, bp);
 
-				twopence_transaction_channel_trace_io(trans);
+				twopence_transaction_channel_trace_io_data(trans);
 				continue;
 			}
 
@@ -550,6 +555,7 @@ twopence_transaction_channel_forward(twopence_transaction_t *trans, twopence_tra
 			}
 		}
 
+		twopence_transaction_channel_trace_io_eof(trans);
 		if (twopence_iostream_eof(stream) && channel->callbacks.read_eof) {
 			twopence_debug("%s: EOF on channel %s", twopence_transaction_describe(trans),
 					twopence_transaction_channel_name(channel));
@@ -583,7 +589,7 @@ twopence_transaction_channel_doio(twopence_transaction_t *trans, twopence_trans_
 			twopence_protocol_build_data_header(bp, &trans->ps, channel->id);
 			twopence_sock_queue_xmit(trans->socket, bp);
 
-			twopence_transaction_channel_trace_io(trans);
+			twopence_transaction_channel_trace_io_data(trans);
 		}
 
 		/* For file extractions, we want to send an EOF packet
@@ -713,6 +719,7 @@ twopence_transaction_recv_packet(twopence_transaction_t *trans, const twopence_h
 				twopence_transaction_describe(trans),
 				twopence_transaction_channel_name(sink));
 
+		twopence_transaction_channel_trace_io_eof(trans);
 		twopence_transaction_channel_write_eof(sink);
 		if (sink->callbacks.write_eof) {
 			sink->callbacks.write_eof(trans, sink);

@@ -1256,12 +1256,6 @@ twopence_ssh_run_test
   /* 'major' makes no sense for SSH and 'minor' defaults to 0 */
   memset(status_ret, 0, sizeof(*status_ret));
 
-  /* We no longer use the handle's current.io, but move that to the
-   * transaction object. This is a precondition to having multiple
-   * concurrent commands.
-   */
-  handle->base.current.io = NULL;
-
   // Execute the command
   return __twopence_ssh_command_ssh(handle, cmd, status_ret);
 }

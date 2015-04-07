@@ -60,7 +60,7 @@ struct twopence_transaction {
 		twopence_status_t	status_ret;
 		int			exception;
 
-		twopence_iostream_t *	dot_stream;
+		bool			print_dots;
 		unsigned int		dots_printed;
 	} client;
 };
@@ -97,7 +97,6 @@ extern twopence_trans_channel_t *twopence_transaction_find_source(twopence_trans
 
 /* Client side functions */
 extern void			twopence_transaction_set_error(twopence_transaction_t *, int);
-extern void			twopence_transaction_set_dot_stream(twopence_transaction_t *, twopence_iostream_t *);
 extern void			twopence_transaction_set_timeout(twopence_transaction_t *, long timeout);
 extern bool			twopence_transaction_update_timeout(const twopence_transaction_t *, twopence_timeout_t *);
 
