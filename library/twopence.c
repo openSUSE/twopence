@@ -31,8 +31,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "utils.h"
 
 
-static void	__twopence_setup_stdout(struct twopence_target *target);
-
 
 int
 twopence_plugin_type(const char *plugin_name)
@@ -180,52 +178,6 @@ twopence_target_set_option(struct twopence_target *target, int option, const voi
 }
 
 /*
- * target level output functions
- */
-twopence_iostream_t *
-twopence_target_stream(struct twopence_target *target, twopence_iofd_t dst)
-{
-  if (0 <= dst && dst < __TWOPENCE_IO_MAX
-   && target->current.io != NULL)
-    return &target->current.io[dst];
-
-  return NULL;
-}
-
-int
-twopence_target_set_blocking(struct twopence_target *target, twopence_iofd_t sel, bool blocking)
-{
-  twopence_iostream_t *stream;
-
-  if ((stream = twopence_target_stream(target, sel)) == NULL)
-    return -1;
-
-  return twopence_iostream_set_blocking(stream, blocking);
-}
-
-int
-twopence_target_putc(struct twopence_target *target, twopence_iofd_t dst, char c)
-{
-  twopence_iostream_t *stream;
-
-  if ((stream = twopence_target_stream(target, dst)) == NULL)
-    return -1;
-
-  return twopence_iostream_putc(stream, c);
-}
-
-int
-twopence_target_write(struct twopence_target *target, twopence_iofd_t dst, const char *data, size_t len)
-{
-  twopence_iostream_t *stream;
-
-  if ((stream = twopence_target_stream(target, dst)) == NULL)
-    return -1;
-
-  return twopence_iostream_write(stream, data, len);
-}
-
-/*
  * General API
  */
 int
@@ -233,8 +185,6 @@ twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twope
 {
   if (target->ops->run_test == NULL)
     return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
-
-  target->current.io = NULL;
 
   /* Populate defaults. Instead of hard-coding them, we could also set
    * default values for a given target. */
@@ -385,11 +335,6 @@ twopence_send_file(struct twopence_target *target, twopence_file_xfer_t *xfer, t
   if (xfer->local_stream == NULL)
     return TWOPENCE_PARAMETER_ERROR;
 
-  /* Reset output, and connect with stdout if we want to see the dots get printed */
-  target->current.io = NULL;
-  if (xfer->print_dots)
-    __twopence_setup_stdout(target);
-
   if (xfer->user == NULL)
     xfer->user = "root";
   if (xfer->remote.mode == 0)
@@ -435,11 +380,6 @@ twopence_recv_file(struct twopence_target *target, twopence_file_xfer_t *xfer, t
 
   if (xfer->local_stream == NULL)
     return TWOPENCE_PARAMETER_ERROR;
-
-  /* Reset output, and connect with stdout if we want to see the dots get printed */
-  target->current.io = NULL;
-  if (xfer->print_dots)
-    __twopence_setup_stdout(target);
 
   if (xfer->user == NULL)
     xfer->user = "root";
@@ -639,20 +579,8 @@ twopence_file_xfer_destroy(twopence_file_xfer_t *xfer)
 }
 
 /*
- * This is a helper function to set everything up so that inject/extract
- * will print dots while transferring data
+ * Manipulation of iostreams
  */
-static void
-__twopence_setup_stdout(struct twopence_target *target)
-{
-  static twopence_iostream_t dots_iostream[__TWOPENCE_IO_MAX];
-
-  if (dots_iostream[TWOPENCE_STDOUT].count == 0)
-    twopence_iostream_add_substream(&dots_iostream[TWOPENCE_STDOUT], twopence_substream_new_fd(1, false));
-
-  target->current.io = dots_iostream;
-}
-
 twopence_iostream_t *
 twopence_iostream_new(void)
 {

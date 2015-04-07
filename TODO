@@ -9,8 +9,6 @@ REFACTORING
      refactor shell and ruby wrappers to use directly twopence_run_test()?
      [DONE for shell/command.c]
 
-   o remove target.current {} stuff which is no longer needed (I hope)
-
 FUNCTIONALITY
    o write help pages
      Ruby

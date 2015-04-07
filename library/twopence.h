@@ -228,11 +228,6 @@ struct twopence_file_xfer {
 struct twopence_target {
 	unsigned int		plugin_type;
 
-	/* Data related to current command */
-	struct {
-	    twopence_iostream_t *io;
-	} current;
-
 	const struct twopence_plugin *ops;
 };
 
@@ -444,7 +439,7 @@ extern void		twopence_perror(const char *, int rc);
  */
 extern void		twopence_command_init(twopence_command_t *cmd, const char *cmdline);
 extern void		twopence_command_destroy(twopence_command_t *cmd);
-extern twopence_buf_t *twopence_command_alloc_buffer(twopence_command_t *, twopence_iofd_t, size_t);
+extern twopence_buf_t *	twopence_command_alloc_buffer(twopence_command_t *, twopence_iofd_t, size_t);
 extern void		twopence_command_ostreams_reset(twopence_command_t *);
 extern void		twopence_command_ostream_reset(twopence_command_t *, twopence_iofd_t);
 extern void		twopence_command_ostream_capture(twopence_command_t *, twopence_iofd_t, twopence_buf_t *);
@@ -459,11 +454,6 @@ extern void		twopence_file_xfer_destroy(twopence_file_xfer_t *xfer);
 /*
  * Output handling functions
  */
-//extern twopence_iostream_t *twopence_target_stream(struct twopence_target *, twopence_iofd_t);
-extern int		twopence_target_set_blocking(struct twopence_target *, twopence_iofd_t, bool);
-extern int		twopence_target_putc(struct twopence_target *, twopence_iofd_t, char);
-extern int		twopence_target_write(struct twopence_target *, twopence_iofd_t, const char *, size_t);
-
 extern int		twopence_iostream_open_file(const char *filename, twopence_iostream_t **ret);
 extern int		twopence_iostream_create_file(const char *filename, unsigned int permissions, twopence_iostream_t **ret);
 extern int		twopence_iostream_wrap_fd(int fd, bool closeit, twopence_iostream_t **ret);
