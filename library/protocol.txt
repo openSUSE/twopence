@@ -24,21 +24,15 @@ Packet types:
   'i'           insert file
   'e'           extract file
   'q'           quit
-  '0'           stdin
-  'E'           end of file on stdin, or during file injection
   'I'           interrupt command
 
         system under tests => local
   'M'           major error code
   'm'           minor error code
-  '1'           stdout
-  '2'           stderr
   'T'           command timeout
-  'E'           end of file during extract transaction
 
             both directions
   'h'		hello packet (used to establish the client ID for all subsequent packets)
-  'd'           file data
   'D'		channel data
   'X'		channel eof
   'K'		keepalive packet

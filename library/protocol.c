@@ -71,16 +71,6 @@ twopence_protocol_packet_type_to_string(unsigned int type)
 		return "data";
 	case TWOPENCE_PROTO_TYPE_CHAN_EOF:
 		return "eof";
-	case TWOPENCE_PROTO_TYPE_STDIN_OLD:
-		return "stdin";
-	case TWOPENCE_PROTO_TYPE_STDOUT_OLD:
-		return "stdout";
-	case TWOPENCE_PROTO_TYPE_STDERR_OLD:
-		return "stderr";
-	case TWOPENCE_PROTO_TYPE_DATA_OLD:
-		return "data";
-	case TWOPENCE_PROTO_TYPE_EOF_OLD:
-		return "eof";
 	case TWOPENCE_PROTO_TYPE_INTR:
 		return "intr";
 	case TWOPENCE_PROTO_TYPE_MAJOR:

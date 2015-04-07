@@ -424,11 +424,6 @@ twopence_conn_process_packet(twopence_conn_t *conn, twopence_buf_t *bp)
 			switch (hdr->type) {
 			case TWOPENCE_PROTO_TYPE_CHAN_DATA:
 			case TWOPENCE_PROTO_TYPE_CHAN_EOF:
-			case TWOPENCE_PROTO_TYPE_DATA_OLD:
-			case TWOPENCE_PROTO_TYPE_STDIN_OLD:
-			case TWOPENCE_PROTO_TYPE_STDOUT_OLD:
-			case TWOPENCE_PROTO_TYPE_STDERR_OLD:
-			case TWOPENCE_PROTO_TYPE_EOF_OLD:
 			case TWOPENCE_PROTO_TYPE_INTR:
 				/* Due to bad timing, we may receive the stdin EOF indication from the
 				 * client after the process as exited. In this case, the transaction
