@@ -75,8 +75,8 @@ extern const char *		twopence_transaction_describe(const twopence_transaction_t 
 extern int			twopence_transaction_send_extract(twopence_transaction_t *, const char *user, const char *remote_name);
 extern int			twopence_transaction_send_inject(twopence_transaction_t *, const char *user, const char *remote_name, int remote_mode);
 extern int			twopence_transaction_send_command(twopence_transaction_t *, const char *user, const char *linux_command, long timeout);
-extern twopence_trans_channel_t *twopence_transaction_attach_local_sink(twopence_transaction_t *trans, int fd, uint16_t id);
-extern twopence_trans_channel_t *twopence_transaction_attach_local_source(twopence_transaction_t *trans, int fd, uint16_t id);
+extern twopence_trans_channel_t *twopence_transaction_attach_local_sink(twopence_transaction_t *trans, uint16_t id, int fd);
+extern twopence_trans_channel_t *twopence_transaction_attach_local_source(twopence_transaction_t *trans, uint16_t id, int fd);
 extern twopence_trans_channel_t *twopence_transaction_attach_local_sink_stream(twopence_transaction_t *trans, uint16_t id, twopence_iostream_t *);
 extern twopence_trans_channel_t *twopence_transaction_attach_local_source_stream(twopence_transaction_t *trans, uint16_t id, twopence_iostream_t *);
 extern void			twopence_transaction_close_sink(twopence_transaction_t *trans, uint16_t id);
@@ -109,6 +109,8 @@ extern void			twopence_transaction_channel_set_callback_write_eof(twopence_trans
 extern void			twopence_transaction_channel_set_plugged(twopence_trans_channel_t *, bool);
 extern int			twopence_transaction_channel_flush(twopence_trans_channel_t *);
 extern uint16_t			twopence_transaction_channel_id(const twopence_trans_channel_t *);
+extern void			twopence_transaction_channel_set_name(twopence_trans_channel_t *, const char *);
+extern const char *		twopence_transaction_channel_name(const twopence_trans_channel_t *);
 
 extern void			twopence_transaction_list_insert(twopence_transaction_list_t *, twopence_transaction_t *);
 extern void			twopence_transaction_unlink(twopence_transaction_t *);

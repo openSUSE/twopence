@@ -49,6 +49,8 @@ struct twopence_trans_channel {
 	struct twopence_trans_channel *next;
 
 	uint16_t		id;		/* The channel ID is a 16bit number; usually 0, 1, 2 for commands */
+	const char *		name;		/* The channel'S name for debugging purposes */
+
 	bool			sync;		/* if true, all writes are fully synchronous */
 
 	twopence_sock_t *	socket;
@@ -96,28 +98,30 @@ twopence_transaction_channel_from_stream(twopence_iostream_t *stream, int flags)
 	return sink;
 }
 
+void
+twopence_transaction_channel_set_name(twopence_trans_channel_t *channel, const char *name)
+{
+	channel->name = name;
+}
+
 static const char *
 __twopence_transaction_channel_name(uint16_t id)
 {
 	static char namebuf[16];
 
-	switch (id) {
-	case TWOPENCE_STDIN:
-		return "stdin";
-	case TWOPENCE_STDOUT:
-		return "stdout";
-	case TWOPENCE_STDERR:
-		return "stderr";
-	case TWOPENCE_TRANSACTION_CHANNEL_ID_ALL:
+	if (id == TWOPENCE_TRANSACTION_CHANNEL_ID_ALL)
 		return "all";
-	}
+
 	snprintf(namebuf, sizeof(namebuf), "chan%u", id);
 	return namebuf;
 }
 
-static const char *
-twopence_transaction_channel_name(twopence_trans_channel_t *channel)
+const char *
+twopence_transaction_channel_name(const twopence_trans_channel_t *channel)
 {
+	if (channel->name)
+		return channel->name;
+
 	return __twopence_transaction_channel_name(channel->id);
 }
 
@@ -322,9 +326,8 @@ twopence_transaction_send_command(twopence_transaction_t *trans, const char *use
 	return 0;
 }
 
-/* FIXME: swap fd and id arguments */
 twopence_trans_channel_t *
-twopence_transaction_attach_local_sink(twopence_transaction_t *trans, int fd, uint16_t id)
+twopence_transaction_attach_local_sink(twopence_transaction_t *trans, uint16_t id, int fd)
 {
 	twopence_trans_channel_t *sink;
 
@@ -347,7 +350,7 @@ twopence_transaction_attach_local_sink_stream(twopence_transaction_t *trans, uin
 
 	fd = twopence_iostream_getfd(stream);
 	if (fd >= 0) {
-		sink = twopence_transaction_attach_local_sink(trans, fd, id);
+		sink = twopence_transaction_attach_local_sink(trans, id, fd);
 		twopence_sock_set_noclose(sink->socket);
 		return sink;
 	}
@@ -368,7 +371,7 @@ twopence_transaction_close_sink(twopence_transaction_t *trans, uint16_t id)
 }
 
 twopence_trans_channel_t *
-twopence_transaction_attach_local_source(twopence_transaction_t *trans, int fd, uint16_t channel_id)
+twopence_transaction_attach_local_source(twopence_transaction_t *trans, uint16_t channel_id, int fd)
 {
 	twopence_trans_channel_t *source;
 
@@ -391,7 +394,7 @@ twopence_transaction_attach_local_source_stream(twopence_transaction_t *trans, u
 
 	fd = twopence_iostream_getfd(stream);
 	if (fd >= 0) {
-		source = twopence_transaction_attach_local_source(trans, fd, id);
+		source = twopence_transaction_attach_local_source(trans, id, fd);
 		twopence_sock_set_noclose(source->socket);
 		return source;
 	}

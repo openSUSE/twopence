@@ -410,7 +410,7 @@ server_inject_file(twopence_transaction_t *trans, const char *username, const ch
 		return false;
 	}
 
-	sink = twopence_transaction_attach_local_sink(trans, fd, 0);
+	sink = twopence_transaction_attach_local_sink(trans, 0, fd);
 	if (sink == NULL) {
 		/* Something is wrong */
 		close(fd);
@@ -449,7 +449,7 @@ server_extract_file(twopence_transaction_t *trans, const char *username, const c
 		return false;
 	}
 
-	source = twopence_transaction_attach_local_source(trans, fd, 0);
+	source = twopence_transaction_attach_local_source(trans, 0, fd);
 	if (source == NULL) {
 		/* Something is wrong */
 		twopence_transaction_fail(trans, EIO);
@@ -539,6 +539,7 @@ server_run_command_recv(twopence_transaction_t *trans, const twopence_hdr_t *hdr
 bool
 server_run_command(twopence_transaction_t *trans, const char *username, unsigned int timeout, const char *cmdline)
 {
+	twopence_trans_channel_t *channel;
 	int status;
 	int command_fds[3];
 	int nattached = 0;
@@ -550,16 +551,22 @@ server_run_command(twopence_transaction_t *trans, const char *username, unsigned
 		return false;
 	}
 
-	if ((twopence_transaction_attach_local_sink(trans, command_fds[0], TWOPENCE_STDIN)) == NULL)
+	channel = twopence_transaction_attach_local_sink(trans, TWOPENCE_STDIN, command_fds[0]);
+	if (channel == NULL)
 		goto failed;
+	twopence_transaction_channel_set_name(channel, "stdin");
 	nattached++;
 
-	if (twopence_transaction_attach_local_source(trans, command_fds[1], TWOPENCE_STDOUT) == NULL)
+	channel = twopence_transaction_attach_local_source(trans, TWOPENCE_STDOUT, command_fds[1]);
+	if (channel == NULL)
 		goto failed;
+	twopence_transaction_channel_set_name(channel, "stdout");
 	nattached++;
 
-	if (twopence_transaction_attach_local_source(trans, command_fds[2], TWOPENCE_STDERR) == NULL)
+	channel = twopence_transaction_attach_local_source(trans, TWOPENCE_STDERR, command_fds[2]);
+	if (channel == NULL)
 		goto failed;
+	twopence_transaction_channel_set_name(channel, "stderr");
 	nattached++;
 
 	trans->recv = server_run_command_recv;

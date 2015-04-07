@@ -252,6 +252,7 @@ twopence_pipe_transaction_attach_stdin(twopence_transaction_t *trans, twopence_c
 
   channel = twopence_transaction_attach_local_source_stream(trans, TWOPENCE_STDIN, stream);
   if (channel) {
+    twopence_transaction_channel_set_name(channel, "stdin");
     twopence_transaction_channel_set_callback_read_eof(channel, __twopence_pipe_local_source_eof);
     twopence_iostream_set_blocking(stream, false);
     /* FIXME: need to set it back to original blocking state at some point */
@@ -261,15 +262,23 @@ twopence_pipe_transaction_attach_stdin(twopence_transaction_t *trans, twopence_c
 static void
 twopence_pipe_transaction_attach_stdout(twopence_transaction_t *trans, twopence_command_t *cmd)
 {
+  twopence_trans_channel_t *channel;
+
   twopence_iostream_t *stream = &cmd->iostream[TWOPENCE_STDOUT];
-  twopence_transaction_attach_local_sink_stream(trans, TWOPENCE_STDOUT, stream);
+  channel = twopence_transaction_attach_local_sink_stream(trans, TWOPENCE_STDOUT, stream);
+  if (channel)
+    twopence_transaction_channel_set_name(channel, "stdout");
 }
 
 static void
 twopence_pipe_transaction_attach_stderr(twopence_transaction_t *trans, twopence_command_t *cmd)
 {
+  twopence_trans_channel_t *channel;
+
   twopence_iostream_t *stream = &cmd->iostream[TWOPENCE_STDERR];
-  twopence_transaction_attach_local_sink_stream(trans, TWOPENCE_STDERR, stream);
+  channel = twopence_transaction_attach_local_sink_stream(trans, TWOPENCE_STDERR, stream);
+  if (channel)
+    twopence_transaction_channel_set_name(channel, "stderr");
 }
 
 static void
