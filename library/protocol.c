@@ -184,6 +184,36 @@ __decode_u16(twopence_buf_t *bp, uint16_t *word)
 	return true;
 }
 
+static inline bool
+__encode_u32(twopence_buf_t *bp, uint32_t word)
+{
+	word = htonl(word);
+	return twopence_buf_append(bp, &word, sizeof(word));
+}
+
+static inline bool
+__decode_u32(twopence_buf_t *bp, uint32_t *word)
+{
+	if (!twopence_buf_get(bp, word, sizeof(*word)))
+		return false;
+	*word = ntohl(*word);
+	return true;
+}
+
+static inline bool
+__encode_string(twopence_buf_t *bp, const char *s)
+{
+	if (s == 0)
+		return false;
+	return twopence_buf_puts(bp, s);
+}
+
+static inline const char *
+__decode_string(twopence_buf_t *bp)
+{
+	return twopence_buf_gets(bp);
+}
+
 /*
  * Channel packets:
  *  CHANNEL_DATA:	sending data during a file transfer, or on any of the standard fds
@@ -204,6 +234,60 @@ twopence_protocol_build_data_header(twopence_buf_t *bp, twopence_protocol_state_
 
 	twopence_protocol_push_header_ps(bp, ps, TWOPENCE_PROTO_TYPE_CHAN_DATA);
 	return bp;
+}
+
+static inline twopence_buf_t *
+twopence_protocol_build_uint32_packet(twopence_protocol_state_t *ps, unsigned char type, uint32_t value)
+{
+	twopence_buf_t *bp;
+
+	bp = twopence_protocol_command_buffer_new();
+	if (!__encode_u32(bp, value)) {
+		twopence_buf_free(bp);
+		return NULL;
+	}
+	twopence_protocol_push_header_ps(bp, ps, type);
+	return bp;
+}
+
+static inline bool
+twopence_protocol_dissect_uint32_packet(twopence_buf_t *payload, uint32_t *value_ret)
+{
+	return __decode_u32(payload, value_ret);
+}
+
+twopence_buf_t *
+twopence_protocol_build_major_packet(twopence_protocol_state_t *ps, int status)
+{
+	return twopence_protocol_build_uint32_packet(ps, TWOPENCE_PROTO_TYPE_MAJOR, status);
+}
+
+bool
+twopence_protocol_dissect_major_packet(twopence_buf_t *payload, int *status_ret)
+{
+	uint32_t status;
+
+	if (!twopence_protocol_dissect_uint32_packet(payload, &status))
+		return false;
+	*status_ret = status;
+	return true;
+}
+
+twopence_buf_t *
+twopence_protocol_build_minor_packet(twopence_protocol_state_t *ps, int status)
+{
+	return twopence_protocol_build_uint32_packet(ps, TWOPENCE_PROTO_TYPE_MINOR, status);
+}
+
+bool
+twopence_protocol_dissect_minor_packet(twopence_buf_t *payload, int *status_ret)
+{
+	uint32_t status;
+
+	if (!twopence_protocol_dissect_uint32_packet(payload, &status))
+		return false;
+	*status_ret = status;
+	return true;
 }
 
 twopence_buf_t *
@@ -253,20 +337,6 @@ twopence_protocol_build_uint_packet_ps(const twopence_protocol_state_t *ps, unsi
 	return bp;
 }
 
-static void
-twopence_protocol_format_args(twopence_buf_t *bp, const char *fmt, ...)
-{
-	char string[8192];
-	va_list ap;
-
-	va_start(ap, fmt);
-
-	vsnprintf(string, sizeof(string), fmt, ap);
-	twopence_buf_puts(bp, string);
-
-	va_end(ap);
-}
-
 twopence_buf_t *
 twopence_protocol_build_hello_packet(unsigned int cid, unsigned int keepalive_timeout)
 {
@@ -303,40 +373,81 @@ twopence_protocol_dissect_hello_packet(twopence_buf_t *payload, unsigned char *v
 }
 
 twopence_buf_t *
-twopence_protocol_build_inject_packet(const twopence_protocol_state_t *ps, const char *user, const char *remote_name, unsigned int remote_mode)
+twopence_protocol_build_inject_packet(const twopence_protocol_state_t *ps, const twopence_file_xfer_t *xfer)
 {
 	twopence_buf_t *bp;
 
 	/* Allocate a large buffer with space reserved for the header */
 	bp = twopence_protocol_command_buffer_new();
 
-	/* Format the arguments */
-	twopence_protocol_format_args(bp, "%s %d %s", user, remote_mode, remote_name);
+	if (!__encode_string(bp, xfer->user)
+	 || !__encode_string(bp, xfer->remote.name)
+	 || !__encode_u32(bp, xfer->remote.mode)) {
+		twopence_buf_free(bp);
+		return NULL;
+	}
 
 	/* Finalize the header */
 	twopence_protocol_push_header_ps(bp, ps, TWOPENCE_PROTO_TYPE_INJECT);
 	return bp;
 }
 
-twopence_buf_t *
-twopence_protocol_build_command_packet(const twopence_protocol_state_t *ps, const char *user, const char *command, long timeout)
+bool
+twopence_protocol_dissect_inject_packet(twopence_buf_t *payload, twopence_file_xfer_t *xfer)
 {
-	twopence_buf_t *bp;
+	const char *user, *file;
+	uint32_t mode;
 
-	/* Allocate a large buffer with space reserved for the header */
-	bp = twopence_protocol_command_buffer_new();
+	if (!(user = __decode_string(payload))
+	 || !(file = __decode_string(payload))
+	 || !__decode_u32(payload, &mode))
+		return false;
 
-	/* Format the arguments */
-	twopence_protocol_format_args(bp, "%s %ld %s", user, timeout, command);
-
-	/* Finalize the header */
-	twopence_protocol_push_header_ps(bp, ps, TWOPENCE_PROTO_TYPE_COMMAND);
-
-	return bp;
+	xfer->user = user;
+	xfer->remote.name = file;
+	xfer->remote.mode = mode;
+	return true;
 }
 
 twopence_buf_t *
-twopence_protocol_build_extract_packet(const twopence_protocol_state_t *ps, const char *user, const char *remote_name)
+twopence_protocol_build_command_packet(const twopence_protocol_state_t *ps, const twopence_command_t *cmd)
+{
+	twopence_buf_t *bp;
+
+	/* Allocate a large buffer with space reserved for the header */
+	bp = twopence_protocol_command_buffer_new();
+
+	if (!__encode_string(bp, cmd->user)
+	 || !__encode_string(bp, cmd->command)
+	 || !__encode_u32(bp, cmd->timeout)) {
+		twopence_buf_free(bp);
+		return NULL;
+	}
+
+	/* Finalize the header */
+	twopence_protocol_push_header_ps(bp, ps, TWOPENCE_PROTO_TYPE_COMMAND);
+	return bp;
+}
+
+bool
+twopence_protocol_dissect_command_packet(twopence_buf_t *payload, twopence_command_t *cmd)
+{
+	const char *user, *command;
+	uint32_t timeout;
+
+	if (!(user = __decode_string(payload))
+	 || !(command = __decode_string(payload))
+	 || !__decode_u32(payload, &timeout))
+		return false;
+
+	cmd->user = user;
+	cmd->command = command;
+	cmd->timeout = timeout;
+	return true;
+}
+
+twopence_buf_t *
+twopence_protocol_build_extract_packet(const twopence_protocol_state_t *ps, const twopence_file_xfer_t *xfer)
 {
 	twopence_buf_t *bp;
 
@@ -344,11 +455,29 @@ twopence_protocol_build_extract_packet(const twopence_protocol_state_t *ps, cons
 	bp = twopence_protocol_command_buffer_new();
 
 	/* Format the arguments */
-	twopence_protocol_format_args(bp, "%s %s", user, remote_name);
+	if (!__encode_string(bp, xfer->user)
+	 || !__encode_string(bp, xfer->remote.name)) {
+		twopence_buf_free(bp);
+		return NULL;
+	}
 
 	/* Finalize the header */
 	twopence_protocol_push_header_ps(bp, ps, TWOPENCE_PROTO_TYPE_EXTRACT);
 	return bp;
+}
+
+bool
+twopence_protocol_dissect_extract_packet(twopence_buf_t *payload, twopence_file_xfer_t *xfer)
+{
+	const char *user, *file;
+
+	if (!(user = __decode_string(payload))
+	 || !(file = __decode_string(payload)))
+		return false;
+
+	xfer->user = user;
+	xfer->remote.name = file;
+	return true;
 }
 
 twopence_buf_t *
@@ -426,78 +555,4 @@ twopence_protocol_dissect_ps(twopence_buf_t *bp, twopence_buf_t *payload, twopen
 	ps->cid = ntohs(hdr->cid);
 	ps->xid = ntohs(hdr->xid);
 	return hdr;
-}
-
-bool
-twopence_protocol_dissect_string(twopence_buf_t *bp, char *stringbuf, unsigned int size)
-{
-	unsigned int n, k, count;
-	char *s;
-
-	count = twopence_buf_count(bp);
-	s = (char *) twopence_buf_head(bp);
-
-	for (n = 0; n < count && isspace(s[n]); ++n)
-		;
-
-	for (k = 0; n < count && !isspace(s[n]); ++n) {
-		if (k + 2 >= size)
-			return false;
-		stringbuf[k++] = s[n];
-	}
-	stringbuf[k] = '\0';
-
-	for (; n < count && isspace(s[n]); ++n)
-		;
-	bp->head += n;
-
-	return true;
-}
-
-bool
-twopence_protocol_dissect_string_delim(twopence_buf_t *bp, char *stringbuf, unsigned int size, char delimiter)
-{
-	unsigned int n = 0, k, count;
-	char *s;
-
-	count = twopence_buf_count(bp);
-	s = (char *) twopence_buf_head(bp);
-
-	for (k = 0; n < count && s[n] != delimiter; ++n) {
-		if (k + 2 >= size)
-			return false;
-		stringbuf[k++] = s[n];
-	}
-	stringbuf[k] = '\0';
-	bp->head += n;
-
-	return true;
-}
-
-bool
-twopence_protocol_dissect_uint(twopence_buf_t *bp, unsigned int *retval)
-{
-	char buffer[32], *s;
-
-	if (!twopence_protocol_dissect_string(bp, buffer, sizeof(buffer)))
-		return false;
-
-	*retval = strtoul(buffer, &s, 0);
-	if (*s)
-		return false;
-	return true;
-}
-
-bool
-twopence_protocol_dissect_int(twopence_buf_t *bp, int *retval)
-{
-	char buffer[32], *s;
-
-	if (!twopence_protocol_dissect_string(bp, buffer, sizeof(buffer)))
-		return false;
-
-	*retval = strtol(buffer, &s, 0);
-	if (*s)
-		return false;
-	return true;
 }

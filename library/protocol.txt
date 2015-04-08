@@ -40,13 +40,7 @@ Packet types:
 The length includes the 4 bytes of the header.
 
 
-Parameters are separated with spaces:
-
-  run command   username timeout command
-  insert file   username filemode filename
-  extract file  username filename
-
-New-style commands
+Packets are encoded as follows:
 
   hello		uint8: protocol major version
   		uint8: protocol minor version
@@ -54,3 +48,21 @@ New-style commands
   chan_data	uint16:	channel_id (commands: 0, 1, 2; extract/inject: 0)
   		followed by the payload
   chan_eof	uint16: channel_id (commands: 0, 1, 2; extract/inject: 0)
+  inject	string: user
+  		string: filename
+		uint32: filemode
+  extract	string: user
+  		string: filename
+  run command	string: user
+  		string: command
+		uint32:	timeout
+  quit		<no data>
+  intr		<no data>
+  		Note: the xid of the intr packet must equal the xid of
+		transaction to be interrupted
+  major		uint32: status word
+  minor		uint32: status word
+  keepalive	<no data>
+
+A string is encoded as a NUL terminated sequence of bytes.
+16bit words and 32bit words are in network byte order.

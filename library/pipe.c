@@ -365,12 +365,12 @@ __twopence_pipe_command_recv(twopence_transaction_t *trans, const twopence_hdr_t
     break;
 
   case TWOPENCE_PROTO_TYPE_MAJOR:
-    if (!twopence_protocol_dissect_int(payload, &trans->client.status_ret.major))
+    if (!twopence_protocol_dissect_major_packet(payload, &trans->client.status_ret.major))
       goto receive_results_error;
     break;
 
   case TWOPENCE_PROTO_TYPE_MINOR:
-    if (!twopence_protocol_dissect_int(payload, &trans->client.status_ret.minor))
+    if (!twopence_protocol_dissect_minor_packet(payload, &trans->client.status_ret.minor))
       goto receive_results_error;
     trans->done = true;
     break;
@@ -395,7 +395,7 @@ __twopence_pipe_inject_recv(twopence_transaction_t *trans, const twopence_hdr_t 
 
   switch (hdr->type) {
   case TWOPENCE_PROTO_TYPE_MAJOR:
-    if (!twopence_protocol_dissect_int(payload, &trans->client.status_ret.major))
+    if (!twopence_protocol_dissect_major_packet(payload, &trans->client.status_ret.major))
       goto recv_file_error;
 
     if (trans->client.status_ret.major != 0)
@@ -407,7 +407,7 @@ __twopence_pipe_inject_recv(twopence_transaction_t *trans, const twopence_hdr_t 
     break;
 
   case TWOPENCE_PROTO_TYPE_MINOR:
-    if (!twopence_protocol_dissect_int(payload, &trans->client.status_ret.minor))
+    if (!twopence_protocol_dissect_minor_packet(payload, &trans->client.status_ret.minor))
       goto recv_file_error;
     trans->done = true;
     break;
@@ -428,7 +428,7 @@ __twopence_pipe_extract_recv(twopence_transaction_t *trans, const twopence_hdr_t
   switch (hdr->type) {
   case TWOPENCE_PROTO_TYPE_MAJOR:
     /* Remote error occurred, usually when trying to open the file */
-    (void) twopence_protocol_dissect_int(payload, &trans->client.status_ret.major);
+    (void) twopence_protocol_dissect_major_packet(payload, &trans->client.status_ret.major);
     twopence_transaction_set_error(trans, TWOPENCE_RECEIVE_FILE_ERROR);
     break;
 
@@ -481,7 +481,7 @@ __twopence_pipe_command(struct twopence_pipe_target *handle, twopence_command_t 
   trans->recv = __twopence_pipe_command_recv;
 
   // Send command packet
-  if ((rc = twopence_transaction_send_command(trans, cmd->user, cmd->command, cmd->timeout)) < 0)
+  if ((rc = twopence_transaction_send_command(trans, cmd)) < 0)
     goto out;
 
   if (cmd->timeout)
@@ -534,7 +534,7 @@ int __twopence_pipe_inject_file
   trans->recv = __twopence_pipe_inject_recv;
 
   // Send inject command packet
-  if ((rc = twopence_transaction_send_inject(trans, xfer->user, xfer->remote.name, xfer->remote.mode)) < 0)
+  if ((rc = twopence_transaction_send_inject(trans, xfer)) < 0)
     goto out;
 
   channel = twopence_transaction_attach_local_source_stream(trans, 0, xfer->local_stream);
@@ -578,7 +578,7 @@ int _twopence_extract_virtio_serial
   trans->recv = __twopence_pipe_extract_recv;
 
   // Send command packet
-  if ((rc = twopence_transaction_send_extract(trans, xfer->user, xfer->remote.name)) < 0)
+  if ((rc = twopence_transaction_send_extract(trans, xfer)) < 0)
     goto out;
 
   sink = twopence_transaction_attach_local_sink_stream(trans, 0, xfer->local_stream);

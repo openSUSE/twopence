@@ -34,6 +34,8 @@ extern void		server_listen(twopence_sock_t *);
 	do { \
 		if (server_audit) { \
 			twopence_trace("%5u: " fmt, server_audit_seq++, ##args); \
+		} else { \
+			twopence_debug("AUDIT %5u: " fmt, server_audit_seq++, ##args); \
 		} \
 	} while (0)
 

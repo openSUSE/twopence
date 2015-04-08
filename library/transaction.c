@@ -299,33 +299,33 @@ twopence_transaction_num_channels(const twopence_transaction_t *trans)
 }
 
 int
-twopence_transaction_send_extract(twopence_transaction_t *trans, const char *user, const char *remote_name)
+twopence_transaction_send_extract(twopence_transaction_t *trans, const twopence_file_xfer_t *xfer)
 {
 	twopence_buf_t *bp;
 
-	bp = twopence_protocol_build_extract_packet(&trans->ps, user, remote_name);
+	bp = twopence_protocol_build_extract_packet(&trans->ps, xfer);
 	if (twopence_sock_xmit(trans->socket, bp) < 0)
 		return TWOPENCE_SEND_COMMAND_ERROR;
 	return 0;
 }
 
 int
-twopence_transaction_send_inject(twopence_transaction_t *trans, const char *user, const char *remote_name, int remote_mode)
+twopence_transaction_send_inject(twopence_transaction_t *trans, const twopence_file_xfer_t *xfer)
 {
 	twopence_buf_t *bp;
 
-	bp = twopence_protocol_build_inject_packet(&trans->ps, user, remote_name, remote_mode);
+	bp = twopence_protocol_build_inject_packet(&trans->ps, xfer);
 	if (twopence_sock_xmit(trans->socket, bp) < 0)
 		return TWOPENCE_SEND_COMMAND_ERROR;
 	return 0;
 }
 
 int
-twopence_transaction_send_command(twopence_transaction_t *trans, const char *user, const char *linux_command, long timeout)
+twopence_transaction_send_command(twopence_transaction_t *trans, const twopence_command_t *cmd)
 {
 	twopence_buf_t *bp;
 
-	bp = twopence_protocol_build_command_packet(&trans->ps, user, linux_command, timeout);
+	bp = twopence_protocol_build_command_packet(&trans->ps, cmd);
 	if (twopence_sock_xmit(trans->socket, bp) < 0)
 		return TWOPENCE_SEND_COMMAND_ERROR;
 	return 0;
@@ -762,7 +762,7 @@ twopence_transaction_send_major(twopence_transaction_t *trans, unsigned int code
 {
 	twopence_debug("%s: send status.major=%u", twopence_transaction_describe(trans), code);
 	assert(!trans->major_sent);
-	twopence_transaction_send_client(trans, twopence_protocol_build_uint_packet_ps(&trans->ps, TWOPENCE_PROTO_TYPE_MAJOR, code));
+	twopence_transaction_send_client(trans, twopence_protocol_build_major_packet(&trans->ps, code));
 	trans->major_sent = true;
 }
 
@@ -771,10 +771,11 @@ twopence_transaction_send_minor(twopence_transaction_t *trans, unsigned int code
 {
 	twopence_debug("%s: send status.minor=%u", twopence_transaction_describe(trans), code);
 	assert(!trans->minor_sent);
-	twopence_transaction_send_client(trans, twopence_protocol_build_uint_packet_ps(&trans->ps, TWOPENCE_PROTO_TYPE_MINOR, code));
+	twopence_transaction_send_client(trans, twopence_protocol_build_minor_packet(&trans->ps, code));
 	trans->minor_sent = true;
 }
 
+/* XXX obsolete */
 void
 twopence_transaction_send_status(twopence_transaction_t *trans, twopence_status_t *st)
 {
@@ -782,8 +783,8 @@ twopence_transaction_send_status(twopence_transaction_t *trans, twopence_status_
 		twopence_log_error("%s called twice\n", __func__);
 		return;
 	}
-	twopence_transaction_send_client(trans, twopence_protocol_build_uint_packet(TWOPENCE_PROTO_TYPE_MAJOR, st->major));
-	twopence_transaction_send_client(trans, twopence_protocol_build_uint_packet(TWOPENCE_PROTO_TYPE_MINOR, st->minor));
+	twopence_transaction_send_client(trans, twopence_protocol_build_major_packet(&trans->ps, st->major));
+	twopence_transaction_send_client(trans, twopence_protocol_build_minor_packet(&trans->ps, st->minor));
 	trans->done = true;
 }
 

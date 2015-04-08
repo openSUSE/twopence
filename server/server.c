@@ -594,38 +594,30 @@ server_request_quit(void)
 bool
 server_process_request(twopence_transaction_t *trans, twopence_buf_t *payload)
 {
-	char username[128];
-	char filename[PATH_MAX];
-	char command[2048];
-	unsigned int filemode = 0;
-	unsigned int timeout = 0;
+	twopence_file_xfer_t xfer;
+	twopence_command_t cmd;
 
 	switch (trans->type) {
 	case TWOPENCE_PROTO_TYPE_INJECT:
-		if (!twopence_protocol_dissect_string(payload, username, sizeof(username))
-		 || !twopence_protocol_dissect_uint(payload, &filemode)
-		 || !twopence_protocol_dissect_string(payload, filename, sizeof(filename)))
+		if (!twopence_protocol_dissect_inject_packet(payload, &xfer))
 			goto bad_packet;
 
-		server_inject_file(trans, username, filename, filemode);
+		server_inject_file(trans, xfer.user, xfer.remote.name, xfer.remote.mode);
 		break;
 
 	case TWOPENCE_PROTO_TYPE_EXTRACT:
-		if (!twopence_protocol_dissect_string(payload, username, sizeof(username))
-		 || !twopence_protocol_dissect_string(payload, filename, sizeof(filename)))
+		if (!twopence_protocol_dissect_extract_packet(payload, &xfer))
 			goto bad_packet;
 
-		server_extract_file(trans, username, filename);
+		server_extract_file(trans, xfer.user, xfer.remote.name);
 		break;
 
 	case TWOPENCE_PROTO_TYPE_COMMAND:
-		if (!twopence_protocol_dissect_string(payload, username, sizeof(username))
-		 || !twopence_protocol_dissect_uint(payload, &timeout)
-		 || !twopence_protocol_dissect_string_delim(payload, command, sizeof(command), '\n')
-		 || command[0] == '\0')
+		if (!twopence_protocol_dissect_command_packet(payload, &cmd)
+		 || cmd.command[0] == '\0')
 			goto bad_packet;
 
-		server_run_command(trans, username, timeout, command);
+		server_run_command(trans, cmd.user, cmd.timeout, cmd.command);
 		break;
 
 	case TWOPENCE_PROTO_TYPE_QUIT:
