@@ -30,9 +30,6 @@ FUNCTIONALITY
    o when injecting files, be able to set up the permission mask
      -m --mask
 
-   o be able to pass environment variables to remote command
-     -e --envvar
-
    o integration with Pennyworth
 
    o real docbook documentation, reusing the README as a starting point

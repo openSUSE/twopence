@@ -400,11 +400,32 @@ __twopence_ssh_transaction_execute_command(twopence_ssh_transaction_t *trans, tw
 
   // Request that the command be run inside a tty
   if (cmd->request_tty) {
-    if (ssh_channel_request_pty(trans->channel) != SSH_OK) {
-      __twopence_ssh_transaction_free(trans);
+    if (ssh_channel_request_pty(trans->channel) != SSH_OK)
       return TWOPENCE_OPEN_SESSION_ERROR;
-    }
     trans->use_tty = true;
+  }
+
+  if (cmd->env.count) {
+    unsigned int i;
+
+    for (i = 0; i < cmd->env.count; ++i) {
+      char *var = cmd->env.array[i];
+      char *value;
+      int rc;
+
+      if ((value = strchr(var, '=')) == NULL)
+        continue;
+
+      *value++ = '\0';
+      rc = ssh_channel_request_env(trans->channel, var, value);
+      value[-1] = '=';
+
+      /* Given that sshd is probably configured in a way to not allow a lot of
+       * environment variables, we do not make this a fatal error but warn about
+       * it instead. */
+      if (rc != SSH_OK)
+        twopence_log_warning("SSH server did not accept environment variable %s (see sshd_config(5), AcceptEnv)", var);
+    }
   }
 
   __twopence_ssh_transaction_setup_stdio(trans,
@@ -414,10 +435,7 @@ __twopence_ssh_transaction_execute_command(twopence_ssh_transaction_t *trans, tw
 
   // Execute the command
   if (ssh_channel_request_exec(trans->channel, cmd->command) != SSH_OK)
-  {
-    __twopence_ssh_transaction_free(trans);
     return TWOPENCE_SEND_COMMAND_ERROR;
-  }
 
   return 0;
 }

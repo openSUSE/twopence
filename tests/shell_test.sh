@@ -182,6 +182,54 @@ twopence_command $TARGET 'ls *' >/dev/null
 test_case_check_status $?
 test_case_report
 
+test_case_begin "Verify that environment passing works"
+case $TARGET in
+ssh:*)	test_case_skip "Environment passing currently usually doesn't work with ssh";;
+*)
+	export TWOPENCE_TEST_VAR=lallaballa
+	twopence_command --setenv TWOPENCE_TEST_VAR -1 stdout.txt $TARGET 'echo $TWOPENCE_TEST_VAR'
+	test_case_check_status $?
+	output=`cat stdout.txt`
+	if [ "$output" = "$TWOPENCE_TEST_VAR" ]; then
+		echo "Good, command output is \"$output\" (as expected)"
+	else
+		test_case_fail "unexpected output from command: $output"
+	fi
+	rm -f stdout.txt stderr.txt
+	: ;;
+esac
+test_case_report
+
+test_case_begin "Verify that environment passing works (#2)"
+case $TARGET in
+ssh:*)	test_case_skip "Environment passing currently usually doesn't work with ssh";;
+*)
+	export TWOPENCE_TEST_VAR=lallaballa
+	twopence_command --setenv TWOPENCE_TEST_VAR=othervalue -1 stdout.txt $TARGET 'echo $TWOPENCE_TEST_VAR'
+	test_case_check_status $?
+	output=`cat stdout.txt`
+	if [ "$output" = "othervalue" ]; then
+		echo "Good, command output is \"$output\" (as expected)"
+	else
+		test_case_fail "unexpected output from command: $output"
+	fi
+	rm -f stdout.txt stderr.txt
+	: ;;
+esac
+test_case_report
+
+test_case_begin "Verify that environment passing works (#2)"
+case $TARGET in
+ssh:*)	test_case_skip "Environment passing currently usually doesn't work with ssh";;
+*)
+	test_case_begin "Verify that PATH variable passing works"
+	echo "The following command should fail because of an invalid PATH setting"
+	twopence_command --setenv PATH=/does/not/exist $TARGET 'ls'
+	test_case_check_status $? 9
+	: ;;
+esac
+test_case_report
+
 test_case_begin "command 'ls -l /oops'"
 twopence_command -1 stdout.txt -2 stderr.txt $TARGET 'ls -l /oops'
 test_case_check_status $? 9

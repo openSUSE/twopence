@@ -43,6 +43,18 @@ behaviour and provide it with input if it requires some.
 .IP \fB\-\-user\fR=\fIUSERNAME\fR
 Define the username under which to run the command
 on the system under test.
+.TP
+.B "\-e \fINAME\fP[=\fIVALUE\fP]
+.TP
+.B "\-\-setenv \fINAME\fP[=\fIVALUE\fP]
+Pass an environment variable and its value to the remote command.
+If \fIVALUE\fP is not given, it is taken from the regular shell environment.
+.IP
+Caveat: most of the time, SSH servers will be configured to reject all
+but a very small number of "known harmless" environment variables. In order
+to make environment passing work, you may have to reconfigure your sshd
+to accept more environment variables. For OpenSSH, see the option
+\fBAcceptEnv\fP in the \dBsshd_config\fP(5) manpage.
 .IP \fB\-t\fR\ \fITIMEOUT\fR
 .IP \fB\--timeout\fR\=\fITIMEOUT\fR
 Define the maximum duration for the execution of the command.

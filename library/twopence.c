@@ -23,6 +23,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
+#include <stdlib.h>
+#include <assert.h>
 
 #include "twopence.h"
 #include "utils.h"
@@ -174,6 +176,24 @@ twopence_target_set_option(struct twopence_target *target, int option, const voi
 }
 
 /*
+ * Manipulate the default environment of a target.
+ * This default environment is passed to every command execution.
+ * Note: any environment variables defined in a command object
+ * take precedence of variables set in the targe's default env.
+ */
+void
+twopence_target_setenv(twopence_target_t *target, const char *name, const char *value)
+{
+	twopence_env_set(&target->env, name, value);
+}
+
+void
+twopence_target_passenv(twopence_target_t *target, const char *name)
+{
+	twopence_env_unset(&target->env, name);
+}
+
+/*
  * General API
  */
 int
@@ -188,6 +208,8 @@ twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twope
     cmd->timeout = 60;
   if (cmd->user == NULL)
     cmd->user = "root";
+
+  twopence_command_merge_default_env(cmd, &target->env);
 
   return target->ops->run_test(target, cmd, status);
 }
@@ -545,6 +567,24 @@ twopence_command_iostream_redirect(twopence_command_t *cmd, twopence_iofd_t dst,
 }
 
 void
+twopence_command_setenv(twopence_command_t *cmd, const char *name, const char *value)
+{
+	twopence_env_set(&cmd->env, name, value);
+}
+
+void
+twopence_command_passenv(twopence_command_t *cmd, const char *name)
+{
+	twopence_env_unset(&cmd->env, name);
+}
+
+void
+twopence_command_merge_default_env(twopence_command_t *cmd, const twopence_env_t *def_env)
+{
+	twopence_env_merge_inferior(&cmd->env, def_env);
+}
+
+void
 twopence_command_destroy(twopence_command_t *cmd)
 {
   unsigned int i;
@@ -553,6 +593,113 @@ twopence_command_destroy(twopence_command_t *cmd)
     twopence_buf_destroy(&cmd->buffer[i]);
     twopence_iostream_destroy(&cmd->iostream[i]);
   }
+  twopence_env_destroy(&cmd->env);
+}
+
+/*
+ * Environment handling functions
+ */
+void
+twopence_env_init(twopence_env_t *env)
+{
+	memset(env, 0, sizeof(*env));
+}
+
+static void
+__twopence_env_append(twopence_env_t *env, const char *var)
+{
+	env->array = twopence_realloc(env->array, (env->count + 2) * sizeof(env->array[0]));
+	env->array[env->count++] = twopence_strdup(var);
+	env->array[env->count] = NULL;
+}
+
+static char *
+__twopence_env_get(const twopence_env_t *env, const char *name, unsigned int *pos)
+{
+	unsigned int len;
+	unsigned int i;
+
+	if (!name || !name[0])
+		return NULL;
+	len = strlen(name);
+
+	for (i = 0; i < env->count; ++i) {
+		char *var = env->array[i];
+
+		if (!strncmp(var, name, len) && var[len] == '=') {
+			if (pos)
+				*pos = i;
+			return var + len + 1;
+		}
+	}
+	return NULL;
+}
+
+void
+twopence_env_set(twopence_env_t *env, const char *name, const char *value)
+{
+	if (value == NULL) {
+		twopence_env_unset(env, name);
+	} else {
+		char buffer[1024];
+
+		snprintf(buffer, sizeof(buffer), "%s=%s", name, value);
+		__twopence_env_append(env, buffer);
+	}
+}
+
+void
+twopence_env_unset(twopence_env_t *env, const char *name)
+{
+	unsigned int pos, i;
+
+	while (__twopence_env_get(env, name, &pos) != NULL) {
+		free(env->array[pos]);
+		for (i = pos + 1; i < env->count; )
+			env->array[pos++] = env->array[i++];
+		env->array[pos] = NULL;
+		env->count = pos;
+	}
+}
+
+void
+twopence_env_pass(twopence_env_t *env, const char *name)
+{
+	twopence_env_set(env, name, getenv(name));
+}
+
+/*
+ * Merge a default environment to a command environment
+ */
+void
+twopence_env_merge_inferior(twopence_env_t *env, const twopence_env_t *def_env)
+{
+	unsigned int i, j;
+
+	for (i = 0; i < def_env->count; ++i) {
+		char *var = def_env->array[i];
+		unsigned int len;
+		bool found = false;
+
+		len = strcspn(var, "=") + 1;
+		for (j = 0; j < env->count && !found; ++j) {
+			if (!strncmp(env->array[j], var, len))
+				found = true;
+		}
+		if (!found)
+			__twopence_env_append(env, var);
+	}
+}
+
+void
+twopence_env_destroy(twopence_env_t *env)
+{
+	unsigned int i;
+
+	for (i = 0; i < env->count; ++i)
+		free(env->array[i]);
+	free(env->array);
+	memset(env, 0, sizeof(*env));
 }
 
 /*

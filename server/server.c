@@ -294,11 +294,26 @@ server_build_shell_argv(const char *cmdline)
 	return argv;
 }
 
+static char **
+server_build_shell_env(twopence_env_t *env, const struct passwd *pw)
+{
+	static twopence_env_t def_env = { .count = 0 };
+
+	if (def_env.count == 0) {
+		twopence_env_pass(&def_env, "PATH");
+	}
+	twopence_env_merge_inferior(env, &def_env);
+	twopence_env_set(env, "HOME", pw->pw_dir? : "/none");
+	twopence_env_set(env, "USER", pw->pw_name);
+
+	return env->array;
+}
+
 int
-server_run_command_as(const twopence_command_t *cmd, int *parent_fds, int *status)
+server_run_command_as(twopence_command_t *cmd, int *parent_fds, int *status)
 {
 	int pipefds[6], child_fds[3];
-	char **argv = NULL;
+	char **argv = NULL, **env = NULL;
 	struct passwd *user;
 	const char *argv0;
 	int nfds = 0;
@@ -324,12 +339,18 @@ server_run_command_as(const twopence_command_t *cmd, int *parent_fds, int *statu
 		goto failed;
 	}
 
+	env = server_build_shell_env(&cmd->env, user);
+
 	{
 		int n;
 
 		twopence_debug("command argv[] =\n");
 		for (n = 0; argv[n]; ++n)
 			twopence_debug("   [%d] = \"%s\"\n", n, argv[n]);
+
+		twopence_debug("command env[] =\n");
+		for (n = 0; env[n]; ++n)
+			twopence_debug("   %s", env[n]);
 	}
 
 	argv0 = argv[0];
@@ -366,7 +387,7 @@ server_run_command_as(const twopence_command_t *cmd, int *parent_fds, int *statu
 		alarm(cmd->timeout? cmd->timeout : DEFAULT_COMMAND_TIMEOUT);
 
 		/* Note: we may want to pass a standard environment, too */
-		execv(argv0, argv);
+		execve(argv0, argv, env);
 
 		twopence_log_error("unable to run %s: %m", argv0);
 		exit(127);
@@ -542,7 +563,7 @@ server_run_command_recv(twopence_transaction_t *trans, const twopence_hdr_t *hdr
 }
 
 bool
-server_run_command(twopence_transaction_t *trans, const twopence_command_t *cmd)
+server_run_command(twopence_transaction_t *trans, twopence_command_t *cmd)
 {
 	twopence_trans_channel_t *channel;
 	int status;

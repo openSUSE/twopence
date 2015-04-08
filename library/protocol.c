@@ -413,32 +413,54 @@ twopence_buf_t *
 twopence_protocol_build_command_packet(const twopence_protocol_state_t *ps, const twopence_command_t *cmd)
 {
 	twopence_buf_t *bp;
+	unsigned int i;
 
 	/* Allocate a large buffer with space reserved for the header */
 	bp = twopence_protocol_command_buffer_new();
 
 	if (!__encode_string(bp, cmd->user)
 	 || !__encode_string(bp, cmd->command)
-	 || !__encode_u32(bp, cmd->timeout)) {
-		twopence_buf_free(bp);
-		return NULL;
+	 || !__encode_u32(bp, cmd->timeout))
+		goto failed;
+
+	for (i = 0; i < cmd->env.count; ++i) {
+		const char *var = cmd->env.array[i];
+
+		twopence_debug("send env var %s", var);
+		if (!__encode_string(bp, var))
+			goto failed;
 	}
 
 	/* Finalize the header */
 	twopence_protocol_push_header_ps(bp, ps, TWOPENCE_PROTO_TYPE_COMMAND);
 	return bp;
+
+failed:
+	twopence_buf_free(bp);
+	return NULL;
 }
 
 bool
 twopence_protocol_dissect_command_packet(twopence_buf_t *payload, twopence_command_t *cmd)
 {
-	const char *user, *command;
+	const char *user, *command, *envar;
 	uint32_t timeout;
 
 	if (!(user = __decode_string(payload))
 	 || !(command = __decode_string(payload))
 	 || !__decode_u32(payload, &timeout))
 		return false;
+
+	while ((envar = __decode_string(payload)) != NULL) {
+		char *value;
+
+		if (!(value = strchr(envar, '='))) {
+			twopence_log_error("ignoring invalid environment variable \"%s\"", envar);
+			continue;
+		}
+		*value++ = '\0';
+		twopence_command_setenv(cmd, envar, value);
+	}
 
 	cmd->user = user;
 	cmd->command = command;

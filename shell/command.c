@@ -42,6 +42,7 @@ struct option long_options[] = {
   { "quiet", 0, NULL, 'q' },
   { "batch", 0, NULL, 'b' },
   { "keepalive", required_argument, NULL, OPT_KEEPALIVE },
+  { "setenv", required_argument, NULL, 'e' },
   { "debug", 0, NULL, 'd' },
   { "version", 0, NULL, 'v' },
   { "help", 0, NULL, 'h' },
@@ -186,6 +187,17 @@ int main(int argc, char *argv[])
 		opt_keepalive = 0;
 	      else
 		opt_keepalive = atoi(optarg);
+	      break;
+    case 'e':
+	      {
+		char *name = optarg, *value;
+
+		if ((value = strchr(optarg, '=')) != NULL)
+		  *value++ = '\0';
+		else
+		  value = getenv(name);
+	        twopence_command_setenv(&cmd, optarg, value);
+	      }
 	      break;
 
     invalid_options:

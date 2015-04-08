@@ -53,7 +53,7 @@ struct pollfd;
 #define TWOPENCE_TRANSPORT_ERROR		-18
 #define TWOPENCE_INCOMPATIBLE_PROTOCOL_ERROR	-19
 
-struct twopence_target;
+typedef struct twopence_target twopence_target_t;
 
 /*
  * Executing commands on the SUT always returns two status words -
@@ -75,7 +75,7 @@ typedef struct twopence_status {
 } twopence_status_t;
 
 /* Forward decls for the plugin functions */
-struct twopence_command;
+typedef struct twopence_command twopence_command_t;
 typedef struct twopence_iostream twopence_iostream_t;
 typedef struct twopence_file_xfer twopence_file_xfer_t;
 
@@ -131,7 +131,11 @@ struct twopence_iostream {
 	twopence_substream_t *	substream[TWOPENCE_IOSTREAM_MAX_SUBSTREAMS];
 };
 
-typedef struct twopence_command twopence_command_t;
+typedef struct twopence_env {
+	unsigned int		count;
+	char **			array;
+} twopence_env_t;
+
 struct twopence_command {
 	/* Specify the command as a single string.
 	 * This gets passed to /bin/sh on the remote end, so wildcards,
@@ -154,12 +158,10 @@ struct twopence_command {
 	 */
 	bool			background;
 
-	/* FIXME: support passing environment variables to the command --okir
-	 *
-         * For the time being we can start "bash" as a command
-	 *  and pass the environment variables that way,
-	 *  but I agree it is suboptimal, putting on TODO. --ebischoff
+	/* This is the set of environment variables being
+	 * passed from the client to the server.
 	 */
+	twopence_env_t		env;
 
 	/* How to handle the command's standard I/O.
 	 * stdin defaults to no input, stdout and stderr default to
@@ -195,6 +197,11 @@ struct twopence_target {
 	unsigned int		plugin_type;
 
 	const struct twopence_plugin *ops;
+
+	/* This is the default environment that is
+	 * being passed to the server on all
+	 * remote command executions. */
+	twopence_env_t		env;
 };
 
 /*
@@ -228,6 +235,21 @@ extern int		twopence_target_set_option(struct twopence_target *,
 enum {
 	TWOPENCE_TARGET_OPTION_KEEPALIVE = 0,	/* value_p is an int pointer */
 };
+
+/*
+ * Set default environment variables passed to each command executed
+ */
+extern void		twopence_target_setenv(twopence_target_t *target,
+					const char *name, const char *value);
+
+/*
+ * Specify environment variables to be passed from the applications
+ * environment to each command being executed.
+ * This is equivalent to calling
+ *   twopence_target_setenv(target, name, getenv(name));
+ */
+extern void		twopence_target_passenv(twopence_target_t *target,
+					const char *name);
 
 /*
  * Run the specified command and wait for it to complete.
@@ -405,11 +427,20 @@ extern void		twopence_perror(const char *, int rc);
  */
 extern void		twopence_command_init(twopence_command_t *cmd, const char *cmdline);
 extern void		twopence_command_destroy(twopence_command_t *cmd);
+extern void		twopence_command_setenv(twopence_command_t *cmd, const char *name, const char *value);
+extern void		twopence_command_passenv(twopence_command_t *cmd, const char *name);
+extern void		twopence_command_merge_default_env(twopence_command_t *cmd, const twopence_env_t *def_env);
 extern twopence_buf_t *	twopence_command_alloc_buffer(twopence_command_t *, twopence_iofd_t, size_t);
 extern void		twopence_command_ostreams_reset(twopence_command_t *);
 extern void		twopence_command_ostream_reset(twopence_command_t *, twopence_iofd_t);
 extern void		twopence_command_ostream_capture(twopence_command_t *, twopence_iofd_t, twopence_buf_t *);
 extern void		twopence_command_iostream_redirect(twopence_command_t *, twopence_iofd_t, int, bool closeit);
+
+extern void		twopence_env_set(twopence_env_t *, const char *name, const char *value);
+extern void		twopence_env_unset(twopence_env_t *, const char *name);
+extern void		twopence_env_pass(twopence_env_t *, const char *name);
+extern void		twopence_env_merge_inferior(twopence_env_t *env, const twopence_env_t *def_env);
+extern void		twopence_env_destroy(twopence_env_t *);
 
 /*
  * Utilitiy functions for the xfer struct
@@ -450,6 +481,7 @@ extern void		twopence_set_logfile(FILE *fp);
 extern void		twopence_set_syslog(bool on);
 extern void		twopence_trace(const char *fmt, ...);
 extern void		twopence_log_error(const char *fmt, ...);
+extern void		twopence_log_warning(const char *fmt, ...);
 
 extern unsigned int	twopence_debug_level;
 
