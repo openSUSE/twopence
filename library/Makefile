@@ -21,6 +21,7 @@ LIB_OBJS= twopence.o \
 	  transaction.o \
 	  protocol.o \
 	  connection.o \
+	  iostream.o \
 	  socket.o \
 	  buffer.o \
 	  logging.o \

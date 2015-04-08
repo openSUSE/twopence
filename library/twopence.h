@@ -130,45 +130,12 @@ struct twopence_iostream {
 	unsigned int		count;
 	twopence_substream_t *	substream[TWOPENCE_IOSTREAM_MAX_SUBSTREAMS];
 };
-#define TWOPENCE_SINK_CHAIN_INIT	{ .eof = false, .count = 0 }
-
-typedef struct twopence_io_ops twopence_io_ops_t;
-struct twopence_io_ops {
-	void			(*close)(twopence_substream_t *);
-	int			(*write)(twopence_substream_t *, const void *, size_t);
-	int			(*read)(twopence_substream_t *, void *, size_t);
-	int			(*set_blocking)(twopence_substream_t *, bool);
-	int			(*getfd)(twopence_substream_t *);
-	long			(*filesize)(twopence_substream_t *);
-};
-
-struct twopence_substream {
-	const twopence_io_ops_t *ops;
-	union {
-	    struct {
-	        twopence_buf_t *buffer;
-		bool		resizable;
-	    };
-	    struct {
-	        int		fd;
-		bool		close;
-	    };
-	};
-};
 
 typedef struct twopence_command twopence_command_t;
 struct twopence_command {
-	/* For now, we specify the command as a single string.
-	 * It would have been nicer to be able to pass the argv,
-	 * but the protocol doesn't support this yet. --okir
-	 *
-	 * I don't think it would be nicer, for example Cheetah
-	 * (https://github.com/openSUSE/cheetah/blob/master/README.md)
-	 * has you pass individual arguments, and from a
-	 * practical point of view, I find it tedious.
-	 * Example: Cheetah.run("ls", "-la", :stdout => stdout)
-	 * In pennyworth, they did efforts to make it
-	 * a single string again :-) . --ebischoff
+	/* Specify the command as a single string.
+	 * This gets passed to /bin/sh on the remote end, so wildcards,
+	 * shell expansion etc is fully supported.
 	 */
 	const char *		command;
 
@@ -186,7 +153,6 @@ struct twopence_command {
 	 * the background.
 	 */
 	bool			background;
-	void *			__obsolete_remove_me;
 
 	/* FIXME: support passing environment variables to the command --okir
 	 *
@@ -201,7 +167,7 @@ struct twopence_command {
 	 */
 	twopence_iostream_t	iostream[__TWOPENCE_IO_MAX];
 
-	twopence_buf_t	buffer[__TWOPENCE_IO_MAX];
+	twopence_buf_t		buffer[__TWOPENCE_IO_MAX];
 };
 
 typedef struct twopence_remote_file twopence_remote_file_t;
