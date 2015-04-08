@@ -239,6 +239,9 @@ twopence_buf_gets(twopence_buf_t *bp)
 	const char *s = (const char *) twopence_buf_head(bp);
 	unsigned int n, count = twopence_buf_count(bp);
 
+	if (count == 0)
+		return NULL;
+
 	/* Find the terminating NUL. If there is no NUL byte, this is an error */
 	for (n = 0; s[n]; ++n) {
 		if (n >= count)
