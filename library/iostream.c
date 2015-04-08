@@ -95,7 +95,7 @@ twopence_iostream_open_file(const char *filename, twopence_iostream_t **ret)
 int
 twopence_iostream_create_file(const char *filename, unsigned int permissions, twopence_iostream_t **ret)
 {
-	return __twopence_iostream_open_file(filename, O_CREAT|O_TRUNC|O_WRONLY, 0, ret);
+	return __twopence_iostream_open_file(filename, O_CREAT|O_TRUNC|O_WRONLY, permissions, ret);
 }
 
 int

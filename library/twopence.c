@@ -375,7 +375,7 @@ twopence_extract_file
   twopence_file_xfer_init(&xfer);
 
   /* Open the file */
-  rv = twopence_iostream_create_file(local_path, 0660, &xfer.local_stream);
+  rv = twopence_iostream_create_file(local_path, 0666, &xfer.local_stream);
   if (rv < 0)
     return rv;
 

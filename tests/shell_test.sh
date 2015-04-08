@@ -9,6 +9,7 @@
 ##########################################################
 
 TESTUSER=testuser
+TESTUMASK=022
 
 if [ $# -gt 0 ]; then
 	TARGET=$1
@@ -124,6 +125,9 @@ function test_case_report {
 	echo ""
 	unset test_case_status
 }
+
+# Permission check tests assume that our umask is set
+umask $TESTUMASK
 
 test_case_begin "command 'ls -l /'"
 twopence_command $TARGET 'ls -l /'
@@ -326,6 +330,13 @@ test_case_check_status $?
 if ! cmp /etc/services etc_services.txt; then
 	test_case_fail "/etc/services and etc_services.txt differ"
 	diff -u /etc/services etc_services.txt | head -50
+fi
+
+have_perms=`stat -c 0%a etc_services.txt`
+let want_perms="0666 & ~$TESTUMASK"
+want_perms=`printf "0%o" $want_perms`
+if [ $have_perms -ne $want_perms ]; then
+	test_case_fail "etc_services.txt has unexpected permissions $have_perms (wanted $want_perms)"
 fi
 rm -f etc_services.txt
 test_case_report
