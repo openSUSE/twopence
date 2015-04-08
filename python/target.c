@@ -229,6 +229,8 @@ twopence_AppendBuffer(PyObject *buffer, const twopence_buf_t *buf)
 	if (buffer != NULL && buffer != Py_None && count != 0) {
 		PyObject *temp = PyString_FromStringAndSize(twopence_buf_head(buf), count);
 
+		if (temp == NULL)
+			return -1;
 		if (PySequence_InPlaceConcat(buffer, temp) == NULL)
 			rv = -1;
 		Py_DECREF(temp);
