@@ -32,6 +32,7 @@ static int		Target_init(twopence_Target *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_getattr(twopence_Target *self, char *name);
 static PyObject *	Target_run(PyObject *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_wait(PyObject *self, PyObject *args, PyObject *kwds);
+static PyObject *	Target_waitAll(PyObject *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_property(twopence_Target *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_inject(PyObject *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_extract(PyObject *self, PyObject *args, PyObject *kwds);
@@ -59,6 +60,9 @@ static PyMethodDef twopence_targetMethods[] = {
       },
       {	"wait", (PyCFunction) Target_wait, METH_VARARGS | METH_KEYWORDS,
 	"Wait for a backgrounded command to finish",
+      },
+      {	"waitAll", (PyCFunction) Target_waitAll, METH_VARARGS | METH_KEYWORDS,
+	"Wait for all backgrounded commands to finish",
       },
       {	"inject", (PyCFunction) Target_inject, METH_VARARGS | METH_KEYWORDS,
 	"Inject a file to the SUT"
@@ -257,13 +261,35 @@ void
 backgroundedCommandFree(struct backgroundedCommand *bg)
 {
 	if (bg->object) {
+		bg->object->pid = 0;
 		Py_DECREF(bg->object);
 		bg->object = NULL;
 	}
 
 	twopence_command_destroy(&bg->cmd);
-
 	free(bg);
+}
+
+static void
+Target_recordBackgrounded(twopence_Target *tgtObject, struct backgroundedCommand *bg)
+{
+	bg->next = tgtObject->backgrounded;
+	tgtObject->backgrounded = bg;
+}
+
+static struct backgroundedCommand *
+Target_findBackgrounded(twopence_Target *tgtObject, pid_t pid)
+{
+	struct backgroundedCommand *bg, **pos;
+
+	for (pos = &tgtObject->backgrounded; (bg = *pos) != NULL; pos = &bg->next) {
+		if (bg->pid == pid) {
+			*pos = bg->next;
+			bg->next = NULL;
+			return bg;
+		}
+	}
+	return NULL;
 }
 
 /*
@@ -294,6 +320,23 @@ Target_buildCommandStatus(twopence_Command *cmdObject, twopence_command_t *cmd, 
 	Py_INCREF(cmdObject);
 
 	return (PyObject *) statusObject;
+}
+
+static twopence_Status *
+Target_buildCommandStatusShort(twopence_Command *cmdObject, twopence_command_t *cmd, twopence_status_t *status)
+{
+	twopence_Status *statusObject;
+
+	/* Now funnel the captured data to the respective buffer objects */
+	if (twopence_AppendBuffer(cmdObject->stdout, &cmd->buffer[TWOPENCE_STDOUT]) < 0)
+		return NULL;
+	if (twopence_AppendBuffer(cmdObject->stderr, &cmd->buffer[TWOPENCE_STDERR]) < 0)
+		return NULL;
+
+	statusObject = (twopence_Status *) twopence_callType(&twopence_StatusType, NULL, NULL);
+	statusObject->remoteStatus = status->minor;
+
+	return statusObject;
 }
 
 /*
@@ -367,8 +410,7 @@ Target_run(PyObject *self, PyObject *args, PyObject *kwds)
 			goto out;
 		}
 
-		bg->next = tgtObject->backgrounded;
-		tgtObject->backgrounded = bg;
+		Target_recordBackgrounded(tgtObject, bg);
 		bg->pid = rc;
 
 		cmdObject->pid = bg->pid;
@@ -404,12 +446,12 @@ static PyObject *
 Target_wait(PyObject *self, PyObject *args, PyObject *kwds)
 {
 	static char *kwlist[] = {
-		"pid",
+		"command",
 		NULL
 	};
 	struct twopence_target *handle;
 	twopence_Target *tgtObject = (twopence_Target *) self;
-	struct backgroundedCommand *bg, **pos;
+	struct backgroundedCommand *bg;
 	PyObject *argObject = NULL, *result;
 	twopence_status_t status;
 	int pid = 0;
@@ -421,6 +463,11 @@ Target_wait(PyObject *self, PyObject *args, PyObject *kwds)
 		pid = 0;
 	} else if (PyInt_Check(argObject)) {
 		pid = PyInt_AsLong(argObject);
+
+		if (pid < 0) {
+			PyErr_SetString(PyExc_ValueError, "target.wait(): pid must not be negative");
+			return NULL;
+		}
 	} else if (Command_Check(argObject)) {
 		pid = ((twopence_Command *) argObject)->pid;
 		if (pid == 0) {
@@ -431,11 +478,6 @@ Target_wait(PyObject *self, PyObject *args, PyObject *kwds)
 	} else {
 		PyErr_SetString(PyExc_TypeError,
 				"target.wait(): Invalid argument type");
-		return NULL;
-	}
-
-	if (pid < 0) {
-		PyErr_SetString(PyExc_ValueError, "target.wait(): pid must not be negative");
 		return NULL;
 	}
 
@@ -451,25 +493,84 @@ Target_wait(PyObject *self, PyObject *args, PyObject *kwds)
 		return Py_None;
 	}
 
-	for (pos = &tgtObject->backgrounded; (bg = *pos) != NULL; pos = &bg->next) {
-		if (bg->pid == pid) {
-			*pos = bg->next;
-			bg->next = NULL;
-			break;
-		}
-	}
-
+	bg = Target_findBackgrounded(tgtObject, pid);
 	if (bg == NULL) {
 		PyErr_SetString(PyExc_SystemError, "Target.wait(): No record of PID returned by target");
 		return NULL;
 	}
 
 	result = Target_buildCommandStatus(bg->object, &bg->cmd, &status);
-	bg->object->pid = 0;
-
 	backgroundedCommandFree(bg);
 
 	return result;
+}
+
+/*
+ * Wait for all commands to complete
+ */
+static PyObject *
+Target_waitAll(PyObject *self, PyObject *args, PyObject *kwds)
+{
+	static char *kwlist[] = {
+		"print_dots",
+		NULL
+	};
+	twopence_target_t *handle;
+	twopence_Target *tgtObject = (twopence_Target *) self;
+	twopence_Status *result = NULL;
+	int print_dots = 0, ndots = 0;
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i", kwlist, &print_dots))
+		return NULL;
+
+	if ((handle = Target_handle(self)) == NULL)
+		return NULL;
+
+	while (true) {
+		struct backgroundedCommand *bg;
+		twopence_status_t status;
+		int pid = 0;
+
+		pid = twopence_wait(handle, 0, &status);
+		if (pid < 0) {
+			if (ndots)
+				printf("\n");
+			return twopence_Exception("wait", pid);
+		}
+
+		if (pid == 0) {
+			if (ndots)
+				printf("\n");
+			break;
+		}
+
+		bg = Target_findBackgrounded(tgtObject, pid);
+		if (bg == NULL) {
+			if (ndots)
+				printf("\n");
+			PyErr_SetString(PyExc_SystemError, "Target.wait(): No record of PID returned by target");
+			return NULL;
+		}
+
+		if (result == NULL)
+			result = Target_buildCommandStatusShort(bg->object, &bg->cmd, &status);
+		else if (status.minor != 0)
+			result->remoteStatus = status.minor;
+
+		backgroundedCommandFree(bg);
+		if (print_dots) {
+			fputc('.', stdout);
+			fflush(stdout);
+			ndots++;
+		}
+	}
+
+	if (result == NULL) {
+		Py_INCREF(Py_None);
+		return Py_None;
+	}
+
+	return (PyObject *) result;
 }
 
 /*
@@ -494,7 +595,7 @@ Target_inject(PyObject *self, PyObject *args, PyObject *kwds)
 	if (!PyArg_ParseTupleAndKeywords(args, kwds, "ss|si", kwlist, &sourceFile, &destFile, &user, &omode))
 		return NULL;
 
-	printf("inject %s -> %s (user %s, mode 0%o)\n", sourceFile, destFile, user, omode);
+	/* printf("inject %s -> %s (user %s, mode 0%o)\n", sourceFile, destFile, user, omode); */
 
 	if ((handle = Target_handle(self)) == NULL)
 		return NULL;
@@ -529,7 +630,7 @@ Target_extract(PyObject *self, PyObject *args, PyObject *kwds)
 	if (!PyArg_ParseTupleAndKeywords(args, kwds, "ss|si", kwlist, &sourceFile, &destFile, &user, &omode))
 		return NULL;
 
-	printf("extract %s -> %s (user %s, mode 0%o)\n", sourceFile, destFile, user, omode);
+	/* printf("extract %s -> %s (user %s, mode 0%o)\n", sourceFile, destFile, user, omode); */
 	if ((handle = Target_handle(self)) == NULL)
 		return NULL;
 

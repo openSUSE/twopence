@@ -26,7 +26,7 @@ if not targetSpec:
 
 target = twopence.Target(targetSpec);
 
-allErrorsFatal = True
+allErrorsFatal = False
 testCaseRunning = False
 testCaseStatus = None
 numFailed = 0
@@ -567,6 +567,49 @@ else:
 		testCaseFail("command failed")
 	else:
 		print "finished command:", status.command.commandline
+    except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("verify that target.waitAll() waits for all commands")
+if not(backgroundingSupported):
+    testCaseSkip("background execution not available for %s plugin right now" % target.type)
+else:
+    try:
+	for time in range(1, 5):
+		target.run("sleep 2", background = 1);
+
+	status = target.waitAll(print_dots = 1);
+	if status == None:
+		testCaseFail("waitAll returns None")
+	elif status.code != 0:
+		testCaseFail("one or more commands failed")
+	else:
+		print "Good, waitAll returns an exit status of 0"
+	if target.wait() != None:
+		testCaseFail("there were still commands left after waitAll returned")
+    except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("verify that target.waitAll() propagates errors")
+if not(backgroundingSupported):
+    testCaseSkip("background execution not available for %s plugin right now" % target.type)
+else:
+    try:
+	target.run("sleep 1", background = 1);
+	target.run("sleep 2; exit 2", background = 1)
+	target.run("sleep 3", background = 1);
+
+	status = target.waitAll(print_dots = 1);
+	if status == None:
+		testCaseFail("waitAll didn't return any status")
+	elif status.code != 2:
+		testCaseFail("waitAll should have reported an error")
+	else:
+		print "Good, waitAll returns an exit status of 2"
+	if target.wait() != None:
+		testCaseFail("there were still commands left after waitAll returned")
     except:
 	testCaseException()
 testCaseReport()
