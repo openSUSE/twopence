@@ -56,6 +56,7 @@ extern void		twopence_buf_truncate(twopence_buf_t *bp, unsigned int len);
 extern bool		twopence_buf_append(twopence_buf_t *bp, const void *data, unsigned int len);
 extern bool		twopence_buf_get(twopence_buf_t *bp, void *data, unsigned int len);
 extern bool		twopence_buf_puts(twopence_buf_t *bp, const char *s);
+extern const char *	twopence_buf_gets(twopence_buf_t *bp);
 extern void		twopence_buf_reset(twopence_buf_t *bp);
 extern void		twopence_buf_compact(twopence_buf_t *bp);
 

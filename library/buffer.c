@@ -233,6 +233,22 @@ twopence_buf_puts(twopence_buf_t *bp, const char *s)
 	return twopence_buf_append(bp, s, strlen(s) + 1);
 }
 
+const char *
+twopence_buf_gets(twopence_buf_t *bp)
+{
+	const char *s = (const char *) twopence_buf_head(bp);
+	unsigned int n, count = twopence_buf_count(bp);
+
+	/* Find the terminating NUL. If there is no NUL byte, this is an error */
+	for (n = 0; s[n]; ++n) {
+		if (n >= count)
+			return NULL;
+	}
+
+	bp->head += n + 1;
+	return s;
+}
+
 void
 twopence_buf_reset(twopence_buf_t *bp)
 {
