@@ -295,7 +295,7 @@ server_build_shell_argv(const char *cmdline)
 }
 
 int
-server_run_command_as(const char *username, unsigned int timeout, const char *cmdline, int *parent_fds, int *status)
+server_run_command_as(const twopence_command_t *cmd, int *parent_fds, int *status)
 {
 	int pipefds[6], child_fds[3];
 	char **argv = NULL;
@@ -304,7 +304,7 @@ server_run_command_as(const char *username, unsigned int timeout, const char *cm
 	int nfds = 0;
 	pid_t pid = -1;
 
-	if (!(user = server_get_user(username, status)))
+	if (!(user = server_get_user(cmd->user, status)))
 		return -1;
 
 	memset(pipefds, 0xa5, sizeof(pipefds));
@@ -318,7 +318,7 @@ server_run_command_as(const char *username, unsigned int timeout, const char *cm
 	__init_fds(child_fds,  pipefds[0], pipefds[3], pipefds[5]); /* read-write-write */
 	__init_fds(parent_fds, pipefds[1], pipefds[2], pipefds[4]); /* write-read-read */
 
-	argv = server_build_shell_argv(cmdline);
+	argv = server_build_shell_argv(cmd->command);
 	if (argv == NULL) {
 		*status = EINVAL;
 		goto failed;
@@ -363,7 +363,7 @@ server_run_command_as(const char *username, unsigned int timeout, const char *cm
 		 || !server_change_to_home(user))
 			exit(126);
 
-		alarm(timeout? timeout : DEFAULT_COMMAND_TIMEOUT);
+		alarm(cmd->timeout? cmd->timeout : DEFAULT_COMMAND_TIMEOUT);
 
 		/* Note: we may want to pass a standard environment, too */
 		execv(argv0, argv);
@@ -398,9 +398,12 @@ server_inject_file_write_eof(twopence_transaction_t *trans, twopence_trans_chann
 }
 
 bool
-server_inject_file(twopence_transaction_t *trans, const char *username, const char *filename, size_t filemode)
+server_inject_file(twopence_transaction_t *trans, const twopence_file_xfer_t *xfer)
 {
 	twopence_trans_channel_t *sink;
+	const char *filename = xfer->remote.name;
+	const char *username = xfer->user;
+	unsigned int filemode = xfer->remote.mode;
 	int status;
 	int fd;
 
@@ -437,9 +440,11 @@ server_extract_file_source_read_eof(twopence_transaction_t *trans, twopence_tran
 }
 
 bool
-server_extract_file(twopence_transaction_t *trans, const char *username, const char *filename)
+server_extract_file(twopence_transaction_t *trans, const twopence_file_xfer_t *xfer)
 {
 	twopence_trans_channel_t *source;
+	const char *username = xfer->user;
+	const char *filename = xfer->remote.name;
 	int status;
 	int fd;
 
@@ -537,7 +542,7 @@ server_run_command_recv(twopence_transaction_t *trans, const twopence_hdr_t *hdr
 }
 
 bool
-server_run_command(twopence_transaction_t *trans, const char *username, unsigned int timeout, const char *cmdline)
+server_run_command(twopence_transaction_t *trans, const twopence_command_t *cmd)
 {
 	twopence_trans_channel_t *channel;
 	int status;
@@ -545,8 +550,8 @@ server_run_command(twopence_transaction_t *trans, const char *username, unsigned
 	int nattached = 0;
 	pid_t pid;
 
-	AUDIT("run \"%s\"; user=%s timeout=%u\n", cmdline, username, timeout);
-	if ((pid = server_run_command_as(username, timeout, cmdline, command_fds, &status)) < 0) {
+	AUDIT("run \"%s\"; user=%s timeout=%u\n", cmd->command, cmd->user, cmd->timeout);
+	if ((pid = server_run_command_as(cmd, command_fds, &status)) < 0) {
 		twopence_transaction_fail2(trans, status, 0);
 		return false;
 	}
@@ -599,25 +604,31 @@ server_process_request(twopence_transaction_t *trans, twopence_buf_t *payload)
 
 	switch (trans->type) {
 	case TWOPENCE_PROTO_TYPE_INJECT:
+		twopence_file_xfer_init(&xfer);
 		if (!twopence_protocol_dissect_inject_packet(payload, &xfer))
 			goto bad_packet;
 
-		server_inject_file(trans, xfer.user, xfer.remote.name, xfer.remote.mode);
+		server_inject_file(trans, &xfer);
+		twopence_file_xfer_destroy(&xfer);
 		break;
 
 	case TWOPENCE_PROTO_TYPE_EXTRACT:
+		twopence_file_xfer_init(&xfer);
 		if (!twopence_protocol_dissect_extract_packet(payload, &xfer))
 			goto bad_packet;
 
-		server_extract_file(trans, xfer.user, xfer.remote.name);
+		server_extract_file(trans, &xfer);
+		twopence_file_xfer_destroy(&xfer);
 		break;
 
 	case TWOPENCE_PROTO_TYPE_COMMAND:
+		memset(&cmd, 0, sizeof(cmd));
 		if (!twopence_protocol_dissect_command_packet(payload, &cmd)
 		 || cmd.command[0] == '\0')
 			goto bad_packet;
 
-		server_run_command(trans, cmd.user, cmd.timeout, cmd.command);
+		server_run_command(trans, &cmd);
+		twopence_command_destroy(&cmd);
 		break;
 
 	case TWOPENCE_PROTO_TYPE_QUIT:
@@ -634,7 +645,7 @@ server_process_request(twopence_transaction_t *trans, twopence_buf_t *payload)
 	return true;
 
 bad_packet:
-	twopence_log_error("unable to parse %c packet", trans->type);
+	twopence_log_error("unable to parse %s packet", twopence_protocol_packet_type_to_string(trans->type));
 	return false;
 }
 
