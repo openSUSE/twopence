@@ -39,6 +39,8 @@ twopence_plugin_type(const char *plugin_name)
     return TWOPENCE_PLUGIN_SSH;
   if (!strcmp(plugin_name, "serial"))
     return TWOPENCE_PLUGIN_SERIAL;
+  if (!strcmp(plugin_name, "tcp"))
+    return TWOPENCE_PLUGIN_TCP;
 
   return TWOPENCE_PLUGIN_UNKNOWN;
 }
@@ -93,6 +95,7 @@ __twopence_get_plugin_ops(const char *name, const struct twopence_plugin **ret)
   [TWOPENCE_PLUGIN_VIRTIO]	= &twopence_virtio_ops,
   [TWOPENCE_PLUGIN_SERIAL]	= &twopence_serial_ops,
   [TWOPENCE_PLUGIN_SSH]		= &twopence_ssh_ops,
+  [TWOPENCE_PLUGIN_TCP]		= &twopence_tcp_ops,
   };
   int type;
 

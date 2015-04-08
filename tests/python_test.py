@@ -138,8 +138,8 @@ testCaseBegin("Check the plugin type")
 try:
 	t = target.type
 	print "plugin type is", t
-	if t != "ssh" and t != "virtio" and t != "serial":
-		testCaseFail("Unknwon plugin type \"%s\"" % type)
+	if t != "ssh" and t != "virtio" and t != "serial" and t != "tcp":
+		testCaseFail("Unknwon plugin type \"%s\"" % t)
 except:
 	testCaseException()
 testCaseReport()
@@ -615,7 +615,7 @@ else:
 testCaseReport()
 
 crossTargetConcurrencySupport = backgroundingSupported
-if target.type != "virtio":
+if target.type != "virtio" and target.type != "tcp" and target.type != "serial":
     crossTargetConcurrencySupport = False
 
 testCaseBegin("run concurrent processes on multiple targets")

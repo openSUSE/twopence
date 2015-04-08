@@ -50,6 +50,13 @@ path of the socket to connect to.
 .B serial
 This will open a serial device to talk to a twopence server.
 The argument is the path of the serial device.
+.TP
+.B tcp
+This will establish a TCP connection to talk to the twopence
+server. The argument is a host name or address, optionally followed
+by a colon and a port number. Both IPv6 and IPv4 are supported.
+If a hostname is given that resolves to more than one address,
+each address is tried in turn, until a connection can be established.
 .PP
 Once a handle for the desired target has been obtained, the
 application can interact with the SUT in three major ways:

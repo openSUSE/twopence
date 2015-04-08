@@ -145,7 +145,6 @@ if test_case_check_status $?; then
 fi
 test_case_report
 
-
 test_case_begin "run command as $TESTUSER"
 username=`twopence_command -u $TESTUSER -b $TARGET 'id -un'`
 if test_case_check_status $?; then
