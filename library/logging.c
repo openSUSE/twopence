@@ -92,3 +92,23 @@ twopence_log_error(const char *fmt, ...)
     vsyslog(LOG_ERR, fmt, ap);
   }
 }
+
+void
+twopence_log_warning(const char *fmt, ...)
+{
+  va_list ap;
+
+  if (!twopence_log_initialized)
+    twopence_logging_init();
+
+  va_start(ap, fmt);
+  if (twopence_log_file) {
+    fprintf(twopence_log_file, "Warning: ");
+    vfprintf(twopence_log_file, fmt, ap);
+    if (strchr(fmt, '\n') == NULL)
+      fputc('\n', twopence_log_file);
+  }
+  if (twopence_log_syslog) {
+    vsyslog(LOG_WARNING, fmt, ap);
+  }
+}
