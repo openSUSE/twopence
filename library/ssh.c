@@ -81,6 +81,9 @@ struct twopence_ssh_transaction {
   ssh_channel		channel;
   ssh_event		event;
 
+  /* Set to true when we have an EOF packet from remote */
+  bool			eof_seen;
+
   /* Set to true when we have an exit status from remote */
   bool			have_exit_status;
 
@@ -104,9 +107,7 @@ struct twopence_ssh_transaction {
   } stdin;
 
   struct twopence_ssh_output {
-    int			index;		/* For ssh_channel_read() and friends */
     twopence_iostream_t *stream;
-    bool		eof;
   } stdout, stderr;
 
   struct timeval	command_timeout;
@@ -318,10 +319,7 @@ __twopence_ssh_transaction_setup_stdio(twopence_ssh_transaction_t *trans,
     trans->stdin.fd = -1;
   }
 
-  trans->stdout.index = 0;
   trans->stdout.stream = stdout_stream;
-
-  trans->stderr.index = 1;
   trans->stderr.stream = stderr_stream;
 }
 
@@ -356,6 +354,32 @@ __twopence_ssh_exit_status_callback(ssh_session session, ssh_channel channel, in
   __twopence_ssh_transaction_detach_stdin(trans);
 }
 
+static int
+__twopence_ssh_data_callback(ssh_session session, ssh_channel channel, void *data, uint32_t len, int is_stderr, void *userdata)
+{
+  twopence_ssh_transaction_t *trans = (twopence_ssh_transaction_t *) userdata;
+  struct twopence_ssh_output *out;
+
+  twopence_debug("%d: channel received %u bytes on %s", trans->pid, len, is_stderr? "stderr" : "stdout");
+  out = is_stderr? &trans->stderr : &trans->stdout;
+  if (len > 0 && out->stream) {
+    if (twopence_iostream_write(out->stream, data, len) < 0) {
+      __twopence_ssh_transaction_fail(trans, TWOPENCE_RECEIVE_RESULTS_ERROR);
+      return SSH_ERROR;
+    }
+  }
+  return len;
+}
+
+static void
+__twopence_ssh_eof_callback(ssh_session session, ssh_channel channel, void *userdata)
+{
+  twopence_ssh_transaction_t *trans = (twopence_ssh_transaction_t *) userdata;
+
+  twopence_debug("%d: channel is at eof", trans->pid);
+  trans->eof_seen = true;
+}
+
 static void
 __twopence_ssh_close_callback(ssh_session session, ssh_channel channel, void *userdata)
 {
@@ -373,6 +397,8 @@ __twopence_ssh_init_callbacks(twopence_ssh_transaction_t *trans)
     cb->channel_exit_signal_function = __twopence_ssh_exit_signal_callback;
     cb->channel_exit_status_function = __twopence_ssh_exit_status_callback;
     cb->channel_close_function = __twopence_ssh_close_callback;
+    cb->channel_data_function = __twopence_ssh_data_callback;
+    cb->channel_eof_function = __twopence_ssh_eof_callback;
     ssh_callbacks_init(cb);
   }
 
@@ -563,45 +589,6 @@ __twopence_ssh_transaction_forward_stdin(twopence_ssh_transaction_t *trans)
   return 0;
 }
 
-/*
- * Read data from remote command and forward it to local stream
- */
-static int
-__twopence_ssh_transaction_forward_output(twopence_ssh_transaction_t *trans, struct twopence_ssh_output *out, const char *name)
-{
-  char buffer[BUFFER_SIZE];
-  int size;
-
-  if (trans->done || out->eof)
-    return 0;
-
-  while (!out->eof) {
-    twopence_debug("%s: trying to read some data from %s\n", __func__, name);
-
-    size = ssh_channel_read_nonblocking(trans->channel, buffer, sizeof(buffer), out->index);
-    if (size == SSH_ERROR) {
-      __twopence_ssh_transaction_fail(trans, TWOPENCE_RECEIVE_RESULTS_ERROR);
-      return -1;
-    }
-
-    if (size == SSH_EOF) {
-      twopence_debug("%s: %s is at EOF\n", __func__, name);
-      out->eof = true;
-    } else {
-      /* If there is no local stream to write it to, simply drop it on the floor */
-      twopence_debug("%s: got %u bytes of data on %s\n", __func__, size, name);
-      if (size > 0 && out->stream) {
-        if (twopence_iostream_write(out->stream, buffer, size) < 0) {
-          __twopence_ssh_transaction_fail(trans, TWOPENCE_RECEIVE_RESULTS_ERROR);
-          return -1;
-        }
-      }
-    }
-  }
-
-  return 0;
-}
-
 static int
 __twopence_ssh_stdin_cb(socket_t fd, int revents, void *userdata)
 {
@@ -676,15 +663,8 @@ __twopence_ssh_poll(struct twopence_ssh_target *handle)
       /* Note: the transaction may have been interrupted by twopence_ssh_interrupt_command().
        * In this case, trans->done will be true.
        */
-      if (!trans->done) {
-        if (__twopence_ssh_transaction_forward_output(trans, &trans->stdout, "stdout") < 0
-         || __twopence_ssh_transaction_forward_output(trans, &trans->stderr, "stderr") < 0)
-          return 0;
-
-        twopence_debug2("eof=%d/%d/%d\n", trans->stdin.eof, trans->stdout.eof, trans->stderr.eof);
-        if (trans->stdout.eof && trans->stderr.eof && trans->have_exit_status)
-          trans->done = true;
-      }
+      if (trans->eof_seen && trans->have_exit_status)
+        trans->done = true;
 
       if (trans->done) {
 	/* FIXME: this is blocking, which is bad. A program may close its standard

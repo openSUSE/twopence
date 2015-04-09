@@ -168,10 +168,11 @@ for iter in `seq 1 100`; do
 		hostname=$name
 	elif [ "$hostname" != "$name" ]; then
 		test_case_fail "Output of hostname -f changed during execution"
+		echo "changed from \"$hostname\" to \"$name\"" >&2
+		break
 	fi
 done
 test_case_report
-
 
 test_case_begin "silent command 'ping -c1 127.0.0.1'"
 twopence_command -q $TARGET 'ping -c1 127.0.0.1'
