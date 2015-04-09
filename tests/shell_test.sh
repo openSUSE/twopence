@@ -156,6 +156,23 @@ if test_case_check_status $?; then
 fi
 test_case_report
 
+test_case_begin "Run command 100 times just for kicks"
+hostname=""
+for iter in `seq 1 100`; do
+	name=`twopence_command -b $TARGET 'hostname -f'`
+	if ! test_case_check_status $?; then
+		break
+	fi
+
+	if [ "$iter" -eq 1 ]; then
+		hostname=$name
+	elif [ "$hostname" != "$name" ]; then
+		test_case_fail "Output of hostname -f changed during execution"
+	fi
+done
+test_case_report
+exit 1
+
 
 test_case_begin "silent command 'ping -c1 127.0.0.1'"
 twopence_command -q $TARGET 'ping -c1 127.0.0.1'

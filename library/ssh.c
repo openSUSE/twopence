@@ -143,6 +143,7 @@ extern const struct twopence_plugin twopence_ssh_ops;
 static bool		__twopence_ssh_interrupted;
 
 static ssh_session	__twopence_ssh_open_session(const struct twopence_ssh_target *, const char *);
+static void		__twopence_ssh_transaction_detach_stdin(twopence_ssh_transaction_t *trans);
 static int		__twopence_ssh_interrupt_ssh(struct twopence_ssh_target *);
 
 ///////////////////////////// Lower layer ///////////////////////////////////////
@@ -350,6 +351,17 @@ __twopence_ssh_exit_status_callback(ssh_session session, ssh_channel channel, in
   trans->have_exit_status = true;
   trans->status.major = 0;
   trans->status.minor = exit_status;
+
+  /* No longer try to forward any data from stdin to the remote. It's gone */
+  __twopence_ssh_transaction_detach_stdin(trans);
+}
+
+static void
+__twopence_ssh_close_callback(ssh_session session, ssh_channel channel, void *userdata)
+{
+  twopence_ssh_transaction_t *trans = (twopence_ssh_transaction_t *) userdata;
+
+  twopence_debug("%d: channel was closed", trans->pid);
 }
 
 static void
@@ -360,6 +372,7 @@ __twopence_ssh_init_callbacks(twopence_ssh_transaction_t *trans)
   if (cb->size == 0) {
     cb->channel_exit_signal_function = __twopence_ssh_exit_signal_callback;
     cb->channel_exit_status_function = __twopence_ssh_exit_status_callback;
+    cb->channel_close_function = __twopence_ssh_close_callback;
     ssh_callbacks_init(cb);
   }
 
@@ -492,6 +505,15 @@ __twopence_ssh_fake_exit_signal(twopence_ssh_transaction_t *trans, int signal)
   trans->done = true;
 }
 
+static void
+__twopence_ssh_transaction_detach_stdin(twopence_ssh_transaction_t *trans)
+{
+  if (trans->stdin.fd >= 0) {
+    ssh_event_remove_fd(trans->handle->event, trans->stdin.fd);
+    trans->stdin.fd = -1;
+  }
+}
+
 static int
 __twopence_ssh_transaction_mark_stdin_eof(twopence_ssh_transaction_t *trans)
 {
@@ -501,11 +523,7 @@ __twopence_ssh_transaction_mark_stdin_eof(twopence_ssh_transaction_t *trans)
   if (__twopence_ssh_transaction_send_eof(trans) == SSH_ERROR)
     return -1;
 
-  if (trans->stdin.fd >= 0) {
-    ssh_event_remove_fd(trans->handle->event, trans->stdin.fd);
-    trans->stdin.fd = -1;
-  }
-
+  __twopence_ssh_transaction_detach_stdin(trans);
   return 0;
 }
 
@@ -557,7 +575,7 @@ __twopence_ssh_transaction_forward_output(twopence_ssh_transaction_t *trans, str
   if (trans->done || out->eof)
     return 0;
 
-  while (!out->eof && ssh_channel_poll(trans->channel, out->index) != 0) {
+  while (!out->eof) {
     twopence_debug("%s: trying to read some data from %s\n", __func__, name);
 
     size = ssh_channel_read_nonblocking(trans->channel, buffer, sizeof(buffer), out->index);
