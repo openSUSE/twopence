@@ -171,7 +171,6 @@ for iter in `seq 1 100`; do
 	fi
 done
 test_case_report
-exit 1
 
 
 test_case_begin "silent command 'ping -c1 127.0.0.1'"
