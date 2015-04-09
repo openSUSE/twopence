@@ -66,7 +66,7 @@ static twopence_sock_t *
 __twopence_tcp_open(struct twopence_pipe_target *pipe_handle)
 {
   struct twopence_tcp_target *handle = (struct twopence_tcp_target *) pipe_handle;
-  char *copy, *hostname, *portname;
+  char *copy, *hostname, *portname = NULL;
   struct addrinfo hints;
   struct addrinfo *ai_list, *ai;
   int socket_fd = -1;
@@ -84,7 +84,7 @@ __twopence_tcp_open(struct twopence_pipe_target *pipe_handle)
         return NULL;
       }
     }
-    *s++ = \0';
+    *s++ = '\0';
     if (*s == ':')
       portname = ++s;
     /* Any other garbage is silently ignored for now */
