@@ -48,12 +48,14 @@ fi
 case $PLUGIN in
 virtio)
 	echo "*** Start server ****"
-	../server/twopence_test_server --daemon --port-unix /tmp/twopence.sock $TWOPENCE_SERVER_OPTIONS
+	../server/twopence_test_server --no-audit --daemon --port-unix /tmp/twopence.sock $TWOPENCE_SERVER_OPTIONS
 	TARGET="virtio:/tmp/twopence.sock";;
 
 ssh)
 	TARGET=ssh:localhost;;
-
+tcp)
+	../server/twopence_test_server --no-audit --daemon --port-tcp=default $TWOPENCE_SERVER_OPTIONS
+	TARGET=tcp:localhost;;
 *)
 	echo "*** Don't know how to run test against plugin $PLUGIN ***" >&2
 	exit 1;;

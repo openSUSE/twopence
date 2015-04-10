@@ -1,5 +1,5 @@
 /*
- * Server semanticServer semantics
+ * Server semantic
  * 
  * The idea is to avoid interfering with networks test. This enables to test
  * even with all network interfaces are shut down.
@@ -49,6 +49,10 @@
 #include <limits.h>
 
 #include "server.h"
+#include "utils.h"
+
+
+static twopence_conn_t *	server_new_connection(twopence_sock_t *, twopence_conn_semantics_t *);
 
 static struct passwd *
 server_get_user(const char *username, int *status)
@@ -144,6 +148,26 @@ server_change_hats_permanently(const struct passwd *user, int *status)
 	return true;
 }
 
+static bool
+server_change_to_home(const struct passwd *user)
+{
+	const char *homedir;
+
+	if ((homedir = user->pw_dir) == NULL || homedir[0] != '/') {
+		twopence_debug("user %s has a home directory of \"%s\", substituting \"/\"",
+				user->pw_name, user->pw_dir);
+		homedir = "/";
+	}
+
+	if (chdir(homedir) < 0) {
+		twopence_log_error("Cannot change to user %s's home directory: chdir(%s) failed: %m",
+				user->pw_name, user->pw_dir);
+		return false;
+	}
+
+	return true;
+}
+
 int
 server_open_file_as(const char *username, const char *filename, unsigned int filemode, int oflags, int *status)
 {
@@ -153,7 +177,7 @@ server_open_file_as(const char *username, const char *filename, unsigned int fil
 	int fd;
 
 	if (!(user = server_get_user(username, status))) {
-		TRACE("Unknown user \"%s\"\n", username);
+		twopence_debug("Unknown user \"%s\"\n", username);
 		return -1;
 	}
 
@@ -169,7 +193,7 @@ server_open_file_as(const char *username, const char *filename, unsigned int fil
 		}
 	}
 
-	TRACE("%s(user=%s, file=%s, flags=0%0)\n", __func__, username, filename, oflags);
+	twopence_debug("%s(user=%s, file=%s, flags=0%0)\n", __func__, username, filename, oflags);
 
 	/* We may want to have the client specify the file mode as well */
 	if (!strcmp(username, "root")) {
@@ -256,108 +280,46 @@ __close_fds(int *fd_list)
 }
 
 static char **
-server_parse_cmdline(char *cmdline)
+server_build_shell_argv(const char *cmdline)
 {
-	char **argv, *s;
-	int argc;
+	char **argv;
+	int argc = 0;
 
-	TRACE("%s(\"%s\")\n", __func__, cmdline);
-
-	s = cmdline;
-
-	argc = 0;
-	argv = NULL;
-	while (true) {
-		while (isspace(*s))
-			++s;
-		if (*s == '\0')
-			break;
-
-		if ((argc % 16) == 0)
-			argv = realloc(argv, (argc + 16) * sizeof(argv[0]));
-
-		if (*s == '"') {
-			char cc, *t;
-
-			argv[argc++] = ++s;
-			t = s;
-			while ((cc = *s++) != '\0') {
-				if (cc == '\\') {
-					if (*s == '\0')
-						goto failed;
-					cc = *s++;
-				} else if (cc == '"')
-					break;
-
-				*t++ = cc;
-			}
-			*t++ = '\0';
-		} else
-		if (*s == '\'') {
-			argv[argc++] = ++s;
-			while (*s != '\'') {
-				if (*s == '\0')
-					goto failed;
-				++s;
-			}
-			*s++ = '\0';
-		} else {
-			argv[argc++] = s;
-			while (*s && !isspace(*s))
-				++s;
-			if (*s)
-				*s++ = '\0';
-		}
-	}
-
+	twopence_debug("%s(\"%s\")\n", __func__, cmdline);
+	argv = twopence_calloc(4, sizeof(argv[0]));
+	argv[argc++] = "/bin/sh";
+	argv[argc++] = "-c";
+	argv[argc++] = (char *) cmdline;
 	argv[argc] = NULL;
 	return argv;
-
-failed:
-	free(argv);
-	return NULL;
-
 }
 
-const char *
-server_path_find_bin(const char *argv0)
+static char **
+server_build_shell_env(twopence_env_t *env, const struct passwd *pw)
 {
-	static const char *path_dir[] = {
-		"/bin",
-		"/sbin",
-		"/usr/bin",
-		"/usr/sbin",
-		"/usr/local/bin",
-		"/usr/local/sbin",
-		NULL
-	};
-	unsigned int n;
+	static twopence_env_t def_env = { .count = 0 };
 
-	if (*argv0 == '/')
-		return argv0;
-
-	for (n = 0; path_dir[n]; ++n) {
-		const char *path;
-
-		path = server_build_path(path_dir[n], argv0);
-		if (server_file_exists(path))
-			return path;
+	if (def_env.count == 0) {
+		twopence_env_pass(&def_env, "PATH");
 	}
+	twopence_env_merge_inferior(env, &def_env);
+	twopence_env_set(env, "HOME", pw->pw_dir? : "/none");
+	twopence_env_set(env, "USER", pw->pw_name);
 
-	return NULL;
+	return env->array;
 }
 
 int
-server_run_command_as(const char *username, unsigned int timeout, const char *cmdline, int *parent_fds, int *status)
+server_run_command_as(twopence_command_t *cmd, int *parent_fds, int *status)
 {
 	int pipefds[6], child_fds[3];
-	char *cmdline_copy = NULL, **argv = NULL;
+	char **argv = NULL, **env = NULL;
 	struct passwd *user;
 	const char *argv0;
 	int nfds = 0;
 	pid_t pid = -1;
 
-	if (!(user = server_get_user(username, status)))
+	if (!(user = server_get_user(cmd->user, status)))
 		return -1;
 
 	memset(pipefds, 0xa5, sizeof(pipefds));
@@ -371,31 +333,27 @@ server_run_command_as(const char *username, unsigned int timeout, const char *cm
 	__init_fds(child_fds,  pipefds[0], pipefds[3], pipefds[5]); /* read-write-write */
 	__init_fds(parent_fds, pipefds[1], pipefds[2], pipefds[4]); /* write-read-read */
 
-	/* This whole cmdline business isn't really optimal, as it requires us to
-	 * use a shell process inbetween */
-	cmdline_copy = strdup(cmdline);
-	argv = server_parse_cmdline(cmdline_copy);
+	argv = server_build_shell_argv(cmd->command);
 	if (argv == NULL) {
 		*status = EINVAL;
 		goto failed;
 	}
 
+	env = server_build_shell_env(&cmd->env, user);
+
 	{
 		int n;
 
-		TRACE("command argv[] =\n");
+		twopence_debug("command argv[] =\n");
 		for (n = 0; argv[n]; ++n)
-			TRACE("   [%d] = \"%s\"\n", n, argv[n]);
+			twopence_debug("   [%d] = \"%s\"\n", n, argv[n]);
+
+		twopence_debug("command env[] =\n");
+		for (n = 0; env[n]; ++n)
+			twopence_debug("   %s", env[n]);
 	}
 
 	argv0 = argv[0];
-	if (*argv0 != '/') {
-		argv0 = server_path_find_bin(argv[0]);
-		if (argv0 == NULL) {
-			*status = ENOENT;
-			goto failed;
-		}
-	}
 
 	pid = fork();
 	if (pid < 0) {
@@ -405,6 +363,11 @@ server_run_command_as(const char *username, unsigned int timeout, const char *cm
 	}
 	if (pid == 0) {
 		int fd, numfds;
+
+		if (setsid() < 0) {
+			twopence_log_error("unable to set session id of child process: %m");
+			exit(127);
+		}
 
 		/* Child */
 		__close_fds(parent_fds);
@@ -417,13 +380,14 @@ server_run_command_as(const char *username, unsigned int timeout, const char *cm
 		for (fd = 3; fd < numfds; ++fd)
 			close(fd);
 
-		if (!server_change_hats_permanently(user, status))
+		if (!server_change_hats_permanently(user, status)
+		 || !server_change_to_home(user))
 			exit(126);
 
-		alarm(timeout? timeout : DEFAULT_COMMAND_TIMEOUT);
+		alarm(cmd->timeout? cmd->timeout : DEFAULT_COMMAND_TIMEOUT);
 
 		/* Note: we may want to pass a standard environment, too */
-		execv(argv0, argv);
+		execve(argv0, argv, env);
 
 		twopence_log_error("unable to run %s: %m", argv0);
 		exit(127);
@@ -434,8 +398,6 @@ server_run_command_as(const char *username, unsigned int timeout, const char *cm
 out:
 	if (argv)
 		free(argv);
-	if (cmdline_copy)
-		free(cmdline_copy);
 	return pid;
 
 failed:
@@ -446,160 +408,108 @@ failed:
 	goto out;
 }
 
-bool
-server_inject_file_recv(transaction_t *trans, const header_t *hdr, twopence_buf_t *payload)
+static void
+server_inject_file_write_eof(twopence_transaction_t *trans, twopence_trans_channel_t *channel)
 {
-	switch (hdr->type) {
-	case PROTO_HDR_TYPE_DATA:
-		TRACE("inject: received %u bytes of data\n", twopence_buf_count(payload));
-		transaction_write_data(trans, payload);
-		/* FIXME: how do we propagate write errors to the client? */
-		break;
+	/* The channel may have data queued to it. For now, just flush it synchronously */
+	twopence_transaction_channel_flush(channel);
 
-	case PROTO_HDR_TYPE_EOF:
-		TRACE("inject: received EOF\n");
-		transaction_send_minor(trans, 0);
-		socket_shutdown_write(trans->local_sink);
-		trans->done = true;
-		break;
-
-	default:
-		twopence_log_error("Unknown command code '%c' in transaction context\n", hdr->type);
-		transaction_fail(trans, EPROTO);
-		break;
-	}
-	return true;
+	twopence_transaction_send_minor(trans, 0);
+	trans->done = true;
 }
 
 bool
-server_inject_file(transaction_t *trans, const char *username, const char *filename, size_t filemode)
+server_inject_file(twopence_transaction_t *trans, const twopence_file_xfer_t *xfer)
 {
+	twopence_trans_channel_t *sink;
+	const char *filename = xfer->remote.name;
+	const char *username = xfer->user;
+	unsigned int filemode = xfer->remote.mode;
 	int status;
 	int fd;
 
 	AUDIT("inject \"%s\"; user=%s\n", filename, username);
 	if ((fd = server_open_file_as(username, filename, filemode, O_WRONLY|O_CREAT|O_TRUNC, &status)) < 0) {
-		transaction_fail(trans, status);
+		twopence_transaction_fail(trans, status);
 		return false;
 	}
 
-	if (!transaction_attach_local_sink(trans, fd)) {
+	sink = twopence_transaction_attach_local_sink(trans, 0, fd);
+	if (sink == NULL) {
 		/* Something is wrong */
 		close(fd);
 		return false;
 	}
 
+	twopence_transaction_channel_set_callback_write_eof(sink, server_inject_file_write_eof);
+
 	/* Tell the client a success status right after we open the file -
 	 * this will start the actual transfer */
-	transaction_send_major(trans, 0);
-
-	/* Ignore the file size - we're no longer interested in it */
-	trans->recv = server_inject_file_recv;
+	twopence_transaction_send_major(trans, 0);
 
 	return true;
 }
 
-bool
-server_extract_file_recv(transaction_t *trans, const header_t *hdr, twopence_buf_t *payload)
+void
+server_extract_file_source_read_eof(twopence_transaction_t *trans, twopence_trans_channel_t *channel)
 {
-	switch (hdr->type) {
-	default:
-		twopence_log_error("Unknown command code '%c' in transaction context\n", hdr->type);
-		transaction_fail(trans, EPROTO);
-		break;
-	}
-	return true;
+	uint16_t channel_id = twopence_transaction_channel_id(channel);
+
+	twopence_transaction_send_client(trans, twopence_protocol_build_eof_packet(&trans->ps, channel_id));
+	twopence_transaction_send_minor(trans, 0);
+	trans->done = true;
 }
 
 bool
-server_extract_file_send(transaction_t *trans)
+server_extract_file(twopence_transaction_t *trans, const twopence_file_xfer_t *xfer)
 {
-	socket_t *sock;
-	twopence_buf_t *bp;
-
-	TRACE("%s()\n", __func__);
-	if (trans->num_local_sources == 0)
-		return false;
-	if ((sock = trans->local_source[0]) == NULL)
-		return false;
-
-	bp = socket_take_recvbuf(sock);
-	if (bp != NULL) {
-		/* Add a header to the packet and send it out */
-		protocol_push_header(bp, PROTO_HDR_TYPE_DATA);
-		transaction_send_client(trans, bp);
-	}
-
-	if (socket_is_read_eof(sock)) {
-		TRACE("EOF on extracted file");
-		transaction_send_client(trans, protocol_build_eof_packet());
-		transaction_close_source(trans, 0);
-		trans->done = true;
-	}
-	return true;
-}
-
-bool
-server_extract_file(transaction_t *trans, const char *username, const char *filename)
-{
+	twopence_trans_channel_t *source;
+	const char *username = xfer->user;
+	const char *filename = xfer->remote.name;
 	int status;
 	int fd;
 
 	AUDIT("extract \"%s\"; user=%s\n", filename, username);
 	if ((fd = server_open_file_as(username, filename, 0600, O_RDONLY, &status)) < 0) {
-		transaction_fail(trans, status);
+		twopence_transaction_fail(trans, status);
 		return false;
 	}
 
-	if (!transaction_attach_local_source(trans, fd)) {
+	source = twopence_transaction_attach_local_source(trans, 0, fd);
+	if (source == NULL) {
 		/* Something is wrong */
-		transaction_fail(trans, EIO);
+		twopence_transaction_fail(trans, EIO);
 		close(fd);
 		return false;
 	}
 
-	trans->recv = server_extract_file_recv;
-	trans->send = server_extract_file_send;
+	twopence_transaction_channel_set_callback_read_eof(source, server_extract_file_source_read_eof);
 
+	/* We don't expect to receive any packets; sending is taken care of at the channel level */
 	return true;
 }
 
 bool
-server_run_command_send(transaction_t *trans)
+server_run_command_send(twopence_transaction_t *trans)
 {
-	unsigned int i;
-	socket_t *sock;
+	twopence_trans_channel_t *channel;
 	int status;
 	pid_t pid;
 	bool pending_output;
 
 	pending_output = false;
-	for (i = 0; i < trans->num_local_sources; ++i) {
-		twopence_buf_t *bp;
-
-		if (!(sock = trans->local_source[i]))
-			continue;
-
-		bp = socket_take_recvbuf(sock);
-		if (bp != NULL) {
-			TRACE("read %u bytes from command fd %d\n", twopence_buf_count(bp), i + 1);
-			protocol_push_header(bp, PROTO_HDR_TYPE_STDOUT + i);
-
-			socket_queue_xmit(trans->client_sock, bp);
-			socket_post_recvbuf(sock, protocol_command_buffer_new());
-		}
-
-		if (socket_is_dead(sock))
-			transaction_close_source(trans, i);
-		else
-			pending_output = true;
-	}
+	if ((channel = twopence_transaction_find_source(trans, TWOPENCE_STDOUT)) != NULL
+	 && !twopence_transaction_channel_is_read_eof(channel))
+		pending_output = true;
+	if ((channel = twopence_transaction_find_source(trans, TWOPENCE_STDERR)) != NULL
+	 && !twopence_transaction_channel_is_read_eof(channel))
+		pending_output = true;
 
 	if (trans->pid) {
 		pid = waitpid(trans->pid, &status, WNOHANG);
 		if (pid > 0) {
-			TRACE("process exited, status=%u\n", status);
-			transaction_close_sink(trans);
+			twopence_debug("%s: process exited, status=%u\n", twopence_transaction_describe(trans), status);
+			twopence_transaction_close_sink(trans, 0);
 			trans->status = status;
 			trans->pid = 0;
 		}
@@ -609,17 +519,17 @@ server_run_command_send(transaction_t *trans)
 		int st = trans->status;
 
 		if (WIFEXITED(st)) {
-			transaction_send_major(trans, 0);
-			transaction_send_minor(trans, WEXITSTATUS(st));
+			twopence_transaction_send_major(trans, 0);
+			twopence_transaction_send_minor(trans, WEXITSTATUS(st));
 		} else
 		if (WIFSIGNALED(st)) {
 			if (WTERMSIG(st) == SIGALRM) {
-				transaction_send_timeout(trans);
+				twopence_transaction_send_timeout(trans);
 			} else {
-				transaction_fail2(trans, EFAULT, WTERMSIG(st));
+				twopence_transaction_fail2(trans, EFAULT, WTERMSIG(st));
 			}
 		} else {
-			transaction_fail2(trans, EFAULT, 2);
+			twopence_transaction_fail2(trans, EFAULT, 2);
 		}
 		trans->done = true;
 	}
@@ -628,30 +538,19 @@ server_run_command_send(transaction_t *trans)
 }
 
 bool
-server_run_command_recv(transaction_t *trans, const header_t *hdr, twopence_buf_t *payload)
+server_run_command_recv(twopence_transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload)
 {
 	switch (hdr->type) {
-	case PROTO_HDR_TYPE_STDIN:
-		/* queue the buffer for output to the local command */
-		transaction_queue_stdin(trans, twopence_buf_clone(payload));
-		break;
-
-	case PROTO_HDR_TYPE_EOF:
-		transaction_write_eof(trans);
-		break;
-
-	case PROTO_HDR_TYPE_INTR:
+	case TWOPENCE_PROTO_TYPE_INTR:
 		/* Send signal to process, and shut down all I/O.
 		 * When we send a signal, we're not really interested in what
 		 * it has to say, not even "aargh".
 		 */
 		if (trans->pid && !trans->done) {
-			int n;
-
-			kill(trans->pid, SIGKILL);
-			transaction_close_sink(trans);
-			for (n = 0; n < TRANSACTION_MAX_SOURCES; ++n)
-				transaction_close_source(trans, n);
+			/* Send the KILL signal to all processes in the process group */
+			kill(-trans->pid, SIGKILL);
+			twopence_transaction_close_sink(trans, 0);
+			twopence_transaction_close_source(trans, 0); /* ID zero means all */
 		}
 		break;
 
@@ -664,28 +563,37 @@ server_run_command_recv(transaction_t *trans, const header_t *hdr, twopence_buf_
 }
 
 bool
-server_run_command(transaction_t *trans, const char *username, unsigned int timeout, const char *cmdline)
+server_run_command(twopence_transaction_t *trans, twopence_command_t *cmd)
 {
+	twopence_trans_channel_t *channel;
 	int status;
 	int command_fds[3];
 	int nattached = 0;
 	pid_t pid;
 
-	AUDIT("run \"%s\"; user=%s timeout=%u\n", cmdline, username, timeout);
-	if ((pid = server_run_command_as(username, timeout, cmdline, command_fds, &status)) < 0) {
-		transaction_fail2(trans, status, 0);
+	AUDIT("run \"%s\"; user=%s timeout=%u\n", cmd->command, cmd->user, cmd->timeout);
+	if ((pid = server_run_command_as(cmd, command_fds, &status)) < 0) {
+		twopence_transaction_fail2(trans, status, 0);
 		return false;
 	}
 
-	if (!transaction_attach_local_sink(trans, command_fds[0]))
+	channel = twopence_transaction_attach_local_sink(trans, TWOPENCE_STDIN, command_fds[0]);
+	if (channel == NULL)
 		goto failed;
+	twopence_transaction_channel_set_name(channel, "stdin");
 	nattached++;
 
-	while (nattached < 3) {
-		if (!transaction_attach_local_source(trans, command_fds[nattached]))
-			goto failed;
-		nattached++;
-	}
+	channel = twopence_transaction_attach_local_source(trans, TWOPENCE_STDOUT, command_fds[1]);
+	if (channel == NULL)
+		goto failed;
+	twopence_transaction_channel_set_name(channel, "stdout");
+	nattached++;
+
+	channel = twopence_transaction_attach_local_source(trans, TWOPENCE_STDERR, command_fds[2]);
+	if (channel == NULL)
+		goto failed;
+	twopence_transaction_channel_set_name(channel, "stderr");
+	nattached++;
 
 	trans->recv = server_run_command_recv;
 	trans->send = server_run_command_send;
@@ -694,16 +602,99 @@ server_run_command(transaction_t *trans, const char *username, unsigned int time
 	return true;
 
 failed:
-	transaction_fail2(trans, EIO, 0);
+	twopence_transaction_fail2(trans, EIO, 0);
 	while (nattached < 3)
 		close(command_fds[nattached++]);
 	return false;
 }
 
-static semantics_t	server_ops = {
-	.inject_file		= server_inject_file,
-	.extract_file		= server_extract_file,
-	.run_command		= server_run_command,
+/*
+ * Handle incoming HELLO packet. Respond with the ID we assigned to the client
+ */
+bool
+server_request_quit(void)
+{
+	exit(0);
+}
+
+bool
+server_process_request(twopence_transaction_t *trans, twopence_buf_t *payload)
+{
+	twopence_file_xfer_t xfer;
+	twopence_command_t cmd;
+
+	switch (trans->type) {
+	case TWOPENCE_PROTO_TYPE_INJECT:
+		twopence_file_xfer_init(&xfer);
+		if (!twopence_protocol_dissect_inject_packet(payload, &xfer))
+			goto bad_packet;
+
+		server_inject_file(trans, &xfer);
+		twopence_file_xfer_destroy(&xfer);
+		break;
+
+	case TWOPENCE_PROTO_TYPE_EXTRACT:
+		twopence_file_xfer_init(&xfer);
+		if (!twopence_protocol_dissect_extract_packet(payload, &xfer))
+			goto bad_packet;
+
+		server_extract_file(trans, &xfer);
+		twopence_file_xfer_destroy(&xfer);
+		break;
+
+	case TWOPENCE_PROTO_TYPE_COMMAND:
+		memset(&cmd, 0, sizeof(cmd));
+		if (!twopence_protocol_dissect_command_packet(payload, &cmd)
+		 || cmd.command[0] == '\0')
+			goto bad_packet;
+
+		server_run_command(trans, &cmd);
+		twopence_command_destroy(&cmd);
+		break;
+
+	case TWOPENCE_PROTO_TYPE_QUIT:
+		server_request_quit();
+		/* we should not get here */
+		trans->done = true;
+		break;
+
+	default:
+		twopence_log_error("Unknown command code '%c' in global context\n", trans->type);
+		return false;
+	}
+
+	return true;
+
+bad_packet:
+	twopence_log_error("unable to parse %s packet", twopence_protocol_packet_type_to_string(trans->type));
+	return false;
+}
+
+static twopence_conn_semantics_t	server_ops = {
+	.process_request	= server_process_request,
+};
+
+/*
+ * Sockets in listen mode.
+ */
+int
+server_listen_doio(twopence_conn_pool_t *poll, twopence_conn_t *conn)
+{
+	twopence_sock_t *sock;
+
+	sock = twopence_conn_accept(conn);
+	if (sock != NULL) {
+		twopence_conn_t *new_conn = server_new_connection(sock, &server_ops);
+
+		twopence_debug("Accepted incoming connection");
+		twopence_conn_set_keepalive(new_conn, -1);
+		twopence_conn_pool_add_connection(poll, new_conn);
+	}
+	return 0;
+}
+
+static twopence_conn_semantics_t	listen_ops = {
+	.doio			= server_listen_doio,
 };
 
 static void
@@ -711,10 +702,18 @@ child_handler(int sig)
 {
 }
 
-void
-server_run(socket_t *sock)
+static twopence_conn_t *
+server_new_connection(twopence_sock_t *sock, twopence_conn_semantics_t *semantics)
 {
-	connection_pool_t *pool;
+	static unsigned int global_client_id = 1;
+
+	return twopence_conn_new(semantics,  sock, global_client_id++);
+}
+
+static void
+__server_run(twopence_conn_t *conn)
+{
+	twopence_conn_pool_t *pool;
 	struct sigaction sa;
 	sigset_t mask, omask;
 
@@ -731,11 +730,26 @@ server_run(socket_t *sock)
 
 	signal(SIGPIPE, SIG_IGN);
 
-	pool = connection_pool_new();
+	pool = twopence_conn_pool_new();
 
-	connection_pool_add_connection(pool, connection_new(&server_ops, sock));
-	while (connection_pool_poll(pool))
+	twopence_conn_pool_add_connection(pool, conn);
+	while (twopence_conn_pool_poll(pool))
 		;
 
 	sigprocmask(SIG_SETMASK, &omask, NULL);
+
+	/* FIXME: */
+	/* twopence_conn_pool_free(pool); */
+}
+
+void
+server_run(twopence_sock_t *sock)
+{
+	__server_run(server_new_connection(sock, &server_ops));
+}
+
+void
+server_listen(twopence_sock_t *sock)
+{
+	__server_run(server_new_connection(sock, &listen_ops));
 }

@@ -1,35 +1,13 @@
 BUGS
-   o Python:
-     target.Command("cat");
-     does not react as a local "cat", while it should
-     (interactive test)
+   o Mention --debug option in shell/*.1 manpages
 
-   o library, shell and ruby wrappers:
-     buffer allocation errors are not handled anymore
-     (calloc() returning NULL)
-
-   o test server:
-     Display used port when using --audit
-     Make --audit the default
-
-   o The serial/virtio protocol has no request/reply matching.
-     Proposed fix: add a new field to the header that is a timestamp.
-     Two-way exchange of transaction IDs might be a bit too complicated.
-
-   o Re-enable "line timeout"
-     Add option to set it (see below)
-
+   o server: in open_file_as, be careful with user accounts
+     that have no home directory set, or have "/" as home.
 
 REFACTORING
-   o in ssh.c, replace
-       ssh_channel_read_nonblocking() + nanosleep()
-     with
-       ssh_channel_select()
-
    o not sure there is much point in having two concurrent APIs to do the same:
      refactor shell and ruby wrappers to use directly twopence_run_test()?
      [DONE for shell/command.c]
-
 
 FUNCTIONALITY
    o write help pages
@@ -44,30 +22,24 @@ FUNCTIONALITY
    o be able to inject or extract a full directory tree
      -r --recursive
 
-   o be able to tune the line timeout for receiving the results
-     -s --silence
+   o currently, only shell/command supports the --keepalive option
+     Not sure whether it makes sense to also support this in the
+     other shell commands, as the only reason to add it to command(1)
+     was the ability to test keepalives...
 
    o when injecting files, be able to set up the permission mask
      -m --mask
 
-   o be able to pass environment variables to remote command
-     -e --envvar
-
-   o be able to run tests in parallel
-     (using a "port number")
- 
    o integration with Pennyworth
 
    o real docbook documentation, reusing the README as a starting point
 
    o handle interrupts during file transfers,
      not only during command execution
-
-   o ssh.c: kill the remote command when it was aborted
-     because of a timeout or another problem
+     Note from okir: this should be next to trivial for the virtio target,
+     but may require a bit more work for ssh.
 
    o Document the tests we're doing in tests/
-
 
 FUTURE DIRECTIONS
    o Twopence could be extended by writing new plugins,

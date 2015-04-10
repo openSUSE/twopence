@@ -26,9 +26,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "shell.h"
 #include "twopence.h"
 
-char *short_options = "u:vh";
+char *short_options = "u:dvh";
 struct option long_options[] = {
   { "user", 1, NULL, 'u' },
+  { "debug", 0, NULL, 'd' },
   { "version", 0, NULL, 'v' },
   { "help", 0, NULL, 'h' },
   { NULL, 0, NULL, 0 }
@@ -39,6 +40,8 @@ void usage(const char *program_name)
 {
     fprintf(stderr, "Usage: %s [<options>] <target> <remote file> <local file>\n\
 Options: -u|--user <user>: user extracting the file (default: root)\n\
+         -d|--debug: print debug information\n\
+         -v|--version: print version information\n\
          -h|--help: print this help message\n\
 Target: serial:<character device>\n\
         ssh:<address and port>\n\
@@ -75,7 +78,9 @@ int main(int argc, char *argv[])
   {
     case 'u': opt_user = optarg;
               break;
-    case 'v': printf("%s version 0.3.2\n", argv[0]);
+    case 'd': twopence_debug_level++;
+	      break;
+    case 'v': printf("%s version 0.3.3\n", argv[0]);
               exit(RC_OK);
     case 'h': usage(argv[0]);
               exit(RC_OK);

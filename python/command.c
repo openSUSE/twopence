@@ -23,6 +23,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <fcntl.h>
 
 #include "twopence.h"
+#include "utils.h"
 
 static void		Command_dealloc(twopence_Command *self);
 static PyObject *	Command_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
@@ -105,6 +106,9 @@ Command_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 	self->stderr = NULL;
 	self->stdin = NULL;
 	self->suppressOutput = 0;
+	self->useTty = 0;
+	self->background = false;
+	self->pid = 0;
 
 	return (PyObject *)self;
 }
@@ -128,24 +132,29 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 		"stdout",
 		"stderr",
 		"suppressOutput",
+		"background",
 		NULL
 	};
 	PyObject *stdinObject = NULL, *stdoutObject = NULL, *stderrObject = NULL;
 	char *command, *user = NULL;
 	long timeout = 0L;
 	int suppressOutput = 0;
+	int background = 0;
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|slOOOi", kwlist, &command, &user, &timeout, &stdinObject, &stdoutObject, &stderrObject, &suppressOutput))
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|slOOOii", kwlist,
+				&command, &user, &timeout, &stdinObject, &stdoutObject, &stderrObject, &suppressOutput,
+				&background))
 		return -1;
 
-	self->command = strdup(command);
-	self->user = user? strdup(user) : NULL;
+	self->command = twopence_strdup(command);
+	self->user = user? twopence_strdup(user) : NULL;
 	self->timeout = timeout? timeout: 60L;
 	self->stdout = NULL;
 	self->stderr = NULL;
 	self->stdinPath = NULL;
 	self->stdin = NULL;
 	self->suppressOutput = suppressOutput;
+	self->background = background;
 
 	if (stdoutObject == NULL) {
 		stdoutObject = twopence_callType(&PyByteArray_Type, NULL, NULL);
@@ -168,7 +177,7 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 
 		if ((s = PyString_AsString(stdinObject)) == NULL)
 			return -1;
-		self->stdinPath = strdup(s);
+		self->stdinPath = twopence_strdup(s);
 	} else {
 		Py_INCREF(stdinObject);
 		self->stdin = stdinObject;
@@ -253,6 +262,7 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 	cmd->user = self->user;
 	cmd->timeout = self->timeout;
 	cmd->request_tty = self->useTty;
+	cmd->background = self->background;
 
 	twopence_command_ostreams_reset(cmd);
 	if (self->suppressOutput || self->stdout == Py_None) {
@@ -293,6 +303,22 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 	if (self->stdin) {
 		if (!Command_redirect_iostream(cmd, TWOPENCE_STDIN, self->stdin, NULL))
 			return -1;
+	} else
+	if (!self->background) {
+		/* Eric wants us to pipe stdin into the command by default */
+		FILE *fp;
+		int fd;
+
+		fp = PySys_GetFile("stdin", NULL);
+		if (fp != NULL) {
+			if ((fd = fileno(fp)) < 0) {
+				PyErr_SetString(PyExc_SystemError, "cannot connect command to stdin (not a regular file)");
+				return -1;
+			}
+			/* We dup() the file descriptor so that we no longer have to worry
+			 * about what python does with its File object */
+			twopence_command_iostream_redirect(cmd, TWOPENCE_STDIN, dup(fd), true);
+		}
 	}
 
 	return 0;
@@ -340,15 +366,17 @@ static PyObject *
 Command_getattr(twopence_Command *self, char *name)
 {
 	if (!strcmp(name, "commandline"))
-		return PyString_FromString(self->command);
+		return return_string_or_none(self->command);
 	if (!strcmp(name, "user"))
-		return PyString_FromString(self->user);
+		return return_string_or_none(self->user);
 	if (!strcmp(name, "timeout"))
 		return PyInt_FromLong(self->timeout);
 	if (!strcmp(name, "stdout"))
 		return Command_stdout(self);
 	if (!strcmp(name, "stderr"))
 		return Command_stderr(self);
+	if (!strcmp(name, "pid"))
+		return PyInt_FromLong(self->pid);
 	if (!strcmp(name, "useTty")) {
 		PyObject *rv;
 

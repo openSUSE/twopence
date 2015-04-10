@@ -1,0 +1,12 @@
+#!/bin/bash
+#
+# Simple long-running test:
+# loop forever until you hit a problem (or until the user hits Ctrl-C :-)
+
+while true; do
+	for plugin in virtio ssh tcp; do
+		for test in shell_test.sh python_test.py; do
+			./run-one $plugin ./$test </dev/null || exit 1
+		done
+	done
+done

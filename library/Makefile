@@ -1,6 +1,6 @@
 .PHONY: all install clean
 
-VERSION	= 0.3.2
+VERSION	= 0.3.3
 
 ifdef RPM_OPT_FLAGS
 CCOPT	= $(RPM_OPT_FLAGS)
@@ -13,7 +13,20 @@ CFLAGS	= -D_GNU_SOURCE -fPIC $(CCOPT)
 LIBDIR ?= /usr/lib64
 INCDIR ?= /usr/include
 
-LIB_OBJS= twopence.o ssh.o virtio.o serial.o protocol.o buffer.o
+LIB_OBJS= twopence.o \
+	  ssh.o \
+	  virtio.o \
+	  serial.o \
+	  tcp.o \
+	  pipe.o \
+	  transaction.o \
+	  protocol.o \
+	  connection.o \
+	  iostream.o \
+	  socket.o \
+	  buffer.o \
+	  logging.o \
+	  utils.o
 
 all: libtwopence.so
 
@@ -25,6 +38,8 @@ install: libtwopence.so twopence.h
 	install -m555 libtwopence.so $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION)
 	mkdir -p $(DESTDIR)$(INCDIR)/twopence
 	install -m444 twopence.h buffer.h $(DESTDIR)$(INCDIR)/twopence
+	mkdir -p $(DESTDIR)$(MANDIR)/man3
+	gzip -c twopence.3 > $(DESTDIR)$(MANDIR)/man3/twopence.3.gz
 
 clean:
 	rm -f *.o *.so

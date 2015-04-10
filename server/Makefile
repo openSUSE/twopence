@@ -9,10 +9,7 @@ endif
 BINDIR ?= /usr/bin
 SERVER	= twopence_test_server
 OBJS	= main.o \
-	  connection.o \
-	  protocol.o \
-	  server.o \
-	  socket.o
+	  server.o
 
 CFLAGS	= -D_GNU_SOURCE -I../library $(CCOPT)
 LIBS	= -L../library -ltwopence

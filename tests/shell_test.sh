@@ -9,6 +9,7 @@
 ##########################################################
 
 TESTUSER=testuser
+TESTUMASK=022
 
 if [ $# -gt 0 ]; then
 	TARGET=$1
@@ -125,6 +126,9 @@ function test_case_report {
 	unset test_case_status
 }
 
+# Permission check tests assume that our umask is set
+umask $TESTUMASK
+
 test_case_begin "command 'ls -l /'"
 twopence_command $TARGET 'ls -l /'
 test_case_check_status $?
@@ -141,7 +145,6 @@ if test_case_check_status $?; then
 fi
 test_case_report
 
-
 test_case_begin "run command as $TESTUSER"
 username=`twopence_command -u $TESTUSER -b $TARGET 'id -un'`
 if test_case_check_status $?; then
@@ -153,6 +156,23 @@ if test_case_check_status $?; then
 fi
 test_case_report
 
+test_case_begin "Run command 100 times just for kicks"
+hostname=""
+for iter in `seq 1 100`; do
+	name=`twopence_command -b $TARGET 'hostname -f'`
+	if ! test_case_check_status $?; then
+		break
+	fi
+
+	if [ "$iter" -eq 1 ]; then
+		hostname=$name
+	elif [ "$hostname" != "$name" ]; then
+		test_case_fail "Output of hostname -f changed during execution"
+		echo "changed from \"$hostname\" to \"$name\"" >&2
+		break
+	fi
+done
+test_case_report
 
 test_case_begin "silent command 'ping -c1 127.0.0.1'"
 twopence_command -q $TARGET 'ping -c1 127.0.0.1'
@@ -174,6 +194,61 @@ else
 fi
 test_case_report
 rm -f expect.txt got.txt
+
+# If wildcard is not supported, the ls command should exit with an error
+# because there's no file named '*'
+test_case_begin "Verify that wildcarding works"
+twopence_command $TARGET 'ls *' >/dev/null
+test_case_check_status $?
+test_case_report
+
+test_case_begin "Verify that environment passing works"
+case $TARGET in
+ssh:*)	test_case_skip "Environment passing currently usually doesn't work with ssh";;
+*)
+	export TWOPENCE_TEST_VAR=lallaballa
+	twopence_command --setenv TWOPENCE_TEST_VAR -1 stdout.txt $TARGET 'echo $TWOPENCE_TEST_VAR'
+	test_case_check_status $?
+	output=`cat stdout.txt`
+	if [ "$output" = "$TWOPENCE_TEST_VAR" ]; then
+		echo "Good, command output is \"$output\" (as expected)"
+	else
+		test_case_fail "unexpected output from command: $output"
+	fi
+	rm -f stdout.txt stderr.txt
+	: ;;
+esac
+test_case_report
+
+test_case_begin "Verify that environment passing works (#2)"
+case $TARGET in
+ssh:*)	test_case_skip "Environment passing currently usually doesn't work with ssh";;
+*)
+	export TWOPENCE_TEST_VAR=lallaballa
+	twopence_command --setenv TWOPENCE_TEST_VAR=othervalue -1 stdout.txt $TARGET 'echo $TWOPENCE_TEST_VAR'
+	test_case_check_status $?
+	output=`cat stdout.txt`
+	if [ "$output" = "othervalue" ]; then
+		echo "Good, command output is \"$output\" (as expected)"
+	else
+		test_case_fail "unexpected output from command: $output"
+	fi
+	rm -f stdout.txt stderr.txt
+	: ;;
+esac
+test_case_report
+
+test_case_begin "Verify that environment passing works (#2)"
+case $TARGET in
+ssh:*)	test_case_skip "Environment passing currently usually doesn't work with ssh";;
+*)
+	test_case_begin "Verify that PATH variable passing works"
+	echo "The following command should fail because of an invalid PATH setting"
+	twopence_command --setenv PATH=/does/not/exist $TARGET 'ls'
+	test_case_check_status $? 9
+	: ;;
+esac
+test_case_report
 
 test_case_begin "command 'ls -l /oops'"
 twopence_command -1 stdout.txt -2 stderr.txt $TARGET 'ls -l /oops'
@@ -229,12 +304,55 @@ if [ $? -eq 0 ]; then
 fi
 test_case_report
 
+#
+# This doesn't really belong here, but OTOH we need to run python with a
+# specific stdin...
+#
+test_case_begin "ensure that running commands through python will also read from stdin"
+cat >/tmp/twopence-test.py <<EOF
+import twopence
+import sys
+
+target = twopence.Target("$TARGET");
+target.run("cat")
+EOF
+
+teststring="imadoofus"
+echo $teststring | python /tmp/twopence-test.py | (
+	read foo
+	if [ -z "$foo" ]; then
+		echo "No output from command"
+		exit 1
+	fi
+	if [ "$foo" != "$teststring" ]; then
+		echo "Unexpected output from command"
+		echo "--<<<--"
+		echo $foo
+		echo "-->>>--"
+		echo "Expected \"$teststring\""
+		exit 1
+	fi
+
+	echo "Good, received expected output \"$teststring\""
+	exit 0
+)
+test_case_check_status $?
+test_case_report
+rm -f /tmp/twopence-test.py
+
 test_case_begin "extract '$server_test_file' => 'etc_services.txt'"
 twopence_extract $TARGET $server_test_file etc_services.txt
 test_case_check_status $?
 if ! cmp /etc/services etc_services.txt; then
 	test_case_fail "/etc/services and etc_services.txt differ"
 	diff -u /etc/services etc_services.txt | head -50
+fi
+
+have_perms=`stat -c 0%a etc_services.txt`
+let want_perms="0666 & ~$TESTUMASK"
+want_perms=`printf "0%o" $want_perms`
+if [ $have_perms -ne $want_perms ]; then
+	test_case_fail "etc_services.txt has unexpected permissions $have_perms (wanted $want_perms)"
 fi
 rm -f etc_services.txt
 test_case_report
@@ -360,7 +478,31 @@ elif [ $elapsed -gt 11 ]; then
 fi
 test_case_report
 
+# Run a command that takes longer than the default keepalive timeout.
+# This should "just work"
+test_case_begin "making sure that link keepalives are delivered"
+case $TARGET in
+ssh:*)	test_case_skip "Keepalives are not available with ssh; so no testing them";;
+*)	twopence_command --timeout=120 $TARGET "sleep 65"
+	test_case_check_status $? 0
+esac
+test_case_report
+
+# Run a command that takes longer than the default keepalive timeout, and disable
+# sending of keepalives on the client side (the magic keepalive value of "-2" is
+# just for testing purposes).
+# This should cause the server to close the connection due to inactivity.
+test_case_begin "make sure that the server drops the link in the absence of keepalives"
+case $TARGET in
+ssh:*)	test_case_skip "Keepalives are not available with ssh; so no testing them";;
+*)	twopence_command --keepalive=-2 --timeout=120 $TARGET "sleep 65"
+	test_case_check_status $? 8
+esac
+test_case_report
+
+
 test_case_begin "test SIGINT handling"
+t0=`date +%s`
 twopence_command_background $TARGET "sleep 5"
 pid=$!
 sleep 1
@@ -369,6 +511,36 @@ ps hup $pid
 kill -INT $pid
 wait $pid
 test_case_check_status $? 9
+t1=`date +%s`
+let elapsed=$t1-$t0
+if [ $elapsed -ge 5 ]; then
+	test_case_warn "test case took $elapsed seconds to complete (looks like we waited for the command to finish)"
+fi
+test_case_report
+
+test_case_begin "make sure server side command is gone after signalling"
+twopence_command_background -u $TESTUSER $TARGET "sleep 20"
+pid=$!
+sleep 1
+echo "Sending SIGINT to $pid"
+ps hup $pid
+kill -INT $pid
+wait $pid
+test_case_check_status $? 9
+
+sleep 1
+echo "Checking if the command is still running"
+if twopence_command $TARGET "ps aux" | grep "^testuser.*sleep 20$"; then
+	case $TARGET in
+	ssh:*)
+		test_case_warn "command is still running"
+		echo "For ssh, this is expected, unfortunately";;
+	*)
+		test_case_fail "command is still running"
+	esac
+else
+	echo "Good, the command is no longer running on the server"
+fi
 test_case_report
 
 cat<<EOF

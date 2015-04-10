@@ -22,6 +22,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define TWOPENCE_H
 
 #include <stdbool.h>
+#include <stdio.h>
 #include "buffer.h"
 
 struct pollfd;
@@ -31,25 +32,28 @@ struct pollfd;
 #define TWOPENCE_API_MAJOR_VERSION	0
 #define TWOPENCE_API_MINOR_VERSION	3
 
-// Error codes
-#define TWOPENCE_PARAMETER_ERROR             -1
-#define TWOPENCE_OPEN_SESSION_ERROR          -2
-#define TWOPENCE_SEND_COMMAND_ERROR          -3
-#define TWOPENCE_FORWARD_INPUT_ERROR         -4
-#define TWOPENCE_RECEIVE_RESULTS_ERROR       -5
-#define TWOPENCE_COMMAND_TIMEOUT_ERROR       -6
-#define TWOPENCE_LOCAL_FILE_ERROR            -7
-#define TWOPENCE_SEND_FILE_ERROR             -8
-#define TWOPENCE_REMOTE_FILE_ERROR           -9
-#define TWOPENCE_RECEIVE_FILE_ERROR         -10
-#define TWOPENCE_INTERRUPT_COMMAND_ERROR    -11
-#define TWOPENCE_INVALID_TARGET_ERROR       -12
-#define TWOPENCE_UNKNOWN_PLUGIN_ERROR       -13
-#define TWOPENCE_INCOMPATIBLE_PLUGIN_ERROR  -14
-#define TWOPENCE_UNSUPPORTED_FUNCTION_ERROR -15
-#define TWOPENCE_PROTOCOL_ERROR             -16
+/* Error codes */
+#define TWOPENCE_PARAMETER_ERROR		-1
+#define TWOPENCE_OPEN_SESSION_ERROR		-2
+#define TWOPENCE_SEND_COMMAND_ERROR		-3
+#define TWOPENCE_FORWARD_INPUT_ERROR		-4
+#define TWOPENCE_RECEIVE_RESULTS_ERROR		-5
+#define TWOPENCE_COMMAND_TIMEOUT_ERROR		-6
+#define TWOPENCE_LOCAL_FILE_ERROR		-7
+#define TWOPENCE_SEND_FILE_ERROR		-8
+#define TWOPENCE_REMOTE_FILE_ERROR		-9
+#define TWOPENCE_RECEIVE_FILE_ERROR		-10
+#define TWOPENCE_INTERRUPT_COMMAND_ERROR	-11
+#define TWOPENCE_INVALID_TARGET_ERROR		-12
+#define TWOPENCE_UNKNOWN_PLUGIN_ERROR		-13
+#define TWOPENCE_INCOMPATIBLE_PLUGIN_ERROR	-14
+#define TWOPENCE_UNSUPPORTED_FUNCTION_ERROR	-15
+#define TWOPENCE_PROTOCOL_ERROR			-16
+#define TWOPENCE_INTERNAL_ERROR			-17
+#define TWOPENCE_TRANSPORT_ERROR		-18
+#define TWOPENCE_INCOMPATIBLE_PROTOCOL_ERROR	-19
 
-struct twopence_target;
+typedef struct twopence_target twopence_target_t;
 
 /*
  * Executing commands on the SUT always returns two status words -
@@ -71,7 +75,7 @@ typedef struct twopence_status {
 } twopence_status_t;
 
 /* Forward decls for the plugin functions */
-struct twopence_command;
+typedef struct twopence_command twopence_command_t;
 typedef struct twopence_iostream twopence_iostream_t;
 typedef struct twopence_file_xfer twopence_file_xfer_t;
 
@@ -79,7 +83,10 @@ struct twopence_plugin {
 	const char *		name;
 
 	struct twopence_target *(*init)(const char *);
+	int			(*set_option)(struct twopence_target *, int, const void *);
+
 	int			(*run_test)(struct twopence_target *, struct twopence_command *, twopence_status_t *);
+	int			(*wait)(struct twopence_target *, int, twopence_status_t *);
 
 	int			(*inject_file)(struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);
 	int			(*extract_file)(struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);
@@ -93,6 +100,7 @@ enum {
 	TWOPENCE_PLUGIN_VIRTIO = 0,
 	TWOPENCE_PLUGIN_SSH = 1,
 	TWOPENCE_PLUGIN_SERIAL = 2,
+	TWOPENCE_PLUGIN_TCP = 3,
 
 	__TWOPENCE_PLUGIN_MAX
 };
@@ -100,6 +108,7 @@ enum {
 extern const struct twopence_plugin twopence_ssh_ops;
 extern const struct twopence_plugin twopence_virtio_ops;
 extern const struct twopence_plugin twopence_serial_ops;
+extern const struct twopence_plugin twopence_tcp_ops;
 
 /*
  * Output related data types.
@@ -123,45 +132,16 @@ struct twopence_iostream {
 	unsigned int		count;
 	twopence_substream_t *	substream[TWOPENCE_IOSTREAM_MAX_SUBSTREAMS];
 };
-#define TWOPENCE_SINK_CHAIN_INIT	{ .eof = false, .count = 0 }
 
-typedef struct twopence_io_ops twopence_io_ops_t;
-struct twopence_io_ops {
-	void			(*close)(twopence_substream_t *);
-	int			(*write)(twopence_substream_t *, const void *, size_t);
-	int			(*read)(twopence_substream_t *, void *, size_t);
-	int			(*set_blocking)(twopence_substream_t *, bool);
-	int			(*poll)(twopence_substream_t *, struct pollfd *, int);
-	long			(*filesize)(twopence_substream_t *);
-};
+typedef struct twopence_env {
+	unsigned int		count;
+	char **			array;
+} twopence_env_t;
 
-struct twopence_substream {
-	const twopence_io_ops_t *ops;
-	union {
-	    struct {
-	        twopence_buf_t *buffer;
-		bool		resizable;
-	    };
-	    struct {
-	        int		fd;
-		bool		close;
-	    };
-	};
-};
-
-typedef struct twopence_command twopence_command_t;
 struct twopence_command {
-	/* For now, we specify the command as a single string.
-	 * It would have been nicer to be able to pass the argv,
-	 * but the protocol doesn't support this yet. --okir
-	 *
-	 * I don't think it would be nicer, for example Cheetah
-	 * (https://github.com/openSUSE/cheetah/blob/master/README.md)
-	 * has you pass individual arguments, and from a
-	 * practical point of view, I find it tedious.
-	 * Example: Cheetah.run("ls", "-la", :stdout => stdout)
-	 * In pennyworth, they did efforts to make it
-	 * a single string again :-) . --ebischoff
+	/* Specify the command as a single string.
+	 * This gets passed to /bin/sh on the remote end, so wildcards,
+	 * shell expansion etc is fully supported.
 	 */
 	const char *		command;
 
@@ -175,12 +155,15 @@ struct twopence_command {
 	 * May be needed for some commands to behave properly */
 	bool			request_tty;
 
-	/* FIXME: support passing environment variables to the command --okir
-	 *
-         * For the time being we can start "bash" as a command
-	 *  and pass the environment variables that way,
-	 *  but I agree it is suboptimal, putting on TODO. --ebischoff
+	/* Do not wait for the command to finish, but execute it in
+	 * the background.
 	 */
+	bool			background;
+
+	/* This is the set of environment variables being
+	 * passed from the client to the server.
+	 */
+	twopence_env_t		env;
 
 	/* How to handle the command's standard I/O.
 	 * stdin defaults to no input, stdout and stderr default to
@@ -188,7 +171,7 @@ struct twopence_command {
 	 */
 	twopence_iostream_t	iostream[__TWOPENCE_IO_MAX];
 
-	twopence_buf_t	buffer[__TWOPENCE_IO_MAX];
+	twopence_buf_t		buffer[__TWOPENCE_IO_MAX];
 };
 
 typedef struct twopence_remote_file twopence_remote_file_t;
@@ -215,12 +198,12 @@ struct twopence_file_xfer {
 struct twopence_target {
 	unsigned int		plugin_type;
 
-	/* Data related to current command */
-	struct {
-	    twopence_iostream_t *io;
-	} current;
-
 	const struct twopence_plugin *ops;
+
+	/* This is the default environment that is
+	 * being passed to the server on all
+	 * remote command executions. */
+	twopence_env_t		env;
 };
 
 /*
@@ -241,13 +224,57 @@ struct twopence_target {
 extern int		twopence_target_new(const char *target_spec, struct twopence_target **ret);
 
 /*
+ * Set target-specific options
+ *
+ * Currently, the only use we have for this is to tune the keepalive
+ * values; and the only reason we want to do this is to test keepalive :-)
+ * Not sure whether this warrant a first-class interface, but I had
+ * no better idea.
+ */
+extern int		twopence_target_set_option(struct twopence_target *,
+					int option, const void *value_p);
+
+enum {
+	TWOPENCE_TARGET_OPTION_KEEPALIVE = 0,	/* value_p is an int pointer */
+};
+
+/*
+ * Set default environment variables passed to each command executed
+ */
+extern void		twopence_target_setenv(twopence_target_t *target,
+					const char *name, const char *value);
+
+/*
+ * Specify environment variables to be passed from the applications
+ * environment to each command being executed.
+ * This is equivalent to calling
+ *   twopence_target_setenv(target, name, getenv(name));
+ */
+extern void		twopence_target_passenv(twopence_target_t *target,
+					const char *name);
+
+/*
  * Run the specified command and wait for it to complete.
  *
  * The @command parameter points to a struct specifying the command itself,
  * the user to run it as (defaults to root), which timeout (defaults to 60),
  * what file to pass it on standard input, and how to handle its output
+ *
+ * If the backend supports it, you can run commands in the background by setting
+ * command->background = true.
+ * This will assign a "pid" to the command, which will be returned.
  */
 extern int		twopence_run_test(struct twopence_target *, twopence_command_t *, twopence_status_t *);
+
+/*
+ * Wait for a previously backgrounded command to complete.
+ *
+ * Returns:
+ *  < 0:	an error occured
+ *  0:		no more processes
+ * either an error (negative) or the "pid" of the completed process.
+ */
+extern int		twopence_wait(struct twopence_target *, int, twopence_status_t *);
 
 /*
  * Run a test command, and print output
@@ -402,11 +429,20 @@ extern void		twopence_perror(const char *, int rc);
  */
 extern void		twopence_command_init(twopence_command_t *cmd, const char *cmdline);
 extern void		twopence_command_destroy(twopence_command_t *cmd);
-extern twopence_buf_t *twopence_command_alloc_buffer(twopence_command_t *, twopence_iofd_t, size_t);
+extern void		twopence_command_setenv(twopence_command_t *cmd, const char *name, const char *value);
+extern void		twopence_command_passenv(twopence_command_t *cmd, const char *name);
+extern void		twopence_command_merge_default_env(twopence_command_t *cmd, const twopence_env_t *def_env);
+extern twopence_buf_t *	twopence_command_alloc_buffer(twopence_command_t *, twopence_iofd_t, size_t);
 extern void		twopence_command_ostreams_reset(twopence_command_t *);
 extern void		twopence_command_ostream_reset(twopence_command_t *, twopence_iofd_t);
 extern void		twopence_command_ostream_capture(twopence_command_t *, twopence_iofd_t, twopence_buf_t *);
 extern void		twopence_command_iostream_redirect(twopence_command_t *, twopence_iofd_t, int, bool closeit);
+
+extern void		twopence_env_set(twopence_env_t *, const char *name, const char *value);
+extern void		twopence_env_unset(twopence_env_t *, const char *name);
+extern void		twopence_env_pass(twopence_env_t *, const char *name);
+extern void		twopence_env_merge_inferior(twopence_env_t *env, const twopence_env_t *def_env);
+extern void		twopence_env_destroy(twopence_env_t *);
 
 /*
  * Utilitiy functions for the xfer struct
@@ -417,11 +453,6 @@ extern void		twopence_file_xfer_destroy(twopence_file_xfer_t *xfer);
 /*
  * Output handling functions
  */
-extern twopence_iostream_t *twopence_target_stream(struct twopence_target *, twopence_iofd_t);
-extern int		twopence_target_set_blocking(struct twopence_target *, twopence_iofd_t, bool);
-extern int		twopence_target_putc(struct twopence_target *, twopence_iofd_t, char);
-extern int		twopence_target_write(struct twopence_target *, twopence_iofd_t, const char *, size_t);
-
 extern int		twopence_iostream_open_file(const char *filename, twopence_iostream_t **ret);
 extern int		twopence_iostream_create_file(const char *filename, unsigned int permissions, twopence_iostream_t **ret);
 extern int		twopence_iostream_wrap_fd(int fd, bool closeit, twopence_iostream_t **ret);
@@ -438,10 +469,30 @@ extern twopence_buf_t *	twopence_iostream_read_all(twopence_iostream_t *);
 extern int		twopence_iostream_set_blocking(twopence_iostream_t *, bool);
 extern int		twopence_iostream_poll(twopence_iostream_t *, struct pollfd *, int mask);
 extern long		twopence_iostream_filesize(twopence_iostream_t *);
+extern int		twopence_iostream_getfd(twopence_iostream_t *);
 
 extern twopence_substream_t *twopence_substream_new_buffer(twopence_buf_t *, bool resizable);
 extern twopence_substream_t *twopence_substream_new_fd(int fd, bool closeit);
 extern void		twopence_substream_close(twopence_substream_t *);
 
+/*
+ * Logging functions
+ */
+extern void		twopence_logging_init();
+extern void		twopence_set_logfile(FILE *fp);
+extern void		twopence_set_syslog(bool on);
+extern void		twopence_trace(const char *fmt, ...);
+extern void		twopence_log_error(const char *fmt, ...);
+extern void		twopence_log_warning(const char *fmt, ...);
+
+extern unsigned int	twopence_debug_level;
+
+#define __twopence_debug(level, fmt...) \
+			do { \
+				if (twopence_debug_level >= level) \
+					twopence_trace(fmt); \
+			} while (0)
+#define twopence_debug(fmt...)   __twopence_debug(1, fmt)
+#define twopence_debug2(fmt...)  __twopence_debug(2, fmt)
 
 #endif /* TWOPENCE_H */

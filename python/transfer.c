@@ -23,6 +23,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <fcntl.h>
 
 #include "twopence.h"
+#include "utils.h"
 
 static void		Transfer_dealloc(twopence_Transfer *self);
 static PyObject *	Transfer_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
@@ -128,9 +129,9 @@ Transfer_init(twopence_Transfer *self, PyObject *args, PyObject *kwds)
 	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|ssllO", kwlist, &remotefile, &user, &localfile, &permissions, &timeout, &bufferObject))
 		return -1;
 
-	self->remote_filename = strdup(remotefile);
-	self->local_filename = localfile? strdup(localfile) : NULL;
-	self->user = user? strdup(user) : NULL;
+	self->remote_filename = twopence_strdup(remotefile);
+	self->local_filename = localfile? twopence_strdup(localfile) : NULL;
+	self->user = user? twopence_strdup(user) : NULL;
 	self->permissions = permissions;
 	self->timeout = timeout;
 	self->buffer = bufferObject;
@@ -240,11 +241,11 @@ static PyObject *
 Transfer_getattr(twopence_Transfer *self, char *name)
 {
 	if (!strcmp(name, "remotefile"))
-		return PyString_FromString(self->remote_filename);
+		return return_string_or_none(self->remote_filename);
 	if (!strcmp(name, "localfile"))
-		return PyString_FromString(self->local_filename);
+		return return_string_or_none(self->local_filename);
 	if (!strcmp(name, "user"))
-		return PyString_FromString(self->user);
+		return return_string_or_none(self->user);
 	if (!strcmp(name, "permissions"))
 		return PyInt_FromLong(self->permissions);
 	if (!strcmp(name, "timeout"))

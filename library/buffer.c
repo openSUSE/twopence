@@ -23,6 +23,7 @@
 #include <assert.h>
 
 #include "buffer.h"
+#include "utils.h"
 
 void
 twopence_buf_init(twopence_buf_t *bp)
@@ -49,7 +50,7 @@ twopence_buf_new(size_t size)
 {
 	twopence_buf_t *bp;
 
-	bp = calloc(1, sizeof(*bp) + size);
+	bp = twopence_calloc(1, sizeof(*bp) + size);
 	bp->base = (char *)(bp + 1);
 	bp->size = size;
 	return bp;
@@ -62,7 +63,7 @@ twopence_buf_clone(twopence_buf_t *bp)
 	twopence_buf_t *clone;
 
 	clone = twopence_buf_new(count);
-	twopence_buf_append(clone, bp->base, count);
+	twopence_buf_append(clone, bp->base + bp->head, count);
 	return clone;
 }
 
@@ -146,7 +147,7 @@ twopence_buf_resize(twopence_buf_t *bp, unsigned int want_size)
 
 	assert(want_size <= new_size);
 
-	bp->base = realloc(bp->base, new_size);
+	bp->base = twopence_realloc(bp->base, new_size);
 	assert(bp->base);
 
 	bp->size = new_size;
@@ -214,11 +215,41 @@ twopence_buf_append(twopence_buf_t *bp, const void *data, unsigned int len)
 }
 
 bool
+twopence_buf_get(twopence_buf_t *bp, void *data, unsigned int len)
+{
+	if (twopence_buf_count(bp) < len)
+		return false;
+
+	memcpy(data, bp->base + bp->head, len);
+	bp->head += len;
+	return true;
+}
+
+bool
 twopence_buf_puts(twopence_buf_t *bp, const char *s)
 {
 	if (!s)
 		return true;
 	return twopence_buf_append(bp, s, strlen(s) + 1);
+}
+
+const char *
+twopence_buf_gets(twopence_buf_t *bp)
+{
+	const char *s = (const char *) twopence_buf_head(bp);
+	unsigned int n, count = twopence_buf_count(bp);
+
+	if (count == 0)
+		return NULL;
+
+	/* Find the terminating NUL. If there is no NUL byte, this is an error */
+	for (n = 0; s[n]; ++n) {
+		if (n >= count)
+			return NULL;
+	}
+
+	bp->head += n + 1;
+	return s;
 }
 
 void

@@ -17,20 +17,17 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
 #include <malloc.h>
-#include <ctype.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
-#include <sys/poll.h>
+#include <stdlib.h>
+#include <assert.h>
 
 #include "twopence.h"
-
-
-static void	__twopence_setup_stdout(struct twopence_target *target);
+#include "utils.h"
 
 
 int
@@ -42,6 +39,8 @@ twopence_plugin_type(const char *plugin_name)
     return TWOPENCE_PLUGIN_SSH;
   if (!strcmp(plugin_name, "serial"))
     return TWOPENCE_PLUGIN_SERIAL;
+  if (!strcmp(plugin_name, "tcp"))
+    return TWOPENCE_PLUGIN_TCP;
 
   return TWOPENCE_PLUGIN_UNKNOWN;
 }
@@ -96,6 +95,7 @@ __twopence_get_plugin_ops(const char *name, const struct twopence_plugin **ret)
   [TWOPENCE_PLUGIN_VIRTIO]	= &twopence_virtio_ops,
   [TWOPENCE_PLUGIN_SERIAL]	= &twopence_serial_ops,
   [TWOPENCE_PLUGIN_SSH]		= &twopence_ssh_ops,
+  [TWOPENCE_PLUGIN_TCP]		= &twopence_tcp_ops,
   };
   int type;
 
@@ -146,7 +146,7 @@ twopence_target_new(const char *target_spec, struct twopence_target **ret)
   char *spec_copy;
   int rv;
 
-  spec_copy = strdup(target_spec);
+  spec_copy = twopence_strdup(target_spec);
   rv = __twopence_target_new(spec_copy, ret);
   free(spec_copy);
 
@@ -164,49 +164,36 @@ twopence_target_free(struct twopence_target *target)
 }
 
 /*
- * target level output functions
+ * Set target specific options
  */
-twopence_iostream_t *
-twopence_target_stream(struct twopence_target *target, twopence_iofd_t dst)
+int
+twopence_target_set_option(struct twopence_target *target, int option, const void *value_p)
 {
-  if (0 <= dst && dst < __TWOPENCE_IO_MAX
-   && target->current.io != NULL)
-    return &target->current.io[dst];
+  if (target->ops->set_option == NULL)
+    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 
-  return NULL;
+  if (value_p == NULL)
+    return TWOPENCE_PARAMETER_ERROR;
+
+  return target->ops->set_option(target, option, value_p);
 }
 
-int
-twopence_target_set_blocking(struct twopence_target *target, twopence_iofd_t sel, bool blocking)
+/*
+ * Manipulate the default environment of a target.
+ * This default environment is passed to every command execution.
+ * Note: any environment variables defined in a command object
+ * take precedence of variables set in the targe's default env.
+ */
+void
+twopence_target_setenv(twopence_target_t *target, const char *name, const char *value)
 {
-  twopence_iostream_t *stream;
-
-  if ((stream = twopence_target_stream(target, sel)) == NULL)
-    return -1;
-
-  return twopence_iostream_set_blocking(stream, blocking);
+	twopence_env_set(&target->env, name, value);
 }
 
-int
-twopence_target_putc(struct twopence_target *target, twopence_iofd_t dst, char c)
+void
+twopence_target_passenv(twopence_target_t *target, const char *name)
 {
-  twopence_iostream_t *stream;
-
-  if ((stream = twopence_target_stream(target, dst)) == NULL)
-    return -1;
-
-  return twopence_iostream_putc(stream, c);
-}
-
-int
-twopence_target_write(struct twopence_target *target, twopence_iofd_t dst, const char *data, size_t len)
-{
-  twopence_iostream_t *stream;
-
-  if ((stream = twopence_target_stream(target, dst)) == NULL)
-    return -1;
-
-  return twopence_iostream_write(stream, data, len);
+	twopence_env_unset(&target->env, name);
 }
 
 /*
@@ -218,8 +205,6 @@ twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twope
   if (target->ops->run_test == NULL)
     return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 
-  target->current.io = NULL;
-
   /* Populate defaults. Instead of hard-coding them, we could also set
    * default values for a given target. */
   if (cmd->timeout == 0)
@@ -227,7 +212,18 @@ twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twope
   if (cmd->user == NULL)
     cmd->user = "root";
 
+  twopence_command_merge_default_env(cmd, &target->env);
+
   return target->ops->run_test(target, cmd, status);
+}
+
+int
+twopence_wait(struct twopence_target *target, int pid, twopence_status_t *status)
+{
+  if (target->ops->wait == NULL)
+    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
+
+  return target->ops->wait(target, pid, status);
 }
 
 int
@@ -360,11 +356,6 @@ twopence_send_file(struct twopence_target *target, twopence_file_xfer_t *xfer, t
   if (xfer->local_stream == NULL)
     return TWOPENCE_PARAMETER_ERROR;
 
-  /* Reset output, and connect with stdout if we want to see the dots get printed */
-  target->current.io = NULL;
-  if (xfer->print_dots)
-    __twopence_setup_stdout(target);
-
   if (xfer->user == NULL)
     xfer->user = "root";
   if (xfer->remote.mode == 0)
@@ -387,7 +378,7 @@ twopence_extract_file
   twopence_file_xfer_init(&xfer);
 
   /* Open the file */
-  rv = twopence_iostream_create_file(local_path, 0660, &xfer.local_stream);
+  rv = twopence_iostream_create_file(local_path, 0666, &xfer.local_stream);
   if (rv < 0)
     return rv;
 
@@ -410,11 +401,6 @@ twopence_recv_file(struct twopence_target *target, twopence_file_xfer_t *xfer, t
 
   if (xfer->local_stream == NULL)
     return TWOPENCE_PARAMETER_ERROR;
-
-  /* Reset output, and connect with stdout if we want to see the dots get printed */
-  target->current.io = NULL;
-  if (xfer->print_dots)
-    __twopence_setup_stdout(target);
 
   if (xfer->user == NULL)
     xfer->user = "root";
@@ -483,6 +469,12 @@ twopence_strerror(int rc)
       return "Operation not supported by the plugin";
     case TWOPENCE_PROTOCOL_ERROR:
       return "Twopence custom protocol error";
+    case TWOPENCE_INTERNAL_ERROR:
+      return "Internal error";
+    case TWOPENCE_TRANSPORT_ERROR:
+      return "Error sending or receiving data on socket";
+    case TWOPENCE_INCOMPATIBLE_PROTOCOL_ERROR:
+      return "Protocol versions not compatible between client and server";
   }
   return "Unknow error";
 }
@@ -578,6 +570,24 @@ twopence_command_iostream_redirect(twopence_command_t *cmd, twopence_iofd_t dst,
 }
 
 void
+twopence_command_setenv(twopence_command_t *cmd, const char *name, const char *value)
+{
+	twopence_env_set(&cmd->env, name, value);
+}
+
+void
+twopence_command_passenv(twopence_command_t *cmd, const char *name)
+{
+	twopence_env_unset(&cmd->env, name);
+}
+
+void
+twopence_command_merge_default_env(twopence_command_t *cmd, const twopence_env_t *def_env)
+{
+	twopence_env_merge_inferior(&cmd->env, def_env);
+}
+
+void
 twopence_command_destroy(twopence_command_t *cmd)
 {
   unsigned int i;
@@ -586,6 +596,113 @@ twopence_command_destroy(twopence_command_t *cmd)
     twopence_buf_destroy(&cmd->buffer[i]);
     twopence_iostream_destroy(&cmd->iostream[i]);
   }
+  twopence_env_destroy(&cmd->env);
+}
+
+/*
+ * Environment handling functions
+ */
+void
+twopence_env_init(twopence_env_t *env)
+{
+	memset(env, 0, sizeof(*env));
+}
+
+static void
+__twopence_env_append(twopence_env_t *env, const char *var)
+{
+	env->array = twopence_realloc(env->array, (env->count + 2) * sizeof(env->array[0]));
+	env->array[env->count++] = twopence_strdup(var);
+	env->array[env->count] = NULL;
+}
+
+static char *
+__twopence_env_get(const twopence_env_t *env, const char *name, unsigned int *pos)
+{
+	unsigned int len;
+	unsigned int i;
+
+	if (!name || !name[0])
+		return NULL;
+	len = strlen(name);
+
+	for (i = 0; i < env->count; ++i) {
+		char *var = env->array[i];
+
+		if (!strncmp(var, name, len) && var[len] == '=') {
+			if (pos)
+				*pos = i;
+			return var + len + 1;
+		}
+	}
+	return NULL;
+}
+
+void
+twopence_env_set(twopence_env_t *env, const char *name, const char *value)
+{
+	if (value == NULL) {
+		twopence_env_unset(env, name);
+	} else {
+		char buffer[1024];
+
+		snprintf(buffer, sizeof(buffer), "%s=%s", name, value);
+		__twopence_env_append(env, buffer);
+	}
+}
+
+void
+twopence_env_unset(twopence_env_t *env, const char *name)
+{
+	unsigned int pos, i;
+
+	while (__twopence_env_get(env, name, &pos) != NULL) {
+		free(env->array[pos]);
+		for (i = pos + 1; i < env->count; )
+			env->array[pos++] = env->array[i++];
+		env->array[pos] = NULL;
+		env->count = pos;
+	}
+}
+
+void
+twopence_env_pass(twopence_env_t *env, const char *name)
+{
+	twopence_env_set(env, name, getenv(name));
+}
+
+/*
+ * Merge a default environment to a command environment
+ */
+void
+twopence_env_merge_inferior(twopence_env_t *env, const twopence_env_t *def_env)
+{
+	unsigned int i, j;
+
+	for (i = 0; i < def_env->count; ++i) {
+		char *var = def_env->array[i];
+		unsigned int len;
+		bool found = false;
+
+		len = strcspn(var, "=") + 1;
+		for (j = 0; j < env->count && !found; ++j) {
+			if (!strncmp(env->array[j], var, len))
+				found = true;
+		}
+		if (!found)
+			__twopence_env_append(env, var);
+	}
+}
+
+void
+twopence_env_destroy(twopence_env_t *env)
+{
+	unsigned int i;
+
+	for (i = 0; i < env->count; ++i)
+		free(env->array[i]);
+	free(env->array);
+	memset(env, 0, sizeof(*env));
 }
 
 /*
@@ -605,555 +722,4 @@ twopence_file_xfer_destroy(twopence_file_xfer_t *xfer)
     twopence_iostream_free(xfer->local_stream);
     xfer->local_stream = NULL;
   }
-}
-
-/*
- * This is a helper function to set everything up so that inject/extract
- * will print dots while transferring data
- */
-static void
-__twopence_setup_stdout(struct twopence_target *target)
-{
-  static twopence_iostream_t dots_iostream[__TWOPENCE_IO_MAX];
-
-  if (dots_iostream[TWOPENCE_STDOUT].count == 0)
-    twopence_iostream_add_substream(&dots_iostream[TWOPENCE_STDOUT], twopence_substream_new_fd(1, false));
-
-  target->current.io = dots_iostream;
-}
-
-twopence_iostream_t *
-twopence_iostream_new(void)
-{
-  twopence_iostream_t *stream;
-
-  stream = calloc(1, sizeof(*stream));
-  return stream;
-}
-
-void
-twopence_iostream_free(twopence_iostream_t *stream)
-{
-  twopence_iostream_destroy(stream);
-  free(stream);
-}
-
-static int
-__twopence_iostream_open_file(const char *filename, int mode, unsigned int permissions, twopence_iostream_t **ret)
-{
-  int fd;
-
-  fd = open(filename, mode, permissions);
-  if (fd == -1)
-    return errno == ENAMETOOLONG?  TWOPENCE_PARAMETER_ERROR: TWOPENCE_LOCAL_FILE_ERROR;
-
-  *ret = twopence_iostream_new();
-  twopence_iostream_add_substream(*ret, twopence_substream_new_fd(fd, true));
-
-  return 0;
-}
-
-int
-twopence_iostream_open_file(const char *filename, twopence_iostream_t **ret)
-{
-	return __twopence_iostream_open_file(filename, O_RDONLY, 0, ret);
-}
-
-int
-twopence_iostream_create_file(const char *filename, unsigned int permissions, twopence_iostream_t **ret)
-{
-	return __twopence_iostream_open_file(filename, O_CREAT|O_TRUNC|O_WRONLY, 0, ret);
-}
-
-int
-twopence_iostream_wrap_fd(int fd, bool closeit, twopence_iostream_t **ret)
-{
-  *ret = twopence_iostream_new();
-  twopence_iostream_add_substream(*ret, twopence_substream_new_fd(fd, closeit));
-  return 0;
-}
-
-int
-twopence_iostream_wrap_buffer(twopence_buf_t *bp, bool resizable, twopence_iostream_t **ret)
-{
-  *ret = twopence_iostream_new();
-  twopence_iostream_add_substream(*ret, twopence_substream_new_buffer(bp, resizable));
-  return 0;
-}
-
-void
-twopence_iostream_add_substream(twopence_iostream_t *stream, twopence_substream_t *substream)
-{
-  if (stream->count >= TWOPENCE_IOSTREAM_MAX_SUBSTREAMS) {
-    twopence_substream_close(substream);
-    free(substream);
-    return;
-  }
-
-  stream->substream[stream->count++] = substream;
-}
-
-void
-twopence_iostream_destroy(twopence_iostream_t *stream)
-{
-  unsigned int i;
-
-  for (i = 0; i < stream->count; ++i) {
-    twopence_substream_t *substream = stream->substream[i];
-
-    twopence_substream_close(substream);
-    free(substream);
-  }
-  memset(stream, 0, sizeof(*stream));
-}
-
-long
-twopence_iostream_filesize(twopence_iostream_t *stream)
-{
-  twopence_substream_t *substream;
-
-  if (stream->count != 1)
-    return TWOPENCE_LOCAL_FILE_ERROR;
-
-  substream = stream->substream[0];
-  if (substream->ops->filesize == NULL)
-    return TWOPENCE_LOCAL_FILE_ERROR;
-
-  return substream->ops->filesize(substream);
-}
-
-/*
- * Buffering functions
- */
-static unsigned int
-__twopence_buffer_put(twopence_buf_t *bp, const void *data, size_t len)
-{
-  size_t tailroom;
-
-  tailroom = twopence_buf_tailroom(bp);
-  if (len > tailroom)
-    len = tailroom;
-
-  twopence_buf_append(bp, data, len);
-  return len;
-}
-
-/*
- * Check if iostream is at EOF
- */
-bool
-twopence_iostream_eof(const twopence_iostream_t *stream)
-{
-  return stream->eof;
-}
-
-/*
- * Tune blocking behavior of iostream
- */
-int
-twopence_iostream_set_blocking(twopence_iostream_t *stream, bool blocking)
-{
-  int was_blocking = 0;
-  unsigned int i;
-
-  if (stream->eof || stream->count == 0)
-    return false;
-
-  for (i = 0; i < stream->count; ++i) {
-    twopence_substream_t *substream = stream->substream[i];
-
-    if (substream->ops == NULL)
-       continue;
-    if (substream->ops->set_blocking == NULL)
-      return -1;
-
-    was_blocking = substream->ops->set_blocking(substream, blocking);
-  }
-
-  return was_blocking;
-}
-
-/*
- * Fill a pollfd struct
- * Returns one of:
- *   0 (EOF condition, pfd struct not filled in)
- *   1 (pfd struct valid)
- *  <0 (error)
- */
-int
-twopence_iostream_poll(twopence_iostream_t *stream, struct pollfd *pfd, int mask)
-{
-  unsigned int i;
-
-  if (stream->eof || stream->count == 0)
-    return 0;
-
-  /* We can only do POLLIN for now */
-  if (mask & POLLOUT)
-    return -1;
-
-  /* Find the first non-EOF substream and fill in the pollfd */
-  for (i = 0; i < stream->count; ++i) {
-    twopence_substream_t *substream = stream->substream[i];
-
-    if (substream->ops == NULL)
-      continue;
-
-    if (substream->ops->poll == NULL)
-      return -1;
-
-    return substream->ops->poll(substream, pfd, mask);
-  }
-
-  /* All substreams are EOF, so no polling */
-  return 0;
-}
-
-/*
- * Read from an iostream
- */
-int
-twopence_iostream_getc(twopence_iostream_t *stream)
-{
-  unsigned int i;
-
-  if (stream->eof || stream->count == 0)
-    return EOF;
-
-  for (i = 0; i < stream->count; ++i) {
-    twopence_substream_t *substream = stream->substream[i];
-    unsigned char c;
-    int n;
-
-    if (substream->ops == NULL || substream->ops->read == NULL)
-      continue;
-    n = substream->ops->read(substream, &c, 1);
-    if (n == 1)
-      return c;
-
-    // This substream is at its EOF
-    twopence_substream_close(substream);
-  }
-
-  stream->eof = true;
-  return 0;
-}
-
-int
-twopence_iostream_read(twopence_iostream_t *stream, char *data, size_t len)
-{
-  unsigned int i;
-
-  if (stream->eof || stream->count == 0)
-    return 0;
-
-  for (i = 0; i < stream->count; ++i) {
-    twopence_substream_t *substream = stream->substream[i];
-    int n;
-
-    if (substream->ops == NULL || substream->ops->read == NULL)
-      continue;
-
-    n = substream->ops->read(substream, data, len);
-    if (n > 0)
-      return n;
-
-    if (n < 0)
-      return n;
-
-    // This substream is at its EOF
-    twopence_substream_close(substream);
-  }
-
-  stream->eof = true;
-  return 0;
-}
-
-twopence_buf_t *
-twopence_iostream_read_all(twopence_iostream_t *stream)
-{
-  twopence_buf_t *bp;
-  char buffer[8192];
-  long size;
-  int len;
-
-  if ((size = twopence_iostream_filesize(stream)) < 0)
-	  size = 0;
-
-  bp = twopence_buf_new(size);
-  while (true) {
-    len = twopence_iostream_read(stream, buffer, sizeof(buffer));
-    if (len < 0) {
-      twopence_buf_free(bp);
-      return NULL;
-    }
-    if (len == 0)
-      break;
-
-    twopence_buf_ensure_tailroom(bp, len);
-    twopence_buf_append(bp, buffer, len);
-  }
-
-  return bp;
-}
-
-/*
- * Write to a sink object
- */
-int
-twopence_iostream_putc(twopence_iostream_t *stream, char c)
-{
-  unsigned int i;
-
-  if (stream->count == 0)
-    return 0;
-
-  for (i = 0; i < stream->count; ++i) {
-    twopence_substream_t *substream = stream->substream[i];
-
-    if (substream->ops == NULL || substream->ops->write == NULL)
-      return -1;
-    substream->ops->write(substream, &c, 1);
-  }
-
-  return 1;
-}
-
-int
-twopence_iostream_write(twopence_iostream_t *stream, const char *data, size_t len)
-{
-  unsigned int i;
-
-  if (stream->count == 0)
-    return 0;
-
-  for (i = 0; i < stream->count; ++i) {
-    twopence_substream_t *substream = stream->substream[i];
-
-    if (substream->ops == NULL || substream->ops->write == NULL)
-      return -1;
-    substream->ops->write(substream, data, len);
-  }
-
-  return len;
-}
-
-/*
- * Create a new substream object
- */
-static twopence_substream_t *
-__twopence_substream_new(const twopence_io_ops_t *ops)
-{
-  twopence_substream_t *substream;
-
-  substream = calloc(1, sizeof(*substream));
-  substream->ops = ops;
-
-  return substream;
-}
-
-void
-twopence_substream_close(twopence_substream_t *substream)
-{
-  if (substream->ops == NULL)
-    return;
-
-  if (substream->ops->close)
-    substream->ops->close(substream);
-  substream->ops = NULL;
-}
-
-/*
- * Handle a buffered substream.
- * In the write case, the buffer size is limited, ie we do not grow the buffer
- * dynamically in order  to accomodate arbitrary amounts of data.
- */
-static int
-twopence_substream_buffer_write(twopence_substream_t *sink, const void *data, size_t len)
-{
-  twopence_buf_t *bp = sink->buffer;
-
-  if (sink->resizable)
-    twopence_buf_ensure_tailroom(bp, len);
-
-  __twopence_buffer_put(bp, data, len);
-  return len;
-}
-
-static int
-twopence_substream_buffer_read(twopence_substream_t *src, void *data, size_t len)
-{
-  twopence_buf_t *bp = src->buffer;
-  unsigned int avail;
-
-  if (bp == NULL)
-    return -1;
-
-  avail = twopence_buf_count(bp);
-  if (len > avail)
-    len = avail;
-
-  memcpy(data, twopence_buf_head(bp), len);
-  twopence_buf_advance_head(bp, len);
-  return len;
-}
-
-static long
-twopence_substream_buffer_size(twopence_substream_t *src)
-{
-  twopence_buf_t *bp = src->buffer;
-
-  if (bp == NULL)
-    return -1;
-
-  return twopence_buf_count(bp);
-}
-
-int
-twopence_substream_buffer_poll(twopence_substream_t *src, struct pollfd *pfd, int mask)
-{
-  /* Returning a negative value means "error", returning 0 means "we don't support
-   * polling, so please try to read/write immediately */
-  return 0;
-}
-
-int
-twopence_substream_buffer_set_blocking(twopence_substream_t *src, bool blocking)
-{
-  /* always succeeds */
-  return 0;
-}
-
-static twopence_io_ops_t twopence_buffer_io = {
-	.read		= twopence_substream_buffer_read,
-	.write		= twopence_substream_buffer_write,
-	.set_blocking	= twopence_substream_buffer_set_blocking,
-	.poll		= twopence_substream_buffer_poll,
-	.filesize	= twopence_substream_buffer_size,
-};
-
-twopence_substream_t *
-twopence_substream_new_buffer(twopence_buf_t *bp, bool resizable)
-{
-  twopence_substream_t *io;
-
-  io = __twopence_substream_new(&twopence_buffer_io);
-  io->buffer = bp;
-  io->resizable = resizable;
-  return io;
-}
-
-/*
- * fd based substreams
- */
-static void
-twopence_substream_file_close(twopence_substream_t *substream)
-{
-  if (substream->fd >= 0 && substream->close) {
-    close(substream->fd);
-    substream->fd = -1;
-  }
-}
-
-static int
-twopence_substream_file_write(twopence_substream_t *sink, const void *data, size_t len)
-{
-  int fd = sink->fd;
-
-  if (fd < 0)
-    return -1;
-
-   return write(fd, data, len);
-}
-
-static int
-twopence_substream_file_read(twopence_substream_t *src, void *data, size_t len)
-{
-  int fd = src->fd;
-
-  if (fd < 0)
-    return -1;
-
-  return read(fd, data, len);
-}
-
-static long
-twopence_substream_file_size(twopence_substream_t *src)
-{
-  int fd = src->fd;
-  struct stat stb;
-
-  if (fd < 0)
-    return -1;
-
-  if (fstat(fd, &stb) < 0 || !S_ISREG(stb.st_mode))
-    return -1;
-
-  return stb.st_size;
-}
-
-int
-twopence_substream_file_set_blocking(twopence_substream_t *src, bool blocking)
-{
-  int oflags, nflags;
-
-  if (src->fd < 0)
-    return 0;
-
-  oflags = fcntl(src->fd, F_GETFL);        // Get old flags
-  if (oflags == -1)
-    return -1;
-
-  nflags = oflags & ~O_NONBLOCK;
-  if (!blocking)
-    nflags |= O_NONBLOCK;
-
-  if (fcntl(src->fd, F_SETFL, nflags) < 0)
-    return -1;
-
-  /* Return old settings (true means it was using blocking mode before the change) */
-  return !(oflags & O_NONBLOCK);
-}
-
-int
-twopence_substream_file_poll(twopence_substream_t *src, struct pollfd *pfd, int mask)
-{
-  if (src->fd < 0)
-    return 0;
-
-  pfd->fd = src->fd;
-  pfd->events = mask;
-  return 1;
-}
-
-static twopence_io_ops_t twopence_file_io = {
-	.close	= twopence_substream_file_close,
-	.read	= twopence_substream_file_read,
-	.write	= twopence_substream_file_write,
-	.set_blocking = twopence_substream_file_set_blocking,
-	.poll	= twopence_substream_file_poll,
-	.filesize = twopence_substream_file_size,
-};
-
-twopence_substream_t *
-twopence_substream_new_fd(int fd, bool closeit)
-{
-  twopence_substream_t *io;
-
-  io = __twopence_substream_new(&twopence_file_io);
-  io->fd = fd;
-  io->close = closeit;
-  return io;
-}
-
-twopence_substream_t *
-twopence_iostream_stdout(void)
-{
-  return twopence_substream_new_fd(1, false);
-}
-
-twopence_substream_t *
-twopence_iostream_stderr(void)
-{
-  return twopence_substream_new_fd(2, false);
 }

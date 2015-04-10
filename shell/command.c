@@ -21,6 +21,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <getopt.h>
 #include <signal.h>
 
@@ -29,7 +30,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 struct twopence_target *twopence_handle;
 
-char *short_options = "u:t:o:1:2:qbvh";
+enum { OPT_KEEPALIVE };
+
+char *short_options = "u:t:o:1:2:qbdvh";
 struct option long_options[] = {
   { "user", 1, NULL, 'u' },
   { "timeout", 1, NULL, 't' },
@@ -38,6 +41,9 @@ struct option long_options[] = {
   { "stderr", 1, NULL, '2' },
   { "quiet", 0, NULL, 'q' },
   { "batch", 0, NULL, 'b' },
+  { "keepalive", required_argument, NULL, OPT_KEEPALIVE },
+  { "setenv", required_argument, NULL, 'e' },
+  { "debug", 0, NULL, 'd' },
   { "version", 0, NULL, 'v' },
   { "help", 0, NULL, 'h' },
   { NULL, 0, NULL, 0 }
@@ -122,6 +128,7 @@ Options: -u|--user <user>: user running the command (default: root)\n\
          -1|--stdout <file1> -2|--stderr <file2>: store them separately\n\
          -q|--quiet: do not display command output nor errors\n\
          -b|--batch: do not display status messages\n\
+         -d|--debug: print debug information\n\
          -v|--version: print version information\n\
          -h|--help: print this help message\n\
 Target: serial:<character device>\n\
@@ -137,6 +144,7 @@ int main(int argc, char *argv[])
   const char *opt_output, *opt_stdout, *opt_stderr;
   bool opt_quiet, opt_batch;
   const char *opt_target;
+  int opt_keepalive = -1;
 
   twopence_command_t cmd;
   struct twopence_target *target;
@@ -168,10 +176,29 @@ int main(int argc, char *argv[])
               break;
     case 'b': opt_batch = true;
               break;
-    case 'v': printf("%s version 0.3.2\n", argv[0]);
+    case 'd': twopence_debug_level++;
+	      break;
+    case 'v': printf("%s version 0.3.3\n", argv[0]);
               exit(RC_OK);
     case 'h': usage(argv[0]);
               exit(RC_OK);
+    case OPT_KEEPALIVE:
+	      if (!strcmp(optarg, "no"))
+		opt_keepalive = 0;
+	      else
+		opt_keepalive = atoi(optarg);
+	      break;
+    case 'e':
+	      {
+		char *name = optarg, *value;
+
+		if ((value = strchr(optarg, '=')) != NULL)
+		  *value++ = '\0';
+		else
+		  value = getenv(name);
+	        twopence_command_setenv(&cmd, optarg, value);
+	      }
+	      break;
 
     invalid_options:
     default: usage(argv[0]);
@@ -231,6 +258,15 @@ int main(int argc, char *argv[])
   {
     twopence_perror("Error while initializing library", rc);
     exit(RC_LIBRARY_INIT_ERROR);
+  }
+
+  if (opt_keepalive != -1) {
+    rc = twopence_target_set_option(target, TWOPENCE_TARGET_OPTION_KEEPALIVE,
+		    &opt_keepalive);
+    if (rc < 0) {
+      twopence_perror("Unable to set connection keepalive", rc);
+      exit(RC_LIBRARY_INIT_ERROR);
+    }
   }
 
   // Install signal handler

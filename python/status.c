@@ -77,6 +77,7 @@ Status_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 	self->remoteStatus = 0;
 	self->stdout = NULL;
 	self->stderr = NULL;
+	self->command = NULL;
 	self->buffer = NULL;
 
 	return (PyObject *)self;
@@ -129,6 +130,7 @@ Status_dealloc(twopence_Status *self)
 	drop_object(&self->stdout);
 	drop_object(&self->stderr);
 	drop_object(&self->buffer);
+	drop_object(&self->command);
 }
 
 int
@@ -181,6 +183,14 @@ Status_getattr(twopence_Status *self, char *name)
 		return Status_object_attr(self, self->buffer);
 	if (!strcmp(name, "code"))
 		return PyInt_FromLong(self->remoteStatus);
+	if (!strcmp(name, "command")) {
+		PyObject *result = self->command;
+
+		if (result == NULL)
+			result = Py_None;
+		Py_INCREF(result);
+		return result;
+	}
 	if (!strcmp(name, "message"))
 		return Status_message(self);
 

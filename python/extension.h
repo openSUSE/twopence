@@ -25,6 +25,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <Python.h>
 #include <twopence.h>
 #include <string.h>
+#include "utils.h"
 
 typedef struct {
 	PyObject_HEAD
@@ -32,6 +33,8 @@ typedef struct {
 	struct twopence_target *handle;
 	char *		name;
 	PyObject *	attrs;
+
+	struct backgroundedCommand *backgrounded;
 } twopence_Target;
 
 typedef struct {
@@ -46,7 +49,18 @@ typedef struct {
 	PyObject *	stderr;
 	PyObject *	stdin;
 	bool		useTty;
+	bool		background;
+
+	unsigned int	pid;
 } twopence_Command;
+
+struct backgroundedCommand {
+	struct backgroundedCommand *next;
+
+	unsigned int	pid;
+	twopence_command_t cmd;
+	twopence_Command *object;
+};
 
 typedef struct {
 	PyObject_HEAD
@@ -68,6 +82,8 @@ typedef struct {
 	/* for cmd operations */
 	PyObject *	stdout;
 	PyObject *	stderr;
+	PyObject *	command;
+
 	/* for xfer operations */
 	PyObject *	buffer;
 } twopence_Status;
@@ -95,10 +111,20 @@ assign_string(char **var, char *str)
 	if (*var == str)
 		return;
 	if (str)
-		str = strdup(str);
+		str = twopence_strdup(str);
 	if (*var)
 		free(*var);
 	*var = str;
+}
+
+static inline PyObject *
+return_string_or_none(const char *value)
+{
+	if (value == NULL) {
+		Py_INCREF(Py_None);
+		return Py_None;
+	}
+	return PyString_FromString(value);
 }
 
 static inline void

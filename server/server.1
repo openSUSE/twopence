@@ -5,7 +5,7 @@
 .\" name at some point :)
 .ds SN \fBtwopence_test_server\fP
 .\"
-.TH TWOPENCE_TEST_SERVER "1" "March 2015" "Twopence 0.3.2" "Server side commands"
+.TH TWOPENCE_TEST_SERVER "1" "April 2015" "Twopence 0.3.3" "Server side commands"
 
 .SH NAME
 twopence_test_server \- Twopence test server for serial and virtio access methods.
@@ -38,8 +38,8 @@ connection at a time.
 .\"
 .\"
 .SS Port Specification
-Currently, the test server is able to service tty ports and Unix
-domain sockets.
+Currently, the test server is able to service tty ports, Unix
+domain sockets and TCP sockets
 .PP
 TTY devices can be useful in several scenarios. One case is
 when the SUT is a virtual machine running under KVM, where you can
@@ -70,6 +70,7 @@ The type and path of the port on which the test server will listen can
 be selected by command line options. It can be specified in one of the
 following ways:
 .IP "\fIdevice-path
+.IP "\fB--port-tty \fIdevice-path
 The specified pathname should refer to a tty device - \*(SN will open
 this device and configure it. The serial speed will be set to
 115200 Baud, and communication parameters will be set to 8N1 (eight
@@ -81,6 +82,16 @@ as described above.
 .IP "\fB--port-unix\fP \fIpath\fP
 The specified pathname is used as the name of the Unix domain socket
 to create. If the socket exists already, it will be removed first.
+.IP "\fB--port-tcp\fP \fIport\fP
+Listen on a TCP socket for incoming connections. If the \fIport\fP
+argument is \fBdefault\fP, the port of this socket will default to
+64123. Otherwise, \fIport\fP is expected to be a port number.
+.IP
+.B Caveat:
+The TCP based server implementation does not provide any sort of
+authentication or on-the-wire encryption, as this is intended
+purely for testing purposes.
+.B Use at your own risk!
 .PP
 .\" --------------------------------------------------------------
 .\"
@@ -102,10 +113,15 @@ This option requests increased debugging information. Specifying this option
 several times increases the verbosity.
 Currently, debug information is always printed to standard error, thus using
 this option together with \fB--daemon\fB is not all that useful.
+.IP "\fB--no-audit\fP
+By default, \*(SN prints an audit trail of all operations performed.
+It will log the names of the files transferred, and the commands being executed,
+along with relevant parameters.
+This option can be used to disable the audit trail.
 .IP "\fB--audit\fP
-This option can be used to request an audit trail of the operations performed
-by the test server. It will log the names of the files transferred, and the 
-commands being executed, along with relevant parameters.
+This option can be used to explicitly request an audit trail. It is 
+supported for backward compatibility, because earlier versions defaulted to
+no audit trail.
 .\" --------------------------------------------------------------
 .\"
 .\"

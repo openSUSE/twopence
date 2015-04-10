@@ -7,11 +7,14 @@ the system under tests.
 
 Packet structure:
 
-  Byte 0        Packet type
-  Byte 1        (reserved for future use - "port" number)
-  Byte 2        length, high order byte
-  Byte 3        length, low order byte
-  Byte 4+       data
+  0:	byte	Packet type
+  1:	byte	Reserved
+  2:	word	overall packet length
+  4:	word	client ID
+  6:	word	transaction ID
+  8:		data
+
+All header words are in network byte order (aka big-endian)
 
 
 Packet types:
@@ -21,27 +24,45 @@ Packet types:
   'i'           insert file
   'e'           extract file
   'q'           quit
-  '0'           stdin
-  'E'           end of file on stdin, or during file injection
   'I'           interrupt command
 
         system under tests => local
   'M'           major error code
   'm'           minor error code
-  '1'           stdout
-  '2'           stderr
   'T'           command timeout
-  'E'           end of file during extract transaction
 
             both directions
-  'd'           file data
+  'h'		hello packet (used to establish the client ID for all subsequent packets)
+  'D'		channel data
+  'X'		channel eof
+  'K'		keepalive packet
 
 The length includes the 4 bytes of the header.
 
 
-Parameters are separated with spaces:
+Packets are encoded as follows:
 
-  run command   username timeout command
-  insert file   username filemode filename
-  extract file  username filename
+  hello		uint8: protocol major version
+  		uint8: protocol minor version
+		uint16: requested keepalive interval
+  chan_data	uint16:	channel_id (commands: 0, 1, 2; extract/inject: 0)
+  		followed by the payload
+  chan_eof	uint16: channel_id (commands: 0, 1, 2; extract/inject: 0)
+  inject	string: user
+  		string: filename
+		uint32: filemode
+  extract	string: user
+  		string: filename
+  run command	string: user
+  		string: command
+		uint32:	timeout
+  quit		<no data>
+  intr		<no data>
+  		Note: the xid of the intr packet must equal the xid of
+		transaction to be interrupted
+  major		uint32: status word
+  minor		uint32: status word
+  keepalive	<no data>
 
+A string is encoded as a NUL terminated sequence of bytes.
+16bit words and 32bit words are in network byte order.

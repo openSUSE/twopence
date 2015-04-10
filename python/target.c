@@ -24,12 +24,15 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <sys/wait.h>
 
 #include "twopence.h"
+#include "utils.h"
 
 static void		Target_dealloc(twopence_Target *self);
 static PyObject *	Target_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static int		Target_init(twopence_Target *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_getattr(twopence_Target *self, char *name);
 static PyObject *	Target_run(PyObject *self, PyObject *args, PyObject *kwds);
+static PyObject *	Target_wait(PyObject *self, PyObject *args, PyObject *kwds);
+static PyObject *	Target_waitAll(PyObject *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_property(twopence_Target *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_inject(PyObject *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_extract(PyObject *self, PyObject *args, PyObject *kwds);
@@ -55,6 +58,12 @@ static PyMethodDef twopence_targetMethods[] = {
       {	"run", (PyCFunction) Target_run, METH_VARARGS | METH_KEYWORDS,
 	"Run a command on the SUT"
       },
+      {	"wait", (PyCFunction) Target_wait, METH_VARARGS | METH_KEYWORDS,
+	"Wait for a backgrounded command to finish",
+      },
+      {	"waitAll", (PyCFunction) Target_waitAll, METH_VARARGS | METH_KEYWORDS,
+	"Wait for all backgrounded commands to finish",
+      },
       {	"inject", (PyCFunction) Target_inject, METH_VARARGS | METH_KEYWORDS,
 	"Inject a file to the SUT"
       },
@@ -76,7 +85,7 @@ PyTypeObject twopence_TargetType = {
 
 	.tp_name	= "twopence.Target",
 	.tp_basicsize	= sizeof(twopence_Target),
-	.tp_flags	= Py_TPFLAGS_DEFAULT,
+	.tp_flags	= Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
 	.tp_doc		= "Twopence target",
 
 	.tp_methods	= twopence_targetMethods,
@@ -129,7 +138,7 @@ Target_init(twopence_Target *self, PyObject *args, PyObject *kwds)
 		Py_INCREF(attrDict);
 	}
 	if (name)
-		self->name = strdup(name);
+		self->name = twopence_strdup(name);
 
 	return 0;
 }
@@ -162,14 +171,11 @@ Target_getattr(twopence_Target *self, char *name)
 {
 	PyObject *value;
 
-	if (!strcmp(name, "name")) {
-		if (self->name == NULL) {
-			Py_INCREF(Py_None);
-			return Py_None;
-		}
-		return PyString_FromString(self->name);
-	}
-	
+	if (!strcmp(name, "name"))
+		return return_string_or_none(self->name);
+	if (!strcmp(name, "type"))
+		return return_string_or_none(self->handle->ops->name);
+
 	if (self->attrs
 	 && (value = PyDict_GetItemString(self->attrs, name)) != NULL) {
 		Py_INCREF(value);
@@ -221,11 +227,110 @@ twopence_AppendBuffer(PyObject *buffer, const twopence_buf_t *buf)
 	if (buffer != NULL && buffer != Py_None && count != 0) {
 		PyObject *temp = PyString_FromStringAndSize(twopence_buf_head(buf), count);
 
+		if (temp == NULL)
+			return -1;
 		if (PySequence_InPlaceConcat(buffer, temp) == NULL)
 			rv = -1;
 		Py_DECREF(temp);
 	}
 	return rv;
+}
+
+/*
+ * Backgrounding commands
+ */
+struct backgroundedCommand *
+backgroundedCommandNew(twopence_Command *cmdObject)
+{
+	struct backgroundedCommand *bg;
+
+	bg = twopence_calloc(1, sizeof(*bg));
+	bg->object = cmdObject;
+	Py_INCREF(cmdObject);
+
+	return bg;
+}
+
+void
+backgroundedCommandFree(struct backgroundedCommand *bg)
+{
+	if (bg->object) {
+		bg->object->pid = 0;
+		Py_DECREF(bg->object);
+		bg->object = NULL;
+	}
+
+	twopence_command_destroy(&bg->cmd);
+	free(bg);
+}
+
+static void
+Target_recordBackgrounded(twopence_Target *tgtObject, struct backgroundedCommand *bg)
+{
+	bg->next = tgtObject->backgrounded;
+	tgtObject->backgrounded = bg;
+}
+
+static struct backgroundedCommand *
+Target_findBackgrounded(twopence_Target *tgtObject, pid_t pid)
+{
+	struct backgroundedCommand *bg, **pos;
+
+	for (pos = &tgtObject->backgrounded; (bg = *pos) != NULL; pos = &bg->next) {
+		if (bg->pid == pid) {
+			*pos = bg->next;
+			bg->next = NULL;
+			return bg;
+		}
+	}
+	return NULL;
+}
+
+/*
+ * Given a command and its status, build a status object
+ */
+static PyObject *
+Target_buildCommandStatus(twopence_Command *cmdObject, twopence_command_t *cmd, twopence_status_t *status)
+{
+	twopence_Status *statusObject;
+
+	/* Now funnel the captured data to the respective buffer objects */
+	if (twopence_AppendBuffer(cmdObject->stdout, &cmd->buffer[TWOPENCE_STDOUT]) < 0)
+		return NULL;
+	if (twopence_AppendBuffer(cmdObject->stderr, &cmd->buffer[TWOPENCE_STDERR]) < 0)
+		return NULL;
+
+	statusObject = (twopence_Status *) twopence_callType(&twopence_StatusType, NULL, NULL);
+	statusObject->remoteStatus = status->minor;
+	if (cmdObject->stdout) {
+		statusObject->stdout = cmdObject->stdout;
+		Py_INCREF(statusObject->stdout);
+	}
+	if (cmdObject->stderr) {
+		statusObject->stderr = cmdObject->stderr;
+		Py_INCREF(statusObject->stderr);
+	}
+	statusObject->command = (PyObject *) cmdObject;
+	Py_INCREF(cmdObject);
+
+	return (PyObject *) statusObject;
+}
+
+static twopence_Status *
+Target_buildCommandStatusShort(twopence_Command *cmdObject, twopence_command_t *cmd, twopence_status_t *status)
+{
+	twopence_Status *statusObject;
+
+	/* Now funnel the captured data to the respective buffer objects */
+	if (twopence_AppendBuffer(cmdObject->stdout, &cmd->buffer[TWOPENCE_STDOUT]) < 0)
+		return NULL;
+	if (twopence_AppendBuffer(cmdObject->stderr, &cmd->buffer[TWOPENCE_STDERR]) < 0)
+		return NULL;
+
+	statusObject = (twopence_Status *) twopence_callType(&twopence_StatusType, NULL, NULL);
+	statusObject->remoteStatus = status->minor;
+
+	return statusObject;
 }
 
 /*
@@ -244,7 +349,6 @@ Target_run(PyObject *self, PyObject *args, PyObject *kwds)
 {
 	struct twopence_target *handle;
 	twopence_Command *cmdObject = NULL;
-	twopence_Status *statusObject;
 	twopence_command_t cmd;
 	twopence_status_t status;
 	PyObject *result = NULL;
@@ -269,36 +373,56 @@ Target_run(PyObject *self, PyObject *args, PyObject *kwds)
 			goto out;
 	}
 
+	if (cmdObject->pid != 0) {
+		PyErr_SetString(PyExc_SystemError, "Command already executing");
+		goto out;
+	}
+
 	if ((handle = Target_handle(self)) == NULL)
 		goto out;
 
-	if (Command_build(cmdObject, &cmd) < 0)
-		goto out;
+	memset(&cmd, 0, sizeof(cmd));
+	if (cmdObject->background) {
+		twopence_Target *tgtObject = (twopence_Target *) self;
+		struct backgroundedCommand *bg;
 
-	rc = twopence_run_test(handle, &cmd, &status);
-	if (rc < 0) {
-		twopence_Exception("run", rc);
-		goto out;
+		bg = backgroundedCommandNew(cmdObject);
+		if (Command_build(cmdObject, &bg->cmd) < 0) {
+			backgroundedCommandFree(bg);
+			goto out;
+		}
+
+		rc = twopence_run_test(handle, &bg->cmd, &status);
+		if (rc < 0) {
+			twopence_Exception("run(background)", rc);
+			backgroundedCommandFree(bg);
+			goto out;
+		}
+		if (rc == 0) {
+			PyErr_SetString(PyExc_SystemError, "Target.run() of a backgrounded command returns pid 0");
+			backgroundedCommandFree(bg);
+			goto out;
+		}
+
+		Target_recordBackgrounded(tgtObject, bg);
+		bg->pid = rc;
+
+		cmdObject->pid = bg->pid;
+
+		result = Py_None;
+		Py_INCREF(result);
+	} else {
+		if (Command_build(cmdObject, &cmd) < 0)
+			goto out;
+
+		rc = twopence_run_test(handle, &cmd, &status);
+		if (rc < 0) {
+			twopence_Exception("run", rc);
+			goto out;
+		}
+
+		result = Target_buildCommandStatus(cmdObject, &cmd, &status);
 	}
-
-	/* Now funnel the captured data to the respective buffer objects */
-	if (twopence_AppendBuffer(cmdObject->stdout, &cmd.buffer[TWOPENCE_STDOUT]) < 0)
-		goto out;
-	if (twopence_AppendBuffer(cmdObject->stderr, &cmd.buffer[TWOPENCE_STDERR]) < 0)
-		goto out;
-
-	statusObject = (twopence_Status *) twopence_callType(&twopence_StatusType, NULL, NULL);
-	statusObject->remoteStatus = status.minor;
-	if (cmdObject->stdout) {
-		statusObject->stdout = cmdObject->stdout;
-		Py_INCREF(statusObject->stdout);
-	}
-	if (cmdObject->stderr) {
-		statusObject->stderr = cmdObject->stderr;
-		Py_INCREF(statusObject->stderr);
-	}
-
-	result = (PyObject *) statusObject;
 
 out:
 	if (cmdObject) {
@@ -307,6 +431,140 @@ out:
 
 	twopence_command_destroy(&cmd);
 	return result;
+}
+
+/*
+ * Wait for command(s) to complete
+ */
+static PyObject *
+Target_wait(PyObject *self, PyObject *args, PyObject *kwds)
+{
+	static char *kwlist[] = {
+		"command",
+		NULL
+	};
+	struct twopence_target *handle;
+	twopence_Target *tgtObject = (twopence_Target *) self;
+	struct backgroundedCommand *bg;
+	PyObject *argObject = NULL, *result;
+	twopence_status_t status;
+	int pid = 0;
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O", kwlist, &argObject))
+		return NULL;
+
+	if (argObject == NULL) {
+		pid = 0;
+	} else if (PyInt_Check(argObject)) {
+		pid = PyInt_AsLong(argObject);
+
+		if (pid < 0) {
+			PyErr_SetString(PyExc_ValueError, "target.wait(): pid must not be negative");
+			return NULL;
+		}
+	} else if (Command_Check(argObject)) {
+		pid = ((twopence_Command *) argObject)->pid;
+		if (pid == 0) {
+			PyErr_SetString(PyExc_ValueError,
+				"target.wait(): no running command matching this argument");
+			return NULL;
+		}
+	} else {
+		PyErr_SetString(PyExc_TypeError,
+				"target.wait(): Invalid argument type");
+		return NULL;
+	}
+
+	if ((handle = Target_handle(self)) == NULL)
+		return NULL;
+
+	pid = twopence_wait(handle, pid, &status);
+	if (pid < 0)
+		return twopence_Exception("wait", pid);
+
+	if (pid == 0) {
+		Py_INCREF(Py_None);
+		return Py_None;
+	}
+
+	bg = Target_findBackgrounded(tgtObject, pid);
+	if (bg == NULL) {
+		PyErr_SetString(PyExc_SystemError, "Target.wait(): No record of PID returned by target");
+		return NULL;
+	}
+
+	result = Target_buildCommandStatus(bg->object, &bg->cmd, &status);
+	backgroundedCommandFree(bg);
+
+	return result;
+}
+
+/*
+ * Wait for all commands to complete
+ */
+static PyObject *
+Target_waitAll(PyObject *self, PyObject *args, PyObject *kwds)
+{
+	static char *kwlist[] = {
+		"print_dots",
+		NULL
+	};
+	twopence_target_t *handle;
+	twopence_Target *tgtObject = (twopence_Target *) self;
+	twopence_Status *result = NULL;
+	int print_dots = 0, ndots = 0;
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i", kwlist, &print_dots))
+		return NULL;
+
+	if ((handle = Target_handle(self)) == NULL)
+		return NULL;
+
+	while (true) {
+		struct backgroundedCommand *bg;
+		twopence_status_t status;
+		int pid = 0;
+
+		pid = twopence_wait(handle, 0, &status);
+		if (pid < 0) {
+			if (ndots)
+				printf("\n");
+			return twopence_Exception("wait", pid);
+		}
+
+		if (pid == 0) {
+			if (ndots)
+				printf("\n");
+			break;
+		}
+
+		bg = Target_findBackgrounded(tgtObject, pid);
+		if (bg == NULL) {
+			if (ndots)
+				printf("\n");
+			PyErr_SetString(PyExc_SystemError, "Target.wait(): No record of PID returned by target");
+			return NULL;
+		}
+
+		if (result == NULL)
+			result = Target_buildCommandStatusShort(bg->object, &bg->cmd, &status);
+		else if (status.minor != 0)
+			result->remoteStatus = status.minor;
+
+		backgroundedCommandFree(bg);
+		if (print_dots) {
+			fputc('.', stdout);
+			fflush(stdout);
+			ndots++;
+		}
+	}
+
+	if (result == NULL) {
+		Py_INCREF(Py_None);
+		return Py_None;
+	}
+
+	return (PyObject *) result;
 }
 
 /*
@@ -331,7 +589,7 @@ Target_inject(PyObject *self, PyObject *args, PyObject *kwds)
 	if (!PyArg_ParseTupleAndKeywords(args, kwds, "ss|si", kwlist, &sourceFile, &destFile, &user, &omode))
 		return NULL;
 
-	printf("inject %s -> %s (user %s, mode 0%o)\n", sourceFile, destFile, user, omode);
+	/* printf("inject %s -> %s (user %s, mode 0%o)\n", sourceFile, destFile, user, omode); */
 
 	if ((handle = Target_handle(self)) == NULL)
 		return NULL;
@@ -366,7 +624,7 @@ Target_extract(PyObject *self, PyObject *args, PyObject *kwds)
 	if (!PyArg_ParseTupleAndKeywords(args, kwds, "ss|si", kwlist, &sourceFile, &destFile, &user, &omode))
 		return NULL;
 
-	printf("extract %s -> %s (user %s, mode 0%o)\n", sourceFile, destFile, user, omode);
+	/* printf("extract %s -> %s (user %s, mode 0%o)\n", sourceFile, destFile, user, omode); */
 	if ((handle = Target_handle(self)) == NULL)
 		return NULL;
 

@@ -9,7 +9,7 @@ HOW DOES TWOPENCE WORK
    o Twopence is basically a set of libraries
    o shell, ruby, and python wrappers are provided for convenience
    o each library is seen as a plugin,
-     currenly available plugins are virtio (KVM), ssh, and serial
+     currenly available plugins are virtio (KVM), ssh, serial, and tcp
 
 
 HOW WOULD I USE IT

@@ -15,6 +15,8 @@ import sys
 import os
 import traceback
 
+twopence.setDebugLevel(0)
+
 targetSpec = None
 if len(sys.argv) > 1:
 	targetSpec = sys.argv[1]
@@ -24,6 +26,7 @@ if not targetSpec:
 
 target = twopence.Target(targetSpec);
 
+allErrorsFatal = False
 testCaseRunning = False
 testCaseStatus = None
 numFailed = 0
@@ -58,6 +61,13 @@ def testCaseFail(msg):
 	if not testCaseStatus:
 		testCaseStatus = "FAILED"
 
+def testCaseSkip(msg):
+	global testCaseStatus
+
+	print "### " + msg
+	if not testCaseStatus:
+		testCaseStatus = "SKIPPED"
+
 def testCaseCheckStatus(status, expectExitCode = 0):
 	print # command may not have printed a newline
 	print "Transaction finished; status %d" % status.code
@@ -79,16 +89,23 @@ def testCaseException():
 	traceback.print_tb(info[2])
 
 def testCaseReport():
-	global testCaseStatus, testCaseRunning, numFailed
+	global testCaseStatus, testCaseRunning, numFailed, numSkipped
+	global allErrorsFatal
 
 	if testCaseStatus:
 		print "### " + testCaseStatus
-		numFailed = numFailed + 1
+		if testCaseStatus == "SKIPPED":
+			numSkipped = numSkipped + 1
+		else:
+			numFailed = numFailed + 1
 	else:
 		print "### SUCCESS"
 	print
 
 	testCaseRunning = False
+
+	if allErrorsFatal and testCaseStatus == "FAILED":
+		testSuiteExit()
 
 def testSuiteExit():
 	global testCaseRunning, numTests, numFailed, numErrors
@@ -109,12 +126,23 @@ def testSuiteExit():
 	print " %4d tests run" % numTests
 	print " %4d failed" % numFailed
 	print " %4d errors" % numErrors
+	print " %4d skipped" % numSkipped
 
 	sys.exit(exitStatus)
 
 ##################################################################
 # Individual test cases start here
 ##################################################################
+
+testCaseBegin("Check the plugin type")
+try:
+	t = target.type
+	print "plugin type is", t
+	if t != "ssh" and t != "virtio" and t != "serial" and t != "tcp":
+		testCaseFail("Unknwon plugin type \"%s\"" % t)
+except:
+	testCaseException()
+testCaseReport()
 
 testCaseBegin("Run command /bin/pwd")
 try:
@@ -221,7 +249,6 @@ try:
 except:
 	testCaseException()
 testCaseReport()
-
 
 testCaseBegin("verify that command is run as root by default")
 try:
@@ -407,27 +434,222 @@ except:
 	testCaseException()
 testCaseReport()
 
-# There's a "line timeout" in the ssh target plugin that wreaks havoc with the regular
-# timeout handling.
-# If that problem is still present, the following will result in a python exception
-# from target.run()
-testCaseBegin("Verify long command timeout")
+testCaseBegin("run a command procuding lots of output")
 try:
-	import time
-
-	print "The next command should sleep for 65 seconds"
-
-	t0 = time.time()
-	st = target.run("sleep 65", timeout = 120)
-	delay = time.time() - t0
-
-	if delay < 65:
-		testCaseFail("command slept for less than 65 seconds (only %u sec)" % delay)
-	elif delay > 67:
-		testCaseFail("command slept for way more than 65 seconds (overall %u sec)" % delay)
-	else:
-		print "Good: Slept for %u seconds" % delay
+	cmd = twopence.Command("dd if=/dev/zero bs=1k count=1k", suppressOutput = 1)
+	status = target.run(cmd)
+	if testCaseCheckStatus(status):
+		got_bytes = len(status.stdout)
+		# We do not check the total amount of data received;
+		# right now, the buffer size is capped at 64K which is not
+		# useful in this context
 except:
+	testCaseException()
+testCaseReport()
+
+try:
+	testCaseBegin("check whether target supports backgrounded commands")
+	target.wait()
+	print "It looks like it does"
+	backgroundingSupported = True
+except:
+	print "No, it does not"
+	backgroundingSupported = False
+testCaseReport()
+
+testCaseBegin("run /bin/pwd in the background")
+if not(backgroundingSupported):
+    testCaseSkip("background execution not available for %s plugin right now" % target.type)
+else:
+    try:
+	cmd = twopence.Command("/bin/pwd", background = 1);
+	if target.run(cmd):
+		testCaseFail("Target.run() of a backgrounded command should return None")
+	elif not cmd.pid:
+		testCaseFail("Target.run() of a backgrounded command should set the command's pid")
+	else:
+		status = target.wait()
+		if status == None:
+			testCaseFail("Did not find any process to wait for")
+		elif status.command != cmd:
+			testCaseFail("target.wait() returned a different process (pid=%d)" % status.command.pid)
+		elif testCaseCheckStatus(status):
+			pwd = str(status.stdout).strip();
+			if pwd != "/" and pwd != '/root':
+				testCaseFail("expected pwd to print '/' or '/root', instead got '%s'" % pwd);
+	if cmd.pid:
+		testCaseFail("command pid should be reset to 0 after completion")
+    except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("run several processes in the background")
+if not(backgroundingSupported):
+    testCaseSkip("background execution not available for %s plugin right now" % target.type)
+else:
+    try:
+	cmds = []
+	for time in range(6, 0, -1):
+		cmd = twopence.Command("sleep %d" % time, background = 1);
+		print "Starting ", cmd.commandline
+		target.run(cmd)
+
+	nreaped = 0
+	while True:
+		status = target.wait()
+		if status == None:
+			break
+		print "finished command:", status.command.commandline
+		if not(status):
+			testCaseFail("command failed")
+		nreaped = nreaped + 1;
+
+	if nreaped != 6:
+		testCaseFail("Reaped %d commands, expected 6" % nreaped)
+    except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("wait for a specific process")
+if not(backgroundingSupported):
+    testCaseSkip("background execution not available for %s plugin right now" % target.type)
+else:
+    try:
+	cmd1 = twopence.Command("sleep 2", background = 1);
+	target.run(cmd1);
+	print "cmd1: %s (pid %d)" % (cmd1.commandline, cmd1.pid)
+
+	cmd2 = twopence.Command("sleep 4", background = 1);
+	target.run(cmd2);
+	print "cmd2: %s (pid %d)" % (cmd2.commandline, cmd2.pid)
+
+	# Now wait for the second command, which actually takes
+	# longer.
+	status = target.wait(cmd2);
+	if not(status):
+		testCaseFail("command failed")
+	elif status.command == cmd2:
+		print "finished command:", status.command.commandline
+	else:
+		testCaseFail("target.wait() returned the wrong command")
+
+	status = target.wait();
+	if not(status):
+		testCaseFail("command failed")
+	else:
+		print "finished command:", status.command.commandline
+    except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("combine foreground and background process")
+if not(backgroundingSupported):
+    testCaseSkip("background execution not available for %s plugin right now" % target.type)
+else:
+    try:
+	cmd1 = twopence.Command("sleep 2", background = 1);
+	target.run(cmd1);
+	print "cmd1: %s (pid %d)" % (cmd1.commandline, cmd1.pid)
+
+	cmd2 = twopence.Command("sleep 4", background = 0);
+	print "cmd2: %s (foreground)" % cmd2.commandline
+
+	status = target.run(cmd2);
+	if not(status):
+		testCaseFail("command failed")
+	elif status.command == cmd1:
+		testCaseFail("target.wait() returned the wrong command")
+	else:
+		print "finished foreground command"
+
+	status = target.wait();
+	if not(status):
+		testCaseFail("command failed")
+	else:
+		print "finished command:", status.command.commandline
+    except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("verify that target.waitAll() waits for all commands")
+if not(backgroundingSupported):
+    testCaseSkip("background execution not available for %s plugin right now" % target.type)
+else:
+    try:
+	for time in range(1, 5):
+		target.run("sleep 2", background = 1);
+
+	status = target.waitAll(print_dots = 1);
+	if status == None:
+		testCaseFail("waitAll returns None")
+	elif status.code != 0:
+		testCaseFail("one or more commands failed")
+	else:
+		print "Good, waitAll returns an exit status of 0"
+	if target.wait() != None:
+		testCaseFail("there were still commands left after waitAll returned")
+    except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("verify that target.waitAll() propagates errors")
+if not(backgroundingSupported):
+    testCaseSkip("background execution not available for %s plugin right now" % target.type)
+else:
+    try:
+	target.run("sleep 1", background = 1);
+	target.run("sleep 2; exit 2", background = 1)
+	target.run("sleep 3", background = 1);
+
+	status = target.waitAll(print_dots = 1);
+	if status == None:
+		testCaseFail("waitAll didn't return any status")
+	elif status.code != 2:
+		testCaseFail("waitAll should have reported an error")
+	else:
+		print "Good, waitAll returns an exit status of 2"
+	if target.wait() != None:
+		testCaseFail("there were still commands left after waitAll returned")
+    except:
+	testCaseException()
+testCaseReport()
+
+crossTargetConcurrencySupport = backgroundingSupported
+if target.type != "virtio" and target.type != "tcp" and target.type != "serial":
+    crossTargetConcurrencySupport = False
+
+testCaseBegin("run concurrent processes on multiple targets")
+if not(crossTargetConcurrencySupport):
+    testCaseSkip("cross-target concurrency not available for %s plugin right now" % target.type)
+else:
+    try:
+	# Just open a second connection to the same server
+	target2 = twopence.Target(targetSpec);
+
+	cmd1 = twopence.Command("sh -c 'for x in `seq 1 20`; do echo -n A; sleep 0.2; done'", background = 1);
+	target.run(cmd1);
+	print "cmd1: %s (pid %d)" % (cmd1.commandline, cmd1.pid)
+
+	cmd2 = twopence.Command("sh -c 'for x in `seq 1 20`; do echo -n B; sleep 0.2; done'", background = 1);
+	target.run(cmd2);
+	print "cmd2: %s (pid %d)" % (cmd2.commandline, cmd2.pid)
+
+	status = target.wait();
+	print "\n"
+
+	if not(status):
+		testCaseFail("command failed")
+	else:
+		print "finished command:", status.command.commandline
+
+	status = target.wait();
+	if not(status):
+		testCaseFail("command failed")
+	else:
+		print "finished command:", status.command.commandline
+
+	target2 = None
+    except:
 	testCaseException()
 testCaseReport()
 
