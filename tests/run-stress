@@ -6,7 +6,7 @@
 while true; do
 	for plugin in virtio ssh tcp; do
 		for test in shell_test.sh python_test.py; do
-			./run-one $plugin ./$test || exit 1
+			./run-one $plugin ./$test </dev/null || exit 1
 		done
 	done
 done
