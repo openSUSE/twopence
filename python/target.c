@@ -171,16 +171,10 @@ Target_getattr(twopence_Target *self, char *name)
 {
 	PyObject *value;
 
-	if (!strcmp(name, "name")) {
-		if (self->name == NULL) {
-			Py_INCREF(Py_None);
-			return Py_None;
-		}
-		return PyString_FromString(self->name);
-	}
-	if (!strcmp(name, "type")) {
-		return PyString_FromString(self->handle->ops->name);
-	}
+	if (!strcmp(name, "name"))
+		return return_string_or_none(self->name);
+	if (!strcmp(name, "type"))
+		return return_string_or_none(self->handle->ops->name);
 
 	if (self->attrs
 	 && (value = PyDict_GetItemString(self->attrs, name)) != NULL) {

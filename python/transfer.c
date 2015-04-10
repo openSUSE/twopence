@@ -241,11 +241,11 @@ static PyObject *
 Transfer_getattr(twopence_Transfer *self, char *name)
 {
 	if (!strcmp(name, "remotefile"))
-		return PyString_FromString(self->remote_filename);
+		return return_string_or_none(self->remote_filename);
 	if (!strcmp(name, "localfile"))
-		return PyString_FromString(self->local_filename);
+		return return_string_or_none(self->local_filename);
 	if (!strcmp(name, "user"))
-		return PyString_FromString(self->user);
+		return return_string_or_none(self->user);
 	if (!strcmp(name, "permissions"))
 		return PyInt_FromLong(self->permissions);
 	if (!strcmp(name, "timeout"))

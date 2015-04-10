@@ -366,9 +366,9 @@ static PyObject *
 Command_getattr(twopence_Command *self, char *name)
 {
 	if (!strcmp(name, "commandline"))
-		return PyString_FromString(self->command);
+		return return_string_or_none(self->command);
 	if (!strcmp(name, "user"))
-		return PyString_FromString(self->user);
+		return return_string_or_none(self->user);
 	if (!strcmp(name, "timeout"))
 		return PyInt_FromLong(self->timeout);
 	if (!strcmp(name, "stdout"))

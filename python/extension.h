@@ -117,6 +117,16 @@ assign_string(char **var, char *str)
 	*var = str;
 }
 
+static inline PyObject *
+return_string_or_none(const char *value)
+{
+	if (value == NULL) {
+		Py_INCREF(Py_None);
+		return Py_None;
+	}
+	return PyString_FromString(value);
+}
+
 static inline void
 drop_string(char **var)
 {
