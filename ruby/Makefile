@@ -4,7 +4,7 @@ ARCH      ?= x86_64
 RBVERSION ?= 2.1.0
 LIBDIR    ?= /usr/lib64
 INCDIR    ?= /usr/include
-VERSION   ?= 0.3.2
+VERSION   ?= 0.3.3
 RBDIR      = $(LIBDIR)/ruby/gems/$(RBVERSION)
 
 all: twopence-$(VERSION).gem

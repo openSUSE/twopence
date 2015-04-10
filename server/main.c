@@ -293,7 +293,7 @@ int main(int argc, char *argv[])
   int c;
 
   // Welcome message, check arguments
-  printf("Twopence test server version 0.3.2\n");
+  printf("Twopence test server version 0.3.3\n");
 
   /* Initially, debug logging goes to stderr */
   twopence_logging_init();
