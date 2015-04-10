@@ -85,7 +85,7 @@ PyTypeObject twopence_TargetType = {
 
 	.tp_name	= "twopence.Target",
 	.tp_basicsize	= sizeof(twopence_Target),
-	.tp_flags	= Py_TPFLAGS_DEFAULT,
+	.tp_flags	= Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
 	.tp_doc		= "Twopence target",
 
 	.tp_methods	= twopence_targetMethods,
