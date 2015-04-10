@@ -38,8 +38,8 @@ install: libtwopence.so twopence.h
 	install -m555 libtwopence.so $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION)
 	mkdir -p $(DESTDIR)$(INCDIR)/twopence
 	install -m444 twopence.h buffer.h $(DESTDIR)$(INCDIR)/twopence
-	mkdir -p $(DESTDIR)$(MANDIR)/man1
-	gzip -c twopence.3 > $(DESTDIR)$(MANDIR)/man1/twopence.3.gz
+	mkdir -p $(DESTDIR)$(MANDIR)/man3
+	gzip -c twopence.3 > $(DESTDIR)$(MANDIR)/man3/twopence.3.gz
 
 clean:
 	rm -f *.o *.so
