@@ -377,13 +377,10 @@ Command_getattr(twopence_Command *self, char *name)
 		return Command_stderr(self);
 	if (!strcmp(name, "pid"))
 		return PyInt_FromLong(self->pid);
-	if (!strcmp(name, "useTty")) {
-		PyObject *rv;
-
-		rv = self->useTty? Py_True : Py_False;
-		Py_INCREF(rv);
-		return rv;
-	}
+	if (!strcmp(name, "useTty"))
+		return return_bool(self->useTty);
+	if (!strcmp(name, "background"))
+		return return_bool(self->background);
 
 	return Py_FindMethod(twopence_commandMethods, (PyObject *) self, name);
 }
@@ -422,6 +419,10 @@ Command_setattr(twopence_Command *self, char *name, PyObject *v)
 	}
 	if (!strcmp(name, "useTty")) {
 		self->useTty = !!(PyObject_IsTrue(v));
+		return 0;
+	}
+	if (!strcmp(name, "background")) {
+		self->background = !!(PyObject_IsTrue(v));
 		return 0;
 	}
 
