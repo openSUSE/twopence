@@ -324,7 +324,7 @@ VALUE method_inject_file(VALUE self, VALUE ruby_args)
         ruby_dots;
   bool dots;
   struct twopence_target *target;
-  int rc, remote_rc;
+  int rc, remote_rc = -42;
 
   Check_Type(ruby_args, T_ARRAY);
   len = RARRAY_LEN(ruby_args);
@@ -382,7 +382,7 @@ VALUE method_extract_file(VALUE self, VALUE ruby_args)
         ruby_dots;
   bool dots;
   struct twopence_target *target;
-  int rc, remote_rc;
+  int rc, remote_rc = -42;
 
   Check_Type(ruby_args, T_ARRAY);
   len = RARRAY_LEN(ruby_args);
