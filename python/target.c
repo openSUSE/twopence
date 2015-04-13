@@ -409,7 +409,7 @@ Target_run(PyObject *self, PyObject *args, PyObject *kwds)
 
 		cmdObject->pid = bg->pid;
 
-		result = Py_None;
+		result = Py_True;
 		Py_INCREF(result);
 	} else {
 		if (Command_build(cmdObject, &cmd) < 0)
