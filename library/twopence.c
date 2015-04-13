@@ -342,6 +342,7 @@ twopence_inject_file
   xfer.print_dots = print_dots;
 
   rv = twopence_send_file(target, &xfer, &status);
+  *remote_rc = status.major;
 
   twopence_file_xfer_destroy(&xfer);
   return rv;
@@ -388,6 +389,7 @@ twopence_extract_file
   xfer.print_dots = print_dots;
 
   rv = twopence_recv_file(target, &xfer, &status);
+  *remote_rc = status.major;
 
   twopence_file_xfer_destroy(&xfer);
   return rv;
