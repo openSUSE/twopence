@@ -409,7 +409,7 @@ Target_run(PyObject *self, PyObject *args, PyObject *kwds)
 
 		cmdObject->pid = bg->pid;
 
-		result = Py_None;
+		result = Py_True;
 		Py_INCREF(result);
 	} else {
 		if (Command_build(cmdObject, &cmd) < 0)
@@ -598,8 +598,7 @@ Target_inject(PyObject *self, PyObject *args, PyObject *kwds)
 	if (rc < 0)
 		return twopence_Exception("inject", rc);
 
-	Py_INCREF(Py_None);
-	return Py_None;
+	return PyInt_FromLong(remoteRc);
 }
 
 /*
@@ -632,8 +631,7 @@ Target_extract(PyObject *self, PyObject *args, PyObject *kwds)
 	if (rc < 0)
 		return twopence_Exception("extract", rc);
 
-	Py_INCREF(Py_None);
-	return Py_None;
+	return PyInt_FromLong(remoteRc);
 }
 
 /*

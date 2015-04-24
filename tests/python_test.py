@@ -184,6 +184,23 @@ except:
 os.remove("etc_hosts")
 testCaseReport()
 
+testCaseBegin("try to extract non-existant file")
+try:
+	rc = target.extract("/does/not/exist", "crap.txt")
+	testCaseFail("extract returned %s (should have thrown an exception)" % rc);
+except:
+	pass
+	print "Good, command threw an exception as expected"
+testCaseReport()
+
+testCaseBegin("try to upload to non-existant file")
+try:
+	rc = target.inject("/dev/null", "/does/not/exist")
+	testCaseFail("inject returned %s (should have thrown an exception)" % rc);
+except:
+	print "Good, command threw an exception as expected"
+testCaseReport()
+
 testCaseBegin("Verify twopence.Command attributes")
 try:
 	outbuf = bytearray();

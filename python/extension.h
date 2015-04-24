@@ -127,6 +127,16 @@ return_string_or_none(const char *value)
 	return PyString_FromString(value);
 }
 
+static inline PyObject *
+return_bool(bool bv)
+{
+	PyObject *result;
+
+	result = bv? Py_True : Py_False;
+	Py_INCREF(result);
+	return result;
+}
+
 static inline void
 drop_string(char **var)
 {
