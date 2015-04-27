@@ -105,7 +105,7 @@ Command_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 	self->stdout = NULL;
 	self->stderr = NULL;
 	self->stdin = NULL;
-	self->suppressOutput = 0;
+	self->quiet = 0;
 	self->useTty = 0;
 	self->background = false;
 	self->pid = 0;
@@ -132,17 +132,19 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 		"stdout",
 		"stderr",
 		"suppressOutput",
+		"quiet",
 		"background",
 		NULL
 	};
 	PyObject *stdinObject = NULL, *stdoutObject = NULL, *stderrObject = NULL;
 	char *command, *user = NULL;
 	long timeout = 0L;
-	int suppressOutput = 0;
+	int quiet = 0;
 	int background = 0;
 
 	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|slOOOii", kwlist,
-				&command, &user, &timeout, &stdinObject, &stdoutObject, &stderrObject, &suppressOutput,
+				&command, &user, &timeout, &stdinObject, &stdoutObject, &stderrObject,
+				&quiet, &quiet,
 				&background))
 		return -1;
 
@@ -153,7 +155,7 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 	self->stderr = NULL;
 	self->stdinPath = NULL;
 	self->stdin = NULL;
-	self->suppressOutput = suppressOutput;
+	self->quiet = quiet;
 	self->background = background;
 
 	if (stdoutObject == NULL) {
@@ -265,7 +267,7 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 	cmd->background = self->background;
 
 	twopence_command_ostreams_reset(cmd);
-	if (self->suppressOutput || self->stdout == Py_None) {
+	if (self->quiet || self->stdout == Py_None) {
 		/* ostream has already been reset above */
 	} else {
 		/* Copy remote stdout to our stdout */
@@ -275,7 +277,7 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 	if (!Command_redirect_iostream(cmd, TWOPENCE_STDOUT, self->stdout, &buffer))
 		return -1;
 
-	if (self->suppressOutput || self->stderr == Py_None) {
+	if (self->quiet || self->stderr == Py_None) {
 		/* ostream has already been reset above */
 	} else {
 		/* Copy remote stderr to our stderr */
@@ -333,7 +335,7 @@ Command_suppressOutput(twopence_Command *self, PyObject *args, PyObject *kwds)
 	if (!PyArg_ParseTupleAndKeywords(args, kwds, "", kwlist))
 		return NULL;
 
-	self->suppressOutput = 1;
+	self->quiet = 1;
 	Py_INCREF(Py_None);
 	return Py_None;
 }
@@ -377,6 +379,8 @@ Command_getattr(twopence_Command *self, char *name)
 		return Command_stderr(self);
 	if (!strcmp(name, "pid"))
 		return PyInt_FromLong(self->pid);
+	if (!strcmp(name, "quiet"))
+		return return_bool(self->quiet);
 	if (!strcmp(name, "useTty"))
 		return return_bool(self->useTty);
 	if (!strcmp(name, "background"))
@@ -415,6 +419,10 @@ Command_setattr(twopence_Command *self, char *name, PyObject *v)
 			self->timeout = PyLong_AsLongLong(v);
 		else
 			goto bad_attr;
+		return 0;
+	}
+	if (!strcmp(name, "quiet")) {
+		self->quiet = !!(PyObject_IsTrue(v));
 		return 0;
 	}
 	if (!strcmp(name, "useTty")) {

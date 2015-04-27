@@ -44,7 +44,7 @@ typedef struct {
 	char *		user;
 	long		timeout;
 	char *		stdinPath;
-	int		suppressOutput;
+	bool		quiet;
 	PyObject *	stdout;
 	PyObject *	stderr;
 	PyObject *	stdin;
