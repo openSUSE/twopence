@@ -674,6 +674,19 @@ twopence_env_pass(twopence_env_t *env, const char *name)
 }
 
 /*
+ * Copy an environment
+ */
+extern void
+twopence_env_copy(twopence_env_t *env, const twopence_env_t *src_env)
+{
+	unsigned int i;
+
+	twopence_env_destroy(env);
+	for (i = 0; i < src_env->count; ++i)
+		__twopence_env_append(env, src_env->array[i]);
+}
+
+/*
  * Merge a default environment to a command environment
  */
 void

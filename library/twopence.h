@@ -442,6 +442,7 @@ extern void		twopence_env_init(twopence_env_t *env);
 extern void		twopence_env_set(twopence_env_t *, const char *name, const char *value);
 extern void		twopence_env_unset(twopence_env_t *, const char *name);
 extern void		twopence_env_pass(twopence_env_t *, const char *name);
+extern void		twopence_env_copy(twopence_env_t *env, const twopence_env_t *src_env);
 extern void		twopence_env_merge_inferior(twopence_env_t *env, const twopence_env_t *def_env);
 extern void		twopence_env_destroy(twopence_env_t *);
 
