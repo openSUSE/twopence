@@ -51,6 +51,8 @@ typedef struct {
 	bool		useTty;
 	bool		background;
 
+	twopence_env_t	environ;
+
 	unsigned int	pid;
 } twopence_Command;
 

@@ -30,6 +30,8 @@ static PyObject *	Command_new(PyTypeObject *type, PyObject *args, PyObject *kwds
 static PyObject *	Command_getattr(twopence_Command *self, char *name);
 static int		Command_setattr(twopence_Command *self, char *name, PyObject *);
 static PyObject *	Command_suppressOutput(twopence_Command *, PyObject *, PyObject *);
+static PyObject *	Command_setenv(twopence_Command *, PyObject *, PyObject *);
+static PyObject *	Command_unsetenv(twopence_Command *, PyObject *, PyObject *);
 
 /*
  * Define the python bindings of class "Command"
@@ -64,6 +66,12 @@ static PyObject *	Command_suppressOutput(twopence_Command *, PyObject *, PyObjec
 static PyMethodDef twopence_commandMethods[] = {
       {	"suppressOutput", (PyCFunction) Command_suppressOutput, METH_VARARGS | METH_KEYWORDS,
 	"Do not display command's output to screen"
+      },
+      {	"setenv", (PyCFunction) Command_setenv, METH_VARARGS | METH_KEYWORDS,
+	"Set an environment variable to be passed to the command"
+      },
+      {	"unsetenv", (PyCFunction) Command_unsetenv, METH_VARARGS | METH_KEYWORDS,
+	"Unset an environment variable"
       },
       {	NULL }
 };
@@ -110,6 +118,8 @@ Command_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 	self->background = false;
 	self->pid = 0;
 
+	twopence_env_init(&self->environ);
+
 	return (PyObject *)self;
 }
 
@@ -142,7 +152,7 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 	int quiet = 0;
 	int background = 0;
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|slOOOii", kwlist,
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|slOOOiii", kwlist,
 				&command, &user, &timeout, &stdinObject, &stdoutObject, &stderrObject,
 				&quiet, &quiet,
 				&background))
@@ -194,6 +204,7 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 static void
 Command_dealloc(twopence_Command *self)
 {
+	twopence_env_destroy(&self->environ);
 	drop_string(&self->command);
 	drop_string(&self->user);
 	drop_string(&self->stdinPath);
@@ -323,7 +334,48 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 		}
 	}
 
+	/* Copy all environment variables */
+	if (self->environ.count)
+		twopence_env_copy(&cmd->env, &self->environ);
+
 	return 0;
+}
+
+static PyObject *
+Command_setenv(twopence_Command *self, PyObject *args, PyObject *kwds)
+{
+	static char *kwlist[] = {
+		"name",
+		"value",
+		NULL
+	};
+	const char *variable, *value = NULL;
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "ss", kwlist, &variable, &value))
+		return NULL;
+
+	twopence_env_set(&self->environ, variable, value);
+
+	Py_INCREF(Py_None);
+	return Py_None;
+}
+
+static PyObject *
+Command_unsetenv(twopence_Command *self, PyObject *args, PyObject *kwds)
+{
+	static char *kwlist[] = {
+		"name",
+		NULL
+	};
+	const char *variable;
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s", kwlist, &variable))
+		return NULL;
+
+	twopence_env_unset(&self->environ, variable);
+
+	Py_INCREF(Py_None);
+	return Py_None;
 }
 
 static PyObject *
@@ -385,6 +437,29 @@ Command_getattr(twopence_Command *self, char *name)
 		return return_bool(self->useTty);
 	if (!strcmp(name, "background"))
 		return return_bool(self->background);
+	if (!strcmp(name, "environ")) {
+		twopence_env_t *env = &self->environ;
+		PyObject *rv = PyTuple_New(env->count);
+		unsigned int i;
+
+		for (i = 0; i < env->count; ++i) {
+			PyObject *pair = PyTuple_New(2);
+			char *name, *value;
+
+			name = strdup(env->array[i]);
+			if ((value = strchr(name, '=')) != NULL) {
+				*value++ = '\0';
+			} else {
+				value = "undef";
+			}
+			PyTuple_SET_ITEM(pair, 0, PyString_FromString(name));
+			PyTuple_SET_ITEM(pair, 1, PyString_FromString(value));
+			PyTuple_SET_ITEM(rv, i, pair);
+			free(name);
+		}
+
+		return rv;
+	}
 
 	return Py_FindMethod(twopence_commandMethods, (PyObject *) self, name);
 }
