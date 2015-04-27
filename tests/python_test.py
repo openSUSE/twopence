@@ -262,7 +262,7 @@ testCaseReport()
 testCaseBegin("run command kill -9 $$")
 try:
 	status = target.run("bash -c 'kill -9 $$'")
-	testCaseCheckStatus(status, 9)
+	testCaseCheckStatus(status, 256 + 9)
 except:
 	testCaseException()
 testCaseReport()

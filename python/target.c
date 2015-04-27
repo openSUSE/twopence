@@ -309,7 +309,12 @@ Target_buildCommandStatus(twopence_Command *cmdObject, twopence_command_t *cmd, 
 		return NULL;
 
 	statusObject = (twopence_Status *) twopence_callType(&twopence_StatusType, NULL, NULL);
-	statusObject->remoteStatus = status->minor;
+	if (status->major == EFAULT) {
+		/* Command exited with a signal */
+		statusObject->remoteStatus = 0x100 | (status->minor & 0xFF);
+	} else {
+		statusObject->remoteStatus = status->minor;
+	}
 	if (cmdObject->stdout) {
 		statusObject->stdout = cmdObject->stdout;
 		Py_INCREF(statusObject->stdout);
@@ -556,8 +561,12 @@ Target_waitAll(PyObject *self, PyObject *args, PyObject *kwds)
 
 		if (result == NULL)
 			result = Target_buildCommandStatusShort(bg->object, &bg->cmd, &status);
-		else if (status.minor != 0)
+		if (status.major == EFAULT) {
+			/* Command exited with a signal */
+			result->remoteStatus = 0x100 | (status.minor & 0xFF);
+		} else if (status.minor) {
 			result->remoteStatus = status.minor;
+		}
 
 		backgroundedCommandFree(bg);
 		if (print_dots) {
