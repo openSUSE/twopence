@@ -480,8 +480,8 @@ if not(backgroundingSupported):
 else:
     try:
 	cmd = twopence.Command("/bin/pwd", background = 1);
-	if target.run(cmd):
-		testCaseFail("Target.run() of a backgrounded command should return None")
+	if target.run(cmd) != True:
+		testCaseFail("Target.run() of a backgrounded command should return True")
 	elif not cmd.pid:
 		testCaseFail("Target.run() of a backgrounded command should set the command's pid")
 	else:
@@ -498,6 +498,7 @@ else:
 		testCaseFail("command pid should be reset to 0 after completion")
     except:
 	testCaseException()
+target.waitAll()
 testCaseReport()
 
 testCaseBegin("run several processes in the background")
@@ -505,8 +506,9 @@ if not(backgroundingSupported):
     testCaseSkip("background execution not available for %s plugin right now" % target.type)
 else:
     try:
+	times = range(6, 0, -1)
 	cmds = []
-	for time in range(6, 0, -1):
+	for time in times:
 		cmd = twopence.Command("sleep %d" % time, background = 1);
 		print "Starting ", cmd.commandline
 		target.run(cmd)
@@ -521,8 +523,9 @@ else:
 			testCaseFail("command failed")
 		nreaped = nreaped + 1;
 
-	if nreaped != 6:
-		testCaseFail("Reaped %d commands, expected 6" % nreaped)
+	ntimes = len(times)
+	if nreaped != ntimes:
+		testCaseFail("Reaped %d commands, expected %d" % (nreaped, ntimes))
     except:
 	testCaseException()
 testCaseReport()
