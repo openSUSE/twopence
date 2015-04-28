@@ -69,7 +69,7 @@ status=$?
 echo "******************************************************************"
 echo "*** TEST TEAR-DOWN ***"
 case $PLUGIN in
-virtio)
+virtio|tcp)
 	if ! killall -TERM twopence_test_server; then
 		echo "*** Unable to kill server; did it crash?" >&2
 		status=1
