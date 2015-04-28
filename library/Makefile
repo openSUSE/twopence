@@ -12,6 +12,7 @@ CFLAGS	= -D_GNU_SOURCE -fPIC $(CCOPT)
 
 LIBDIR ?= /usr/lib64
 INCDIR ?= /usr/include
+MANDIR ?= /usr/share/man
 
 LIB_OBJS= twopence.o \
 	  ssh.o \

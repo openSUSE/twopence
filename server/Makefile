@@ -7,6 +7,8 @@ CCOPT	= -Wall -O2 -g
 endif
 
 BINDIR ?= /usr/bin
+MANDIR ?= /usr/share/man
+
 SERVER	= twopence_test_server
 OBJS	= main.o \
 	  server.o
