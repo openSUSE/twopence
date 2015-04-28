@@ -1,0 +1,421 @@
+.\" Process this file with
+.\" groff -man -Tascii twopence.3py
+.\"
+.\"
+.TH TWOPENCE "3py" "April 2015" "Twopence 0.3.3" "twopence python bindings"
+
+.SH NAME
+twopence \- library routines for orchestrating multi-node tests (python bindings)
+
+.SH SYNOPSIS
+.nf
+.B "import twopence
+.fi
+
+.SH SYNOPSIS AND DESCRIPTION
+The twopence library allows an application to execute commands remotely
+in a multi-node testing scenario. For a basic description of the API, please
+refer to
+.BR twopence (3).
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Creating a Target Object
+.\" --------------------------------------------------------------
+In order to create a target object, invoke its constructor like this:
+.P
+.in +2
+.nf
+.B target = twopence.Target(\(dqssh:somehost\(dq)
+.fi
+.P
+Optionally, you can specify a \fBname\fP and an \fBattrs\fP argument. Setting the name
+can be helpful if you want to assign a nickname to different targets, to be used later on
+in printing error messages:
+.P
+.in +2
+.nf
+.B target = twopence.Target(\(dqssh:somehost\(dq, name = \(dqclient\(dq)
+.fi
+.P
+Please do not use the \fBattrs\fP argument.
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Target Object Attributes
+.\" --------------------------------------------------------------
+The target object supports these attributes:
+.TP
+.BR name " (read-only)
+This is the name assigned to it by the constructor.
+.TP
+.BR type " (read-only)
+This is the target type, which is the leading portion of the string passed into the
+constructor. For example, if you created a target for \(dqvirtio:/var/run/foo.socket\(dq, then
+the this attribute will contain \(dqvirtio\(dq.
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Running Commands
+.\" --------------------------------------------------------------
+In order to run a command on a SUT, create a \fBCommand\fP object and pass it to a
+target's \fBrun()\fP method:
+.P
+.in +2
+.nf
+.B cmd = twopence.Command(\(dqrm -rf /home/okir\(dq, user = \(dqtestuser\(dq)
+.B status = target.run(cmd)
+.fi
+.P
+The only required argument is the command line passed to the SUT, which must be
+given first. All other arguments are optional and match the names of a corresponding
+attribute, as described below.
+.P
+Alternatively, as a convenience, you can invoke the \fBrun()\fP method with the same
+set of arguments as you would call the \fBCommand\fP constructor. The example above
+would look like this:
+.P
+.in +2 
+.nf
+.B status = target.run(\(dqrm -rf /home/okir\(dq, user = \(dqtestuser\(dq)
+.fi
+.P
+The \fBStatus\fP object returned by the \fBrun()\fP method carries several bits and pieces
+of information. The most important one being the remote exit status contained in
+\fBstatus.code\fP. If the command exited regularly, this will be the command's exit status.
+If the command died from a signal, its value will be 256 plus the termination signal
+(sorry, no translation of platform dependent signal numbers).
+.P
+In order to allow for simple testing whether a command's exit status was zero, the
+\fBStatus\fP class supports a built-in conversion to boolean, so that you can use it
+like this:
+.P
+.in +2
+.nf
+.B "if not target.run(\(dqrm -rf /home/okir\(dq):
+.B "       complain_loudly()
+.fi
+.P
+Please refer to the section \fBStatus Object Attributes\fP below for more information on the
+status object.
+.P
+If a local error occurs (i.e. the python C library function returned a negative error code),
+a python exception is raised.
+.P
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Backgrounding Commands
+.\" --------------------------------------------------------------
+It is possible to run commands asynchronously (aka in the background) by setting the
+command's \fBbackground\fP attribute:
+.P
+.in +2
+.nf
+.B "cmd = twopence.Command(\(dqrm -rf /root\(dq, background = True)
+.B "if not target.run(cmd):
+.B "   return 127
+.B "...
+.B "status = target.wait(cmd)
+.fi
+.P
+If a command is being executed asynchronously, the \fBrun()\fP
+method will return \fBTrue\fP, and an internal attribute of the \fBCommand\fP object is used
+to reference the transaction in progress. This means it is not possible to execute one
+command object on several targets at the same time - if you want to do so, you need
+to create individual command objects for each target.
+.P
+The above example illustrates how to wait for one specific backgrounded command to complete.
+The \fBwait()\fP method returns a status object just like the \fBrun()\fP method does for
+regular foreground commands, with one small addition. The \fBcommand\fP attribute will
+reference the original \fBCommand\fP object passed to the \fBrun()\fP method.
+.P
+If you call \fBwait()\fP without arguments, twopence will wait for any backgrounded
+command (on this target) to complete and return the corresponding status object.
+If there are no pending commands, it will return \fBNone\fP.
+.P
+In addition, there is a \fBwaitAll()\fP method that can be used to block for all
+pending commands to complete, just like the bash \fBwait\fP builtin:
+.P
+.in +2
+.nf
+.B "status = target.waitAll(print_dots = True)
+.fi
+.P
+The value of \fBstatus.code\fP will be zero if and only if none of the pending commands
+returned with a non-zero exit status. The optional \fBprint_dots\fP argument instructs
+the method to print a single dot character for each pending process reaped.
+.P
+\fBBugs:\fP Currently, it is not possible to terminate a backgrounded command. There
+should really be a \fBkill\fP method.
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Capturing the Command's Output
+.\" --------------------------------------------------------------
+By default, the command's standard output and standard error are copied to the python interpreter's
+stdout and stderr, respectively, as well as two separate \fBbytearray\fP objects.
+.P
+These byte arrays can be accessed through the status object as
+\fBstatus.stdout\fP and \fBstatus.stderr\fP, respectively. Be
+aware that if you want to perform string manipulations on these,
+you need to convert the buffer to a string first and maybe also
+strip off the trailing newline:
+.P
+.in +2
+.nf
+.B "status = target.run(\(dqwhoami\(dq)
+.B "if status:
+.B "    user = str(status.stdout).strip()
+.B "    print \(dqcommand was run as user\(dq, user
+.fi
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Command Object Attributes
+.\" --------------------------------------------------------------
+The indication \(dqread-write\(dq or \(dqreadonly\(dq indicates whether the attributes can
+be set or not.  Attributes labelled as \(dqconstructor\(dq can be used in a call to the constructor.
+.TP
+.BR commandline " (read-only, constructor)
+The command to be executed. All shell constructs are supported, as this string
+is passed to \fB/bin/sh\fP for execution.
+.TP
+.BR user " (read-write, constructor)
+The user to run the command as; defaults to \fBroot\fP.
+.TP
+.BR timeout " (read-write, constructor)
+The time in seconds until twopence calls it a day and returns an error, rather than keep waiting
+for the command to return. This defaults to 60 seconds.
+.TP
+.BR stdin " (read-write, constructor)
+The object to connect to the command's standard input. This can be the name of a local file (i.e.
+a string object), a \fBbytearray\fP to read from, or a python \fBfile\fP object. Note that
+not all of python's file types may be supported; most should be.
+.TP
+.BR stdout " (read-write, constructor)
+The object to write the command's standard output to. 
+By default, all output is written to the python interpreter's stdout and a \fBbytearray\fP
+object.
+By setting this attribute to a different \fBbytearray\fP or a \fBfile\fP object,
+the output will be written to the specified object \fIas well as\fP the interpreter's stdout.
+If you do not want the command's output to appear on your screen, set the \fBquiet\fP attribute
+described below.
+.IP
+If you set this attribute to \fBNone\fP, no output will be generated whatsoever.
+.TP
+.BR stderr " (read-write, constructor)
+Analogous to the \fBstdout\fP attribute above. If you just specify
+\fBstdout\fP but not \fBstderr\fP, the two output streams are
+combined into one and buffered together.
+.TP
+.BR quiet " (read-write, constructor)
+Do not copy output to the python interpreter's stdout or stderr.
+.TP
+.BR background " (read-write, constructor)
+Execute the command asynchronously. Running a command with \fBbackground\fP set to
+\fBTrue\fP will schedule the command for execution on the SUT and return immediately.
+For details, please refer to the section below.
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Setting Environment Variables
+.\" --------------------------------------------------------------
+It is possible to pass environment variables to a command, taken from two
+possible sources: you can assign environment variables to a target as well
+as a command. When executing a command on a given target, these two
+environments are merged, with the command environment taking precedence over
+the target's environment.
+.P
+You can manipulate the environment using these methods:
+.in +2
+.nf
+\fB
+def setenv(self, name, value)
+def unsetenv(self, name)
+\fP
+.fi
+.in
+.P
+These methods are supported by the \fBCommand\fP as well as the \fBTarget\fP
+class. The following will print the string \(dqdunce\(dq, as the command's
+environment takes precedence over the target's environment:
+.P
+.in +2
+.nf
+\fB
+cmd = twopence.Command(\(dqecho $olaf\(dq)
+target.setenv(\(dqolaf\(dq, \(dqeinstein\(dq)
+cmd.setenv(\(dqolaf\(dq, \(dqdunce\(dq)
+target.run(cmd)
+\fP
+.fi
+.in
+.P
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS File Transfers
+.\" --------------------------------------------------------------
+The twopence python bindings support file transfers through the
+\fBsendfile\fP and \fBrecvfile\fP methods. In addition to these, there are
+two legacy methods called \fBinject\fP and \fBextract\fP.
+.P
+The \fBsendfile\fP and \fBrecvfile\fP methods use a \fBTransfer\fP object
+to describe what is being transferred and how. Here's an example how to
+download a file:
+.P
+.in +2
+.nf
+'\fB
+xfer = twopence.Transfer(\(dq/etc/hosts\(dq, localfile = \(dq/tmp/myhosts\(dq)
+status = target.recvfile(xfer)
+'\fP
+.fi
+.in
+.P
+The remote file argument is required, but all other attributes of
+\fBTransfer\fP are optional.  For a complete description of the attributes
+understood by this class, refer to section \fITransfer Object Attributes\fP below.
+.P
+As the example indicates, these methods return objects of class \fBStatus\fP
+just like the \fBrun()\fP method. Of course, not all attributes apply to
+both classes of commands; for instance, the \fBstdout\fP attribute will be
+mostly useless in the context of a file transfer.
+.P
+Just like with the \fBrun()\fB method, you can invoke \fBrecvfile\fP with the
+arguments you would normally pass to the \fBTransfer\fP constructor:
+.P
+.in +2
+.nf
+'\fB
+status = target.sendfile(\(dq/etc/hosts.new\(dq, localfile = \(dq/tmp/myhosts\(dq)
+'\fP
+.fi
+.in
+.P
+If you want to download a file to a local buffer, just call \fBrecvfile\fP without
+specifying a local file name. This will place the received data in a
+\fBbytearray\fP object made available as \fBstatus.buffer\fP:
+.P
+.in +2
+.nf
+'\fB
+status = target.recvfile(\(dq/etc/HOSTNAME\(dq)
+if status:
+    hostname = str(status.buffer).strip()
+    print "The host name is", hostname
+'\fP
+.fi
+.in
+.P
+Similarly, it's possible to upload data from a buffer by setting the \fBTransfer\fP
+object's \fBdata\fP attribute:
+.P
+.in +2
+.nf
+'\fB
+newHostname = \(dqtestmachine.opensuse.org\(dq
+status = target.sendfile(\(dq/etc/HOSTNAME\(dq, data = bytearray(newHostname))
+'\fP
+.fi
+.in
+.P
+Yes, the naming could be more consistent here. Also, \fBdata\fP does not understand
+objects other than byte arrays, even though it would be convenient to support
+strings or file handles as well.
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Transfer Object Attributes
+.\" --------------------------------------------------------------
+Here is the list of attributes supported by the \fBTransfer\fP class.
+The indication \(dqread-write\(dq or \(dqreadonly\(dq indicates whether the attributes can
+be set or not.  Attributes labelled as \(dqconstructor\(dq can be used in a call to the constructor:
+.P
+.TP
+.BR remotefile " (read-write, constructor)
+The path of the remote file. If this path does not start with a \fB/\fP, it is taken as
+relative to the home directory of the (remote) user as which the transfer is executed.
+.TP
+.BR localfile " (read-write, constructor)
+The path of the local file to transfer from/to. If not given,
+a transfer to or from a local buffer is attempted - see the discussion of
+the \fBdata\fP attribute below.
+.TP
+.BR permissions " (read-write, constructor)
+This attribute can be used to specify the permissions of the destination
+file, and defaults to 0644. During uploads, the remote file's permissions
+will be changed to this value. During downloads, the local file's
+permissions are modified accordingly.
+.TP
+.BR data " (read-write, constructor)
+This attribute can be set to a byte array object, in which case data is transferred
+to or from this local buffer instead of a local file.
+When uploading with \fBsendfile\fP, exactly one of \fBlocalfile\fP or
+\fBdata\fP must be set. When downloading, and neither \fBlocalfile\fP nor
+\fBdata\fP is set, the remote file will be downloaded to a byte array,
+a reference to which can then be obtained from \fBstatus.buffer\fP.
+.TP
+.BR user " (read-write, constructor)
+The user to run the command as; defaults to \fBroot\fP.
+.TP
+.BR timeout " (read-write, constructor)
+The time in seconds until twopence calls it a day and returns an error, rather than keep waiting
+for the command to return. This defaults to 60 seconds.
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Status Object Attributes
+.\" --------------------------------------------------------------
+Here is the list of attributes supported by the \fBStatus\fP class.
+Status objects are created internally by the python bindings of \fBrun()\fP,
+\fBsendfile()\fP etc, and are not intended to be created by the programmer.
+Thus, all attributes are readonly, and users are discouraged to construct
+any such objects.
+.TP
+.B code
+This is the status code of the remote command, or the status of the
+file transfer.
+If the remote command exited after receiving a signal, the status
+code will be 256 plus the number of the termination signal.
+.TP
+.B message
+contains a descriptive message of the remote status, to be used
+in printing diagnostics. This is more of a convenience than really
+useful.
+.TP
+.B command
+references the command object that was passed to \fBrun()\fP. This 
+is mostly useful when using the \fBwait()\fP method to wait for
+arbitrary commands to complete. Note that the command line of the
+original command is thus accessible as
+\fBstatus.command.commandline\fP.
+.TP
+.BR stdout ", " stderr
+In the context of a command executed via \fBrun()\fP, these contain
+the byte array or file objects associated with the command's
+standard output and standard error, respectively.
+.TP
+.BR buffer
+In the context of a file transfer to or from a local buffer, this
+attribute references the byte array object containing the buffered
+data.
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Twopence Exceptions
+.\" --------------------------------------------------------------
+For now, the twopence python bindings do not define their own
+exception class. Instead, whenever a twopence library call returns
+an error indication, the binding will raise a \fBSystemError\fP exception
+and set the exception message appropriately.
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SH SEE ALSO
+.BR twopence (3).
+.\" It would be nice to have a twopence(7) to describe the concepts
+.\" No twopence(3rb) yet...
+.SH AUTHORS
+The python bindings for twopence were written by Olaf Kirch <okir@suse.de>.

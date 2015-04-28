@@ -8,6 +8,7 @@ endif
 CFLAGS	= -fPIC -I/usr/include/python -I../library $(CCOPT)
 
 LIBDIR ?= /usr/lib64
+MANDIR ?= /usr/share/man
 PYDIR  := $(shell readlink -f $(LIBDIR)/python/site-packages)
 
 OBJS	= extension.o \
@@ -27,3 +28,5 @@ clean:
 install:
 	mkdir -p $(DESTDIR)$(PYDIR)
 	cp twopence.so $(DESTDIR)$(PYDIR)
+	mkdir -p $(DESTDIR)$(MANDIR)/man3
+	gzip -c twopence.3py > $(DESTDIR)$(MANDIR)/man3/twopence.3py.gz
