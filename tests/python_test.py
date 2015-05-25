@@ -262,7 +262,7 @@ testCaseReport()
 testCaseBegin("run command kill -9 $$")
 try:
 	status = target.run("bash -c 'kill -9 $$'")
-	testCaseCheckStatus(status, 9)
+	testCaseCheckStatus(status, 256 + 9)
 except:
 	testCaseException()
 testCaseReport()
@@ -480,8 +480,8 @@ if not(backgroundingSupported):
 else:
     try:
 	cmd = twopence.Command("/bin/pwd", background = 1);
-	if target.run(cmd):
-		testCaseFail("Target.run() of a backgrounded command should return None")
+	if target.run(cmd) != True:
+		testCaseFail("Target.run() of a backgrounded command should return True")
 	elif not cmd.pid:
 		testCaseFail("Target.run() of a backgrounded command should set the command's pid")
 	else:
@@ -498,6 +498,7 @@ else:
 		testCaseFail("command pid should be reset to 0 after completion")
     except:
 	testCaseException()
+target.waitAll()
 testCaseReport()
 
 testCaseBegin("run several processes in the background")
@@ -505,8 +506,9 @@ if not(backgroundingSupported):
     testCaseSkip("background execution not available for %s plugin right now" % target.type)
 else:
     try:
+	times = range(6, 0, -1)
 	cmds = []
-	for time in range(6, 0, -1):
+	for time in times:
 		cmd = twopence.Command("sleep %d" % time, background = 1);
 		print "Starting ", cmd.commandline
 		target.run(cmd)
@@ -521,8 +523,9 @@ else:
 			testCaseFail("command failed")
 		nreaped = nreaped + 1;
 
-	if nreaped != 6:
-		testCaseFail("Reaped %d commands, expected 6" % nreaped)
+	ntimes = len(times)
+	if nreaped != ntimes:
+		testCaseFail("Reaped %d commands, expected %d" % (nreaped, ntimes))
     except:
 	testCaseException()
 testCaseReport()
@@ -778,6 +781,124 @@ try:
 except:
 	testCaseException()
 target.run("rm -f /tmp/injected");
+testCaseReport()
+
+testCaseBegin("verify that we can pass an environment variable")
+try:
+	value = "12345"
+
+	print "Setting FOOBAR=%s and running echo $FOOBAR" % value
+	cmd = twopence.Command("echo $FOOBAR", quiet = True)
+	cmd.setenv("FOOBAR", value)
+	status = target.run(cmd)
+	if testCaseCheckStatus(status):
+		output = str(status.stdout).strip()
+		if output != value:
+			testCaseFail("Command should have printed \"%s\", but gave us \"%s\"" % (value, output))
+		else:
+			print "Great, SUT echoed back \"%s\"" % value
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("verify that we can inspect the environment locally")
+try:
+	print "Setting several environment variables and inspecting the command's environ attribute"
+	setenv = [["foo", "1234"], ["bar", "5678"]]
+	cmd = twopence.Command("irrelevant")
+	for pair in setenv:
+		cmd.setenv(pair[0], pair[1])
+
+	# We cannot just test "if setenv == cmd.environ" because that compares
+	# references, not values
+	match = True
+	value = cmd.environ
+
+	if len(value) != len(setenv):
+		match = True
+	for i in range(0, len(setenv)):
+		set = setenv[i]
+		get = value[i]
+		if set[0] != get[0] or set[1] != get[1]:
+			match = False
+
+	if not match:
+		testCaseFail("cmd.environ does not match what we assigned")
+		print "Here's what we set:"
+		for pair in setenv:
+			print "%s=%s" % (pair[0], pair[1])
+		print "And here's what we get:"
+		for pair in cmd.environ:
+			print "%s=%s" % (pair[0], pair[1])
+	else:
+		print "Great, cmd.environ returns the expected data"
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("verify that cmd.unsetenv works")
+try:
+	print "Setting and unsetting variable foobar"
+	cmd = twopence.Command("irrelevant")
+	cmd.setenv("foobar", "1234")
+	cmd.unsetenv("foobar")
+	if len(cmd.environ) != 0:
+		testCaseFail("cmd.environ should be empty")
+except:
+        testCaseException()
+testCaseReport()
+
+testCaseBegin("verify that we can pass environment variables per target")
+try:
+	value = "abcdef"
+
+	print "Setting FOOBAR=%s in the target environment and running echo $FOOBAR" % value
+	target.setenv("FOOBAR", value)
+	cmd = twopence.Command("echo $FOOBAR", quiet = True)
+	status = target.run(cmd)
+	if testCaseCheckStatus(status):
+		output = str(status.stdout).strip()
+		if output == value:
+			print "Great, SUT echoed back \"%s\"" % value
+		else:
+			testCaseFail("Command should have printed \"%s\", but gave us \"%s\"" % (value, output))
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("verify that Command environment takes precedence over target environment")
+try:
+	value = "ghijklm"
+
+	print "Setting FOOBAR=%s in the command environment and running echo $FOOBAR" % value
+	cmd = twopence.Command("echo $FOOBAR", quiet = True)
+	cmd.setenv("FOOBAR", value)
+	status = target.run(cmd)
+	if testCaseCheckStatus(status):
+		output = str(status.stdout).strip()
+		if output == value:
+			print "Great, SUT echoed back \"%s\"" % value
+		else:
+			testCaseFail("Command should have printed \"%s\", but gave us \"%s\"" % (value, output))
+except:
+        testCaseException()
+testCaseReport()
+
+testCaseBegin("verify that we can unset per-target environment variables")
+try:
+	print "Setting several environment variables and inspecting the command's environ attribute"
+	target.unsetenv("FOOBAR")
+
+	cmd = twopence.Command("echo $FOOBAR", quiet = True)
+	status = target.run(cmd)
+	if testCaseCheckStatus(status):
+		output = str(status.stdout).strip()
+		if len(output) == 0:
+			print "Great, the variable was unset"
+		else:
+			testCaseFail("Command gave us \"%s\" (should have been empty)" % (output))
+except:
+	testCaseException()
 testCaseReport()
 
 

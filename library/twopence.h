@@ -438,9 +438,11 @@ extern void		twopence_command_ostream_reset(twopence_command_t *, twopence_iofd_
 extern void		twopence_command_ostream_capture(twopence_command_t *, twopence_iofd_t, twopence_buf_t *);
 extern void		twopence_command_iostream_redirect(twopence_command_t *, twopence_iofd_t, int, bool closeit);
 
+extern void		twopence_env_init(twopence_env_t *env);
 extern void		twopence_env_set(twopence_env_t *, const char *name, const char *value);
 extern void		twopence_env_unset(twopence_env_t *, const char *name);
 extern void		twopence_env_pass(twopence_env_t *, const char *name);
+extern void		twopence_env_copy(twopence_env_t *env, const twopence_env_t *src_env);
 extern void		twopence_env_merge_inferior(twopence_env_t *env, const twopence_env_t *def_env);
 extern void		twopence_env_destroy(twopence_env_t *);
 

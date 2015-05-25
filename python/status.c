@@ -151,21 +151,16 @@ Status_object_attr(twopence_Status *self, PyObject *result)
 static PyObject *
 Status_message(twopence_Status *self)
 {
+	int st = self->remoteStatus;
 	char message[128];
 
 	message[0] = '\0';
 
-	/* Unfortunately, the exit status returned by libssh is somewhat limited :-( */
-	switch (self->remoteStatus) {
-	case 0:
+	if (st == 0) {
 		strcpy(message, "success");
-		break;
-
-	case -1:
-		strcpy(message, "crashed");
-		break;
-
-	default:
+	} else if (st & 0x100) {
+		snprintf(message, sizeof(message), "crashed (signal %u)", st & 0xFF);
+	} else {
 		snprintf(message, sizeof(message), "status %d", self->remoteStatus);
 	}
 

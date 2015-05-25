@@ -106,9 +106,7 @@ Transfer_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
  * Initialize the transfer object
  *
  * Typical ways to do this include
- *    cmd = twopence.Transfer("/bin/ls", user = "wwwrun", stdout = bytearray());
- *    cmd = twopence.Transfer("/bin/ls", user = "wwwrun", stdout = str());
- *    cmd = twopence.Transfer("/usr/bin/wc", stdin = "/etc/hosts");
+ *    xfer = twopence.Transfer("etc/hosts", user = "joedoe");
  */
 int
 Transfer_init(twopence_Transfer *self, PyObject *args, PyObject *kwds)

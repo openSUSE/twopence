@@ -44,12 +44,14 @@ typedef struct {
 	char *		user;
 	long		timeout;
 	char *		stdinPath;
-	int		suppressOutput;
+	bool		quiet;
 	PyObject *	stdout;
 	PyObject *	stderr;
 	PyObject *	stdin;
 	bool		useTty;
 	bool		background;
+
+	twopence_env_t	environ;
 
 	unsigned int	pid;
 } twopence_Command;

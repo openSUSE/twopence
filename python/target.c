@@ -38,6 +38,8 @@ static PyObject *	Target_inject(PyObject *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_extract(PyObject *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_sendfile(PyObject *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_recvfile(PyObject *self, PyObject *args, PyObject *kwds);
+static PyObject *	Target_setenv(twopence_Target *, PyObject *, PyObject *);
+static PyObject *	Target_unsetenv(twopence_Target *, PyObject *, PyObject *);
 
 /*
  * Define the python bindings of class "Target"
@@ -75,6 +77,12 @@ static PyMethodDef twopence_targetMethods[] = {
       },
       {	"recvfile", (PyCFunction) Target_recvfile, METH_VARARGS | METH_KEYWORDS,
 	"Transfer a file from the SUT to the local node"
+      },
+      {	"setenv", (PyCFunction) Target_setenv, METH_VARARGS | METH_KEYWORDS,
+	"Set an environment variable to be passed to all commands by default"
+      },
+      {	"unsetenv", (PyCFunction) Target_unsetenv, METH_VARARGS | METH_KEYWORDS,
+	"Unset an environment variable"
       },
 
       {	NULL }
@@ -301,7 +309,12 @@ Target_buildCommandStatus(twopence_Command *cmdObject, twopence_command_t *cmd, 
 		return NULL;
 
 	statusObject = (twopence_Status *) twopence_callType(&twopence_StatusType, NULL, NULL);
-	statusObject->remoteStatus = status->minor;
+	if (status->major == EFAULT) {
+		/* Command exited with a signal */
+		statusObject->remoteStatus = 0x100 | (status->minor & 0xFF);
+	} else {
+		statusObject->remoteStatus = status->minor;
+	}
 	if (cmdObject->stdout) {
 		statusObject->stdout = cmdObject->stdout;
 		Py_INCREF(statusObject->stdout);
@@ -548,8 +561,12 @@ Target_waitAll(PyObject *self, PyObject *args, PyObject *kwds)
 
 		if (result == NULL)
 			result = Target_buildCommandStatusShort(bg->object, &bg->cmd, &status);
-		else if (status.minor != 0)
+		if (status.major == EFAULT) {
+			/* Command exited with a signal */
+			result->remoteStatus = 0x100 | (status.minor & 0xFF);
+		} else if (status.minor) {
 			result->remoteStatus = status.minor;
+		}
 
 		backgroundedCommandFree(bg);
 		if (print_dots) {
@@ -761,3 +778,39 @@ out:
 	return result;
 }
 
+static PyObject *
+Target_setenv(twopence_Target *self, PyObject *args, PyObject *kwds)
+{
+	static char *kwlist[] = {
+		"name",
+		"value",
+		NULL
+	};
+	const char *variable, *value = NULL;
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "ss", kwlist, &variable, &value))
+		return NULL;
+
+	twopence_target_setenv(self->handle, variable, value);
+
+	Py_INCREF(Py_None);
+	return Py_None;
+}
+
+static PyObject *
+Target_unsetenv(twopence_Target *self, PyObject *args, PyObject *kwds)
+{
+	static char *kwlist[] = {
+		"name",
+		NULL
+	};
+	const char *variable;
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s", kwlist, &variable))
+		return NULL;
+
+	twopence_target_setenv(self->handle, variable, NULL);
+
+	Py_INCREF(Py_None);
+	return Py_None;
+}

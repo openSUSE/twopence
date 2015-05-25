@@ -1,5 +1,5 @@
 .\" Process this file with
-.\" groff -man -Tascii server.1
+.\" groff -man -Tascii twopence.3
 .\"
 .\"
 .TH TWOPENCE "3" "April 2015" "Twopence 0.3.3" "twopence C library"
@@ -22,7 +22,7 @@ target to connect to.
 .PP
 .in +2
 .nf
-.B "int  twopence_target_new(const char *target_spec, struct twopence_target **ret);
+.B "int  twopence_target_new(const char *target_spec, twopence_target_t **ret);
 .fi
 .ni
 .PP
@@ -59,11 +59,11 @@ If a hostname is given that resolves to more than one address,
 each address is tried in turn, until a connection can be established.
 .PP
 Once a handle for the desired target has been obtained, the
-application can interact with the SUT in three major ways:
+application can perform actions on the SUT:
 injecting files, extracting files, and executing commands. These
 operations and their API calls will be described below
 .PP
-In addition to these, you there are API calls to close the
+In addition to these, there are API calls to close the
 handle for a target, and to ask the target's twopence server
 to exit (this is a no-op in the ssh case).
 .\" --------------------------------------------------------------
@@ -83,13 +83,80 @@ access, you need to add the public portion of that key to the
 .\" --------------------------------------------------------------
 .\"
 .\"
+.SS Creating and Destroying Targets
+.\" --------------------------------------------------------------
+The library is instructed to connect to a target using the
+.BR twopence_target_new (3)
+function, which takes a string as its first argument, specifying the
+target to connect to.
+.PP
+.in +2
+.nf
+.B "int  twopence_target_new(const char *target_spec, twopence_target_t **ret);
+.fi
+.ni
+.PP
+If successful, this function will return 0, and return a pointer to the
+target object in \fBret\fP. In case of an error, the function will return
+a negative error code.
+.PP
+In order to dispose of a target object, call this function:
+.PP
+.in +2
+.nf
+.B "void twopence_target_free(twopence_target_t *target);
+.fi
+.ni
+.PP
+
+.\" --------------------------------------------------------------
+.\"
+.\"
 .SS Twopence Status Struct
 .\" --------------------------------------------------------------
 .\"
 .\"
-.I "Explain twopence_status_t
+Transactions on a SUT (command execution and file transfers) can fail in
+several ways.  If an error occurs on the client side (for instance,
+at the communication level), the library functions will return a negative
+error code as their return value. These error codes are defined in
+\fBtwopence.h\fP. You can use \fBtwopence_strerror()\fP or
+\fBtwopence_perror()\fP to display error messages to the user:
 .PP
+.in +2
+.nf
+\fB
+extern const char *       twopence_strerror(int rc);
+extern void               twopence_perror(const char *, int rc);
+\fP
+.fi
+.in
+.PP
+If there is no local error, the library functions will return 0 and report
+the remote status of the transaction in a status object:
+.PP
+.in +2
+.nf
+\fB
+typedef struct twopence_status {
+        int               major;
+        int               minor;
+} twopence_status_t;
+\fP
+.fi
+.in
+.PP
+The reason for having two status codes is that some operations have
+two stages. Strictly speaking, it wouldn't be necessary to report these as
+two separate values, but that's the way it is for now.
+.PP
+.\" --------------------------------------------------------------
+.\"
+.\"
 .SS File Uploads and Downloads
+.\" --------------------------------------------------------------
+.\"
+.\"
 File uploads and downloads are fairly straightforward. In both
 cases, the path of the remote file name and a local "iostream"
 are needed. These iostreams are not your regular libc \fBFILE\fP
@@ -102,10 +169,10 @@ The primary functions for sending and receiving files are
 .in +2
 .nf
 \fB
-int  twopence_send_file(struct twopence_target *target,
+int  twopence_send_file(twopence_target_t *target,
                           twopence_file_xfer_t *xfer,
                           twopence_status_t *status);
-int  twopence_recv_file(struct twopence_target *target,
+int  twopence_recv_file(twopence_target_t *target,
                           twopence_file_xfer_t *xfer,
                           twopence_status_t *status);
 
@@ -167,6 +234,12 @@ Note that both the twopence server and SSH will refuse to open anything
 but regular files. When using SSH, downloading files from \fB/proc\fP
 or similar virtual file systems will result in empty files. This is due
 to a problem in the SSH daemon.
+.PP
+.B "Return value:
+Upon return, the \fIstatus\fP structure will contain standard Linux
+errno values. If the operation completed successfully, both
+the \fBmajor\fP or \fBminor\fP fields will be zero. In case of an error,
+either of them will contain a non-zero error code, but never both.
 .\" --------------------------------------------------------------
 .\"
 .\"
@@ -189,7 +262,7 @@ The primary function for executing a command is
 .in +2
 .nf
 \fB
-int              twopence_run_test(struct twopence_target *target,
+int              twopence_run_test(twopence_target_t *target,
                           twopence_command_t *cmd,
                           twopence_status_t *status);
 
@@ -269,6 +342,12 @@ This array containts the three twopence iostreams connected to the command,
 .B buffer
 These buffer objects can be used to set up any of the three iostreams
 to read from or write to a memory buffer.
+.PP
+.B "Return value:
+Upon return, the \fIstatus\fP structure will contain the command's exit status
+in \fBmajor\fP, and \fBminor\fP will be 0. If the command died with a signal,
+\fBmajor\fP will be set to \fBEFAULT\fP and \fBminor\fP will contain the signal
+number.
 .\" --------------------------------------------------------------
 .\"
 .\"
@@ -366,9 +445,9 @@ stdout/stderr case described above:
 .B "twopence_buf_t *bp;
 .B ""
 .B "/* Initialize the command */
-.B "twopence_command_init(cmd, "fdisk /dev/sdc");
+.B "twopence_command_init(cmd, \(dqfdisk /dev/sdc\(dq);
 .B ""
-.B "/* Stick the fdisk command in a buffer */
+.B "/* Put the fdisk's input into a buffer */
 .B "bp = twopence_command_alloc_buffer(&cmd, TWOPENCE_STDIN, data_len);
 .B "twopence_buf_append(bp, data, data_len);
 .B ""
@@ -401,7 +480,7 @@ for them using the \fBtwopence_wait\fP function:
 .PP
 .in +2
 .nf
-.B "int  twopence_wait(struct twopence_target *, int xid, twopence_status_t *);
+.B "int  twopence_wait(twopence_target_t *, int xid, twopence_status_t *);
 .fi
 .in
 .PP
@@ -427,6 +506,48 @@ or while in \fBtwopence_wait\fP.
 .\" --------------------------------------------------------------
 .\"
 .\"
+.SS Passing Environment Variables to Commands
+It is possible to pass environment variables to a command, taken from two
+possible sources: you can assign environment variables to a target as well
+as a command. When executing a command on a given target, these two
+environments are merged, with the command environment taking precedence over
+the target's environment.
+.PP
+You can manipulate the environment using these functions:
+.PP
+.in +2
+.nf
+\fB
+void  twopence_target_setenv(twopence_target_t *target,
+                          const char *name, const char *value);
+void  twopence_target_passenv(twopence_target_t *target,
+                          const char *name);
+void  twopence_command_setenv(twopence_command_t *cmd,
+                          const char *name, const char *value);
+void  twopence_command_passenv(twopence_command_t *cmd,
+                          const char *name);
+\fP
+.fi
+.in
+.PP
+The \fBpassenv()\fP functions instruct twopence to pass the variable
+from the local process environment. In other words, the following two
+commands do the same thing:
+.PP
+.in +2
+.nf
+\fB
+twopence_target_passenv(target, "TERM");
+twopence_target_setenv(target, "TERM", getenv("TERM"));
+\fP
+.fi
+.in
+.PP
+There are currently not functions for querying a target's or a command's
+environment.
+.\" --------------------------------------------------------------
+.\"
+.\"
 .SS Interrupting a Command
 Twopence provides a mechanism to interrupt a command that is
 being run synchronously (i.e. \fBbackground\fP is set to \fBfalse\fP),
@@ -434,7 +555,7 @@ using this function:
 .PP
 .in +2
 .nf
-.B "int  twopence_interrupt_command(struct twopence_target *target);
+.B "int  twopence_interrupt_command(twopence_target_t *target);
 .fi
 .in
 .PP
