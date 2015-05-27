@@ -59,5 +59,6 @@ extern bool		twopence_buf_puts(twopence_buf_t *bp, const char *s);
 extern const char *	twopence_buf_gets(twopence_buf_t *bp);
 extern void		twopence_buf_reset(twopence_buf_t *bp);
 extern void		twopence_buf_compact(twopence_buf_t *bp);
+extern int		twopence_buf_index(const twopence_buf_t *bp, const char *string);
 
 #endif /* TWOPENCE_BUFFER_H */

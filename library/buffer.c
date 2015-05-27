@@ -252,6 +252,31 @@ twopence_buf_gets(twopence_buf_t *bp)
 	return s;
 }
 
+int
+twopence_buf_index(const twopence_buf_t *bp, const char *string)
+{
+	const char *head = twopence_buf_head(bp);
+	unsigned int pos = 0, end;
+	unsigned int len;
+
+	if (string == NULL || string[0] == '\0')
+		return -1;
+
+	len = strlen(string);
+	if (twopence_buf_count(bp) < len)
+		return -1;
+
+	end = twopence_buf_count(bp) - len;
+	while (pos <= end) {
+		while (head[pos] != string[0] && pos + len < end)
+			++pos;
+		if (!memcmp(head + pos, string, len))
+			return pos;
+		++pos;
+	}
+	return -1;
+}
+
 void
 twopence_buf_reset(twopence_buf_t *bp)
 {
