@@ -464,6 +464,21 @@ except:
 	testCaseException()
 testCaseReport()
 
+testCaseBegin("Run command in tty")
+try:
+	cmd = twopence.Command("tty")
+	cmd.useTty = True
+	cmd.timeout = 5
+	status = target.run(cmd)
+	if testCaseCheckStatus(status):
+		dev = str(status.stdout).strip();
+		if dev[:4] != "/dev":
+			testCaseFail("expected command to return a device path, instead got '%s'" % dev);
+except:
+	testCaseException()
+testCaseReport()
+
+
 try:
 	testCaseBegin("check whether target supports backgrounded commands")
 	target.wait()
