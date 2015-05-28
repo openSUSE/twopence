@@ -53,6 +53,7 @@ extern void			twopence_conn_update_recv_keepalive(twopence_conn_t *conn);
 extern void			twopence_conn_add_transaction(twopence_conn_t *conn, twopence_transaction_t *trans);
 extern void			twopence_conn_add_transaction_done(twopence_conn_t *conn, twopence_transaction_t *trans);
 extern twopence_transaction_t *	twopence_conn_reap_transaction(twopence_conn_t *conn, int wait_for);
+extern twopence_transaction_t *	twopence_conn_find_transaction(twopence_conn_t *conn, uint16_t xid);
 extern bool			twopence_conn_has_pending_transactions(const twopence_conn_t *conn);
 extern void			twopence_conn_cancel_transactions(twopence_conn_t *conn, int error);
 
