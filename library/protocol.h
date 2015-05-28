@@ -31,7 +31,7 @@
  * Increase the minor number whenever a new client
  * would stop working the the old server.
  */
-#define TWOPENCE_PROTOCOL_VERSMAJOR	2
+#define TWOPENCE_PROTOCOL_VERSMAJOR	3
 #define TWOPENCE_PROTOCOL_VERSMINOR	0
 
 #define TWOPENCE_PROTOCOL_VERSION	((TWOPENCE_PROTOCOL_VERSMAJOR << 8) | TWOPENCE_PROTOCOL_VERSMINOR)

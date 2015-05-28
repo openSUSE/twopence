@@ -420,7 +420,11 @@ twopence_protocol_build_command_packet(const twopence_protocol_state_t *ps, cons
 
 	if (!__encode_string(bp, cmd->user)
 	 || !__encode_string(bp, cmd->command)
-	 || !__encode_u32(bp, cmd->timeout))
+	 || !__encode_u32(bp, cmd->timeout)
+	 || !__encode_u32(bp, cmd->request_tty)
+	 /* reserve two words for future extensions */
+	 || !__encode_u32(bp, 0)
+	 || !__encode_u32(bp, 0))
 		goto failed;
 
 	for (i = 0; i < cmd->env.count; ++i) {
@@ -444,11 +448,14 @@ bool
 twopence_protocol_dissect_command_packet(twopence_buf_t *payload, twopence_command_t *cmd)
 {
 	const char *user, *command, *envar;
-	uint32_t timeout;
+	uint32_t timeout, request_tty, reserved;
 
 	if (!(user = __decode_string(payload))
 	 || !(command = __decode_string(payload))
-	 || !__decode_u32(payload, &timeout))
+	 || !__decode_u32(payload, &timeout)
+	 || !__decode_u32(payload, &request_tty)
+	 || !__decode_u32(payload, &reserved)
+	 || !__decode_u32(payload, &reserved))
 		return false;
 
 	while ((envar = __decode_string(payload)) != NULL) {
@@ -465,6 +472,7 @@ twopence_protocol_dissect_command_packet(twopence_buf_t *payload, twopence_comma
 	cmd->user = user;
 	cmd->command = command;
 	cmd->timeout = timeout;
+	cmd->request_tty = !!request_tty;
 	return true;
 }
 
