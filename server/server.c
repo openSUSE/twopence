@@ -313,6 +313,7 @@ int
 server_run_command_as(twopence_command_t *cmd, int *parent_fds, int *status)
 {
 	int pipefds[6], child_fds[3];
+	int pty_master = -1;
 	char **argv = NULL, **env = NULL;
 	struct passwd *user;
 	const char *argv0;
@@ -323,15 +324,29 @@ server_run_command_as(twopence_command_t *cmd, int *parent_fds, int *status)
 		return -1;
 
 	memset(pipefds, 0xa5, sizeof(pipefds));
-	for (nfds = 0; nfds < 3; ++nfds) {
-		if (pipe(pipefds + 2 * nfds) < 0) {
+	if (cmd->request_tty) {
+		pty_master = posix_openpt(O_RDWR | O_NOCTTY);
+		if (pty_master < 0) {
 			*status = errno;
+			twopence_log_error("unable to open master pty: %m\n");
 			goto failed;
 		}
-	}
 
-	__init_fds(child_fds,  pipefds[0], pipefds[3], pipefds[5]); /* read-write-write */
-	__init_fds(parent_fds, pipefds[1], pipefds[2], pipefds[4]); /* write-read-read */
+		child_fds[0] = child_fds[1] = child_fds[2] = -1;
+		parent_fds[0] = dup(pty_master);
+		parent_fds[1] = dup(pty_master);
+		parent_fds[2] = -1;
+	} else {
+		for (nfds = 0; nfds < 3; ++nfds) {
+			if (pipe(pipefds + 2 * nfds) < 0) {
+				*status = errno;
+				goto failed;
+			}
+		}
+
+		__init_fds(child_fds,  pipefds[0], pipefds[3], pipefds[5]); /* read-write-write */
+		__init_fds(parent_fds, pipefds[1], pipefds[2], pipefds[4]); /* write-read-read */
+	}
 
 	argv = server_build_shell_argv(cmd->command);
 	if (argv == NULL) {
@@ -364,25 +379,46 @@ server_run_command_as(twopence_command_t *cmd, int *parent_fds, int *status)
 	if (pid == 0) {
 		int fd, numfds;
 
+		/* Child */
 		if (setsid() < 0) {
 			twopence_log_error("unable to set session id of child process: %m");
 			exit(127);
 		}
 
-		/* Child */
-		__close_fds(parent_fds);
+		if (!server_change_hats_permanently(user, status)
+		 || !server_change_to_home(user))
+			exit(126);
 
-		dup2(child_fds[0], 0);
-		dup2(child_fds[1], 1);
-		dup2(child_fds[2], 2);
+		if (pty_master >= 0) {
+			const char *tty;
+
+			if (grantpt(pty_master) < 0
+			 || !(tty = ptsname(pty_master))
+			 || unlockpt(pty_master) < 0) {
+				twopence_log_error("unable to get slave pty: %m");
+				exit(125);
+			}
+
+			twopence_debug("%s: pty slave is %s", __func__, tty);
+			if ((fd = open(tty, O_RDWR | O_NOCTTY)) < 0) {
+				twopence_debug("unable to open slave pty %s: %m", tty);
+				twopence_log_error("unable to open slave pty %s: %m", tty);
+				exit(125);
+			}
+
+			twopence_debug("%s: pty slave is %d %s", __func__, fd, tty);
+			dup2(fd, 0);
+			dup2(fd, 1);
+			dup2(fd, 2);
+		} else {
+			dup2(child_fds[0], 0);
+			dup2(child_fds[1], 1);
+			dup2(child_fds[2], 2);
+		}
 
 		numfds = getdtablesize();
 		for (fd = 3; fd < numfds; ++fd)
 			close(fd);
-
-		if (!server_change_hats_permanently(user, status)
-		 || !server_change_to_home(user))
-			exit(126);
 
 		alarm(cmd->timeout? cmd->timeout : DEFAULT_COMMAND_TIMEOUT);
 
@@ -398,6 +434,8 @@ server_run_command_as(twopence_command_t *cmd, int *parent_fds, int *status)
 out:
 	if (argv)
 		free(argv);
+	if (pty_master >= 0)
+		close(pty_master);
 	return pid;
 
 failed:
@@ -571,7 +609,8 @@ server_run_command(twopence_transaction_t *trans, twopence_command_t *cmd)
 	int nattached = 0;
 	pid_t pid;
 
-	AUDIT("run \"%s\"; user=%s timeout=%u\n", cmd->command, cmd->user, cmd->timeout);
+	AUDIT("run \"%s\"; user=%s timeout=%u%s\n", cmd->command, cmd->user, cmd->timeout,
+				cmd->request_tty? ", use a tty" : "");
 	if ((pid = server_run_command_as(cmd, command_fds, &status)) < 0) {
 		twopence_transaction_fail2(trans, status, 0);
 		return false;
@@ -589,11 +628,17 @@ server_run_command(twopence_transaction_t *trans, twopence_command_t *cmd)
 	twopence_transaction_channel_set_name(channel, "stdout");
 	nattached++;
 
-	channel = twopence_transaction_attach_local_source(trans, TWOPENCE_STDERR, command_fds[2]);
-	if (channel == NULL)
-		goto failed;
-	twopence_transaction_channel_set_name(channel, "stderr");
-	nattached++;
+	if (command_fds[2] >= 0) {
+		channel = twopence_transaction_attach_local_source(trans, TWOPENCE_STDERR, command_fds[2]);
+		if (channel == NULL)
+			goto failed;
+		twopence_transaction_channel_set_name(channel, "stderr");
+		nattached++;
+	} else {
+		/* Tell the client that there's no separate stderr */
+		twopence_transaction_send_client(trans,
+				twopence_protocol_build_eof_packet(&trans->ps, TWOPENCE_STDERR));
+	}
 
 	trans->recv = server_run_command_recv;
 	trans->send = server_run_command_send;
