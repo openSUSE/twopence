@@ -56,6 +56,7 @@ struct twopence_transaction {
 
 	struct {
 		struct timeval		deadline;
+		const struct timeval *	chat_deadline;
 
 		twopence_status_t	status_ret;
 		int			exception;
@@ -63,6 +64,11 @@ struct twopence_transaction {
 		bool			print_dots;
 		unsigned int		dots_printed;
 	} client;
+
+	struct {
+		unsigned int	nbytes_received;
+		unsigned int	nbytes_sent;
+	} stats;
 };
 
 typedef struct twopence_transaction_list {

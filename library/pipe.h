@@ -56,6 +56,8 @@ extern void	twopence_pipe_target_init(struct twopence_pipe_target *, int plugin_
 extern int	twopence_pipe_set_option(struct twopence_target *target, int option, const void *value_p);
 extern int	twopence_pipe_run_test(struct twopence_target *, twopence_command_t *, twopence_status_t *);
 extern int	twopence_pipe_wait(struct twopence_target *, int, twopence_status_t *);
+extern int	twopence_pipe_chat_send(twopence_target_t *opaque_handle, int xid, twopence_iostream_t *stream);
+extern int	twopence_pipe_chat_recv(twopence_target_t *opaque_handle, int xid, const struct timeval *deadline);
 extern int	twopence_pipe_inject_file (struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);
 extern int	twopence_pipe_extract_file (struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);
 extern int	twopence_pipe_interrupt_command(struct twopence_target *);
