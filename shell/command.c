@@ -178,7 +178,7 @@ int main(int argc, char *argv[])
               break;
     case 'd': twopence_debug_level++;
 	      break;
-    case 'v': printf("%s version 0.3.4\n", argv[0]);
+    case 'v': printf("%s version 0.3.5\n", argv[0]);
               exit(RC_OK);
     case 'h': usage(argv[0]);
               exit(RC_OK);

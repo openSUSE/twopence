@@ -1,6 +1,6 @@
 .PHONY: all install clean
 
-VERSION	= 0.3.4
+VERSION	= 0.3.5
 
 ifdef RPM_OPT_FLAGS
 CCOPT	= $(RPM_OPT_FLAGS)

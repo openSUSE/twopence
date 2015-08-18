@@ -2,7 +2,7 @@
 .\" groff -man -Tascii twopence.3py
 .\"
 .\"
-.TH TWOPENCE "3py" "July 2015" "Twopence 0.3.4" "twopence python bindings"
+.TH TWOPENCE "3py" "August 2015" "Twopence 0.3.5" "twopence python bindings"
 
 .SH NAME
 twopence \- library routines for orchestrating multi-node tests (python bindings)
