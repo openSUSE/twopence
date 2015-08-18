@@ -15,11 +15,11 @@ twopence-$(VERSION).gem: twopence.gemspec Rakefile ext/twopence/extconf.rb \
 	gem build twopence.gemspec
 
 install: twopence-$(VERSION).gem
-	ln -sf $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION) $(DESTDIR)$(LIBDIR)/libtwopence.so
-	CFLAGS="-I$(DESTDIR)$(INCDIR)" \
-	  LDFLAGS="-L$(DESTDIR)$(LIBDIR)" \
-	  gem install --local --install-dir $(DESTDIR)$(RBDIR)/ -V --force twopence-$(VERSION).gem
-	rm $(DESTDIR)$(LIBDIR)/libtwopence.so
+	CFLAGS="-I$(DESTDIR)$(INCDIR)" LDFLAGS="-L$(DESTDIR)$(LIBDIR)" DESTDIR="" \
+	  gem install --local \
+            --build-root "$(DESTDIR)/" \
+            --install-dir "$(RBDIR)/" \
+            -V --force twopence-$(VERSION).gem
 	rm -f $(DESTDIR)$(RBDIR)/gems/twopence-$(VERSION)/ext/twopence/siteconf*.rb
 
 clean:
