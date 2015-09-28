@@ -176,7 +176,7 @@ __twopence_ssh_transaction_send_eof(twopence_ssh_transaction_t *trans)
 
   if (trans->channel == NULL || trans->eof_sent)
     return SSH_OK;
-  if (trans->use_tty)
+  if (trans->use_tty && !trans->eof_seen)
     rc = ssh_channel_write(trans->channel, "\004", 1);
   if (rc == SSH_OK)
     rc = ssh_channel_send_eof(trans->channel);
