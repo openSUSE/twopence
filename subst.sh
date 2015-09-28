@@ -4,8 +4,18 @@
 # manpages etc.
 #
 
+#
+# The following two variables control all occurences of the version
+# and date string as they appear in manpages, ruby gems etc.
+#
+# Whenever you update the minor version or patch level of twopence,
+# this is all you need to touch.
+#
+# If we ever bump the major version number, more manual work is
+# required.
+#
 VERSION=0.3.5
-DATE=$(LANG=C date "+%B %Y")
+DATE="September 2015"
 
 # Special case
 if [ $# -eq 1 -a "$1" = "--version" ]; then
