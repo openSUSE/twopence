@@ -307,17 +307,22 @@ __twopence_ssh_transaction_set_exit_signal(twopence_ssh_transaction_t *trans, in
 }
 
 static void
+__twopence_ssh_transaction_setup_stdin(twopence_ssh_transaction_t *trans, twopence_iostream_t *stdin_stream, bool propagate)
+{
+  /* Set stdin to non-blocking IO */
+  trans->stdin.was_blocking = twopence_iostream_set_blocking(stdin_stream, false);
+  trans->stdin.stream = stdin_stream;
+  trans->stdin.fd = -1;
+}
+
+static void
 __twopence_ssh_transaction_setup_stdio(twopence_ssh_transaction_t *trans,
 		twopence_iostream_t *stdin_stream,
 		twopence_iostream_t *stdout_stream,
 		twopence_iostream_t *stderr_stream)
 {
-  if (stdin_stream) {
-    /* Set stdin to non-blocking IO */
-    trans->stdin.was_blocking = twopence_iostream_set_blocking(stdin_stream, false);
-    trans->stdin.stream = stdin_stream;
-    trans->stdin.fd = -1;
-  }
+  if (stdin_stream)
+    __twopence_ssh_transaction_setup_stdin(trans, stdin_stream, true);
 
   trans->stdout.stream = stdout_stream;
   trans->stderr.stream = stderr_stream;
