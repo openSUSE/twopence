@@ -589,6 +589,24 @@ __twopence_ssh_transaction_forward_stdin(twopence_ssh_transaction_t *trans)
   return 0;
 }
 
+/*
+ * Write all data pending on stdin to the remote.
+ * This function is only called when stdin is connected to a buffer
+ * or similar.
+ */
+static int
+__twopence_ssh_transaction_drain_stdin(twopence_ssh_transaction_t *trans)
+{
+  while (!trans->stdin.eof) {
+    if (__twopence_ssh_transaction_forward_stdin(trans) < 0) {
+      __twopence_ssh_transaction_fail(trans, TWOPENCE_FORWARD_INPUT_ERROR);
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
 static int
 __twopence_ssh_stdin_cb(socket_t fd, int revents, void *userdata)
 {
@@ -614,13 +632,8 @@ __twopence_ssh_transaction_enable_poll(ssh_event event, twopence_ssh_transaction
     trans->stdin.fd = twopence_iostream_getfd(stream);
     if (trans->stdin.fd < 0) {
       twopence_debug("%s: writing stdin synchronously to peer\n", __func__);
-
-      while (!trans->stdin.eof) {
-        if (__twopence_ssh_transaction_forward_stdin(trans) < 0) {
-          __twopence_ssh_transaction_fail(trans, TWOPENCE_FORWARD_INPUT_ERROR);
-	  return -1;
-	}
-      }
+      if (__twopence_ssh_transaction_drain_stdin(trans) < 0)
+	return -1;
     } else {
       ssh_event_add_fd(event, trans->stdin.fd, POLLIN, __twopence_ssh_stdin_cb, trans);
     }
