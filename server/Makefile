@@ -7,7 +7,6 @@ CCOPT	= -Wall -O2 -g
 endif
 
 BINDIR ?= /usr/bin
-MANDIR ?= /usr/share/man
 
 SERVER	= twopence_test_server
 OBJS	= main.o \
@@ -24,8 +23,7 @@ $(SERVER): $(OBJS)
 install: $(SERVER)
 	mkdir -p $(DESTDIR)$(BINDIR)
 	install -m555 $(SERVER) $(DESTDIR)$(BINDIR)
-	mkdir -p $(DESTDIR)$(MANDIR)/man1
-	gzip -c server.1 > $(DESTDIR)$(MANDIR)/man1/twopence_test_server.1.gz
+	../instman.sh -z -d "$(DESTDIR)" -n twopence_test_server.1 server.1
 
 clean:
 	rm -f $(SERVER) *.o
