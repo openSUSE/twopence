@@ -477,6 +477,8 @@ twopence_strerror(int rc)
       return "Error sending or receiving data on socket";
     case TWOPENCE_INCOMPATIBLE_PROTOCOL_ERROR:
       return "Protocol versions not compatible between client and server";
+    case TWOPENCE_INVALID_TRANSACTION:
+      return "Invalid transaction ID";
   }
   return "Unknow error";
 }

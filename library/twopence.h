@@ -52,6 +52,7 @@ struct pollfd;
 #define TWOPENCE_INTERNAL_ERROR			-17
 #define TWOPENCE_TRANSPORT_ERROR		-18
 #define TWOPENCE_INCOMPATIBLE_PROTOCOL_ERROR	-19
+#define TWOPENCE_INVALID_TRANSACTION		-20
 
 typedef struct twopence_target twopence_target_t;
 
