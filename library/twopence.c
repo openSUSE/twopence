@@ -226,6 +226,201 @@ twopence_wait(struct twopence_target *target, int pid, twopence_status_t *status
   return target->ops->wait(target, pid, status);
 }
 
+/*
+ * Chat script support
+ */
+void
+twopence_chat_init(twopence_chat_t *chat, twopence_buf_t *sendbuf, twopence_buf_t *recvbuf)
+{
+  memset(chat, 0, sizeof(*chat));
+  chat->sendbuf = sendbuf;
+  chat->recvbuf = recvbuf;
+}
+
+void
+twopence_chat_destroy(twopence_chat_t *chat)
+{
+  /* Nothing for now */
+}
+
+int
+twopence_chat_begin(twopence_target_t *target, twopence_command_t *cmd, twopence_chat_t *chat)
+{
+  twopence_status_t status;
+  int rv;
+
+  if (chat->recvbuf == NULL || chat->sendbuf == NULL)
+    return TWOPENCE_PARAMETER_ERROR;
+
+  if (target->ops->chat_recv == NULL)
+    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
+
+  cmd->keepopen_stdin = true;
+  cmd->background = true;
+  cmd->request_tty = true;
+
+  /* Reset stdandard IO channels. stdin is connected to our sendbuf,
+   * and stderr and stdout both go to our recvbuf */
+  twopence_command_ostreams_reset(cmd);
+  twopence_command_ostream_capture(cmd, TWOPENCE_STDOUT, chat->recvbuf);
+  twopence_command_ostream_capture(cmd, TWOPENCE_STDERR, chat->recvbuf);
+
+  chat->stdin = &cmd->iostream[TWOPENCE_STDIN];
+
+  rv = twopence_run_test(target, cmd, &status);
+  if (rv < 0)
+    return rv;
+
+  if (rv == 0) {
+    fprintf(stderr, "%s: received pid 0 when starting command\n", __func__);
+    return TWOPENCE_SEND_COMMAND_ERROR;
+  }
+
+  chat->pid = rv;
+
+  return chat->pid;
+}
+
+/*
+ * Wait for the remote command to output the expected string.
+ *
+ * If timeout is non-negative, it tells us how many seconds to wait at most.
+ * If the string is not received within this amount of time, the backend's chat()
+ * function will return TWOPENCE_COMMAND_TIMEOUT_ERROR.
+ */
+int
+twopence_chat_expect(twopence_target_t *target, twopence_chat_t *chat, const char *string, int timeout)
+{
+  struct timeval __deadline, *deadline;
+  twopence_buf_t *bp = chat->recvbuf;
+
+  deadline = NULL;
+  if (timeout >= 0) {
+    gettimeofday(&__deadline, NULL);
+    __deadline.tv_sec += timeout;
+    deadline = &__deadline;
+  }
+
+  while (true) {
+    int nbytes, pos;
+
+    if ((pos = twopence_buf_index(bp, string)) >= 0) {
+      /* Consume everything up to and including the string we waited for */
+      nbytes = pos + strlen(string);
+      twopence_buf_pull(bp, nbytes);
+      return nbytes;
+    }
+
+    nbytes = target->ops->chat_recv(target, chat->pid, deadline);
+    if (nbytes <= 0) {
+      /* There are a number of reasons for getting here:
+       *  - command exited without producing further output (nbytes is 0 in this case)
+       *  - command closed its stderr and stdout (nbytes is 0 in this case as well)
+       *  - timed out waiting for output (TWOPENCE_COMMAND_TIMEOUT_ERROR)
+       *  - transaction failed for some reason (nbytes < 0)
+       *  - transport errors (nbytes < 0)
+       */
+      return nbytes;
+    }
+  }
+}
+
+/*
+ * Write a string to the remote command's stdin
+ */
+void
+twopence_chat_puts(twopence_target_t *target, twopence_chat_t *chat, const char *string)
+{
+  twopence_iostream_t *stream = chat->stdin;
+
+  /* Append the string to the send buffer */
+  twopence_buf_ensure_tailroom(chat->sendbuf, strlen(string));
+  twopence_buf_append(chat->sendbuf, string, strlen(string));
+
+  /* Rebuild the stdin stream */
+  twopence_iostream_destroy(stream);
+  twopence_iostream_add_substream(stream, twopence_substream_new_buffer(chat->sendbuf, false));
+
+  /* And inform the backend about the fact that we've added data and want it sent */
+  if (target->ops->chat_send)
+    target->ops->chat_send(target, chat->pid, stream);
+}
+
+/*
+ * Read a string from the remote output, up to the next newline.
+ * This tries to mimick the behavior of fgets()
+ */
+char *
+twopence_chat_gets(twopence_target_t *target, twopence_chat_t *chat, char *buf, size_t size, int timeout)
+{
+  twopence_buf_t *bp = chat->recvbuf;
+  unsigned int i, j, count;
+  const char *data;
+
+  if (size == 0)
+    return NULL;
+
+  count = twopence_buf_count(bp);
+  if (size - 1 < count) {
+    /* We already have more data than we can swallow */
+    count = size - 1;
+  } else
+  if (twopence_buf_index(bp, "\n") < 0) {
+    struct timeval __deadline, *deadline;
+
+    /* We don't have a complete line yet, so wait for input */
+    deadline = NULL;
+    if (timeout >= 0) {
+      gettimeofday(&__deadline, NULL);
+      __deadline.tv_sec += timeout;
+      deadline = &__deadline;
+    }
+
+    while (twopence_buf_index(bp, "\n") < 0) {
+      int nbytes;
+
+      nbytes = target->ops->chat_recv(target, chat->pid, deadline);
+
+      /*
+       *  - command exited without producing further output (nbytes is 0 in this case)
+       *  - command closed its stderr and stdout (nbytes is 0 in this case as well)
+       *  - timed out waiting for output (TWOPENCE_COMMAND_TIMEOUT_ERROR)
+       *  - transaction failed for some reason (nbytes < 0)
+       *  - transport errors (nbytes < 0)
+       */
+      if (nbytes < 0)
+        return NULL;
+      if (nbytes == 0)
+	break;
+
+      /* Continue and re-check whether we have a newline now */
+    }
+
+    count = twopence_buf_count(bp);
+    if (size - 1 < count)
+      count = size - 1;
+  }
+
+  /* Now we either have a newline, or the remote command stopped
+   * producing output (by exiting or by closing its stdout channels) */
+  data = twopence_buf_head(bp);
+  for (i = j = 0; i < count; ) {
+    char cc = data[i++];
+
+    /* Collapse CRLF into LF */
+    if (cc == '\r' && i < count && data[i] == '\n')
+      cc = data[i++];
+
+    if (cc == '\0' || cc == '\n')
+      break;
+    buf[j++] = cc;
+  }
+
+  twopence_buf_pull(bp, i);
+  buf[j] = '\0';
+  return buf;
+}
+
 int
 twopence_test_and_print_results
   (struct twopence_target *target, const char *username, long timeout, const char *command, twopence_status_t *status)
