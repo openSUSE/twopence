@@ -1,6 +1,6 @@
 .PHONY: all install clean
 
-VERSION	= 0.3.5
+VERSION:= $(shell ../subst.sh --version)
 
 ifdef RPM_OPT_FLAGS
 CCOPT	= $(RPM_OPT_FLAGS)
@@ -42,11 +42,10 @@ install: libtwopence.so $(HEADERS)
 	install -m555 libtwopence.so $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION)
 	mkdir -p $(DESTDIR)$(INCDIR)/twopence
 	install -m444 $(HEADERS) $(DESTDIR)$(INCDIR)/twopence
-	mkdir -p $(DESTDIR)$(MANDIR)/man3
-	gzip -c twopence.3 > $(DESTDIR)$(MANDIR)/man3/twopence.3.gz
+	../instman.sh -z -d "$(DESTDIR)" twopence.3
 
 version.h: version.h.in
-	sed 's:@VERSION@:$(VERSION):g' $< > $@
+	../subst.sh $< > $@
 
 clean:
 	rm -f *.o *.so
