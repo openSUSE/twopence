@@ -730,12 +730,11 @@ __twopence_ssh_transaction_add_running(struct twopence_ssh_target *handle, twope
   trans->pid = handle->transactions.next_pid++;
 }
 
-static twopence_ssh_transaction_t *
-__twopence_ssh_get_completed_transaction(struct twopence_ssh_target *handle, unsigned int want_pid)
+static inline twopence_ssh_transaction_t *
+__twopence_ssh_get_transaction(twopence_ssh_transaction_t **pos, unsigned int want_pid, bool unlink)
 {
-  twopence_ssh_transaction_t **pos, *trans;
+  twopence_ssh_transaction_t *trans;
 
-  pos = &handle->transactions.done;
   while ((trans = *pos) != NULL) {
     if (want_pid == 0 || trans->pid == want_pid)
       break;
@@ -746,10 +745,31 @@ __twopence_ssh_get_completed_transaction(struct twopence_ssh_target *handle, uns
   if (trans == NULL)
     return NULL;
 
-  *pos = trans->next;
-  trans->next = NULL;
+  if (unlink) {
+    *pos = trans->next;
+    trans->next = NULL;
+  }
 
   return trans;
+}
+
+static twopence_ssh_transaction_t *
+__twopence_ssh_transaction_by_pid(struct twopence_ssh_target *handle, unsigned int want_pid)
+{
+  twopence_ssh_transaction_t *result = NULL;
+
+  if (want_pid != 0) {
+    result = __twopence_ssh_get_transaction(&handle->transactions.running, want_pid, false);
+    if (result == NULL)
+      result = __twopence_ssh_get_transaction(&handle->transactions.done, want_pid, false);
+  }
+  return result;
+}
+
+static twopence_ssh_transaction_t *
+__twopence_ssh_get_completed_transaction(struct twopence_ssh_target *handle, unsigned int want_pid)
+{
+  return __twopence_ssh_get_transaction(&handle->transactions.done, want_pid, true);
 }
 
 static int
