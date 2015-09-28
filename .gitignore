@@ -3,6 +3,7 @@
 *.o
 *.gem
 *.swp
+library/version.h
 shell/command
 shell/exit
 shell/extract

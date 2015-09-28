@@ -46,6 +46,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <string.h>
 
 #include "server.h"
+#include "version.h"
 
 #define TWOPENCE_SERIAL_PORT_DEFAULT	"/dev/virtio-ports/org.opensuse.twopence.0"
 #define TWOPENCE_UNIX_PORT_DEFAULT	"/var/run/twopence.sock"
@@ -293,7 +294,7 @@ int main(int argc, char *argv[])
   int c;
 
   // Welcome message, check arguments
-  printf("Twopence test server version 0.3.5\n");
+  printf("Twopence test server version %s\n", TWOPENCE_VERSION);
 
   /* Initially, debug logging goes to stderr */
   twopence_logging_init();

@@ -32,11 +32,7 @@ install: command inject extract exit command.1 inject.1 extract.1 exit.1
 	cp inject $(DESTDIR)$(BINDIR)/twopence_inject
 	cp extract $(DESTDIR)$(BINDIR)/twopence_extract
 	cp exit $(DESTDIR)$(BINDIR)/twopence_exit
-	mkdir -p $(DESTDIR)$(MANDIR)/man1
-	gzip -c command.1 > $(DESTDIR)$(MANDIR)/man1/twopence_command.1.gz
-	gzip -c inject.1 > $(DESTDIR)$(MANDIR)/man1/twopence_inject.1.gz
-	gzip -c extract.1 > $(DESTDIR)$(MANDIR)/man1/twopence_extract.1.gz
-	gzip -c exit.1 > $(DESTDIR)$(MANDIR)/man1/twopence_exit.1.gz
+	../instman.sh -z -d "$(DESTDIR)" -p twopence_ *.1
 
 clean:
 	rm -f command
