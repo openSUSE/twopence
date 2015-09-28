@@ -916,5 +916,36 @@ except:
 	testCaseException()
 testCaseReport()
 
+testCaseBegin("Check chat scripting")
+try:
+	mydata = "here it is"
+
+	chat = target.chat("read -p 'Give it to me: ' DATA; echo -n \"data=$DATA\"")
+	print "Waiting for prompt"
+	if not chat.expect("to me:", timeout = 5):
+		testCaseFail("did not receive prompt")
+	else:
+		print "Received prompt, sending answer"
+		chat.send("%s\n" % mydata);
+
+		print "Waiting for command to print data="
+		if not chat.expect("data="):
+			testCaseFail("did not receive answer")
+		else:
+			print "Got it; receiving rest of the line"
+			answer = chat.recvline()
+			if not answer:
+				testCaseFail("did not receive answer")
+			elif answer.strip() != mydata:
+				testCaseFail("did not receive expected answer, remote echoed \"%s\"" % answer);
+			else:
+				print "Great, received expected data"
+
+		if not chat.wait():
+			testCaseFail("chat command exited with non-zero status")
+except:
+	testCaseException()
+testCaseReport()
+
 
 testSuiteExit()

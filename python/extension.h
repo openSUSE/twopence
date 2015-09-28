@@ -30,7 +30,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 typedef struct {
 	PyObject_HEAD
 
-	struct twopence_target *handle;
+	twopence_target_t *handle;
 	char *		name;
 	PyObject *	attrs;
 
@@ -90,16 +90,26 @@ typedef struct {
 	PyObject *	buffer;
 } twopence_Status;
 
+typedef struct {
+	PyObject_HEAD
+
+	twopence_Target *target;
+	twopence_chat_t	chat;
+	unsigned int	pid;
+} twopence_Chat;
+
 
 
 extern PyTypeObject	twopence_TargetType;
 extern PyTypeObject	twopence_CommandType;
 extern PyTypeObject	twopence_TransferType;
 extern PyTypeObject	twopence_StatusType;
+extern PyTypeObject	twopence_ChatType;
 
 extern int		Command_init(twopence_Command *self, PyObject *args, PyObject *kwds);
 extern int		Command_Check(PyObject *);
 extern int		Command_build(twopence_Command *, twopence_command_t *);
+extern PyObject *	Target_wait_common(twopence_Target *tgtObject, int pid);
 extern int		Transfer_init(twopence_Transfer *self, PyObject *args, PyObject *kwds);
 extern int		Transfer_Check(PyObject *);
 extern int		Transfer_build_send(twopence_Transfer *, twopence_file_xfer_t *);

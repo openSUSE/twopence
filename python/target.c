@@ -40,6 +40,7 @@ static PyObject *	Target_sendfile(PyObject *self, PyObject *args, PyObject *kwds
 static PyObject *	Target_recvfile(PyObject *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_setenv(twopence_Target *, PyObject *, PyObject *);
 static PyObject *	Target_unsetenv(twopence_Target *, PyObject *, PyObject *);
+static PyObject *	Target_chat(PyObject *, PyObject *, PyObject *);
 
 /*
  * Define the python bindings of class "Target"
@@ -83,6 +84,9 @@ static PyMethodDef twopence_targetMethods[] = {
       },
       {	"unsetenv", (PyCFunction) Target_unsetenv, METH_VARARGS | METH_KEYWORDS,
 	"Unset an environment variable"
+      },
+      {	"chat", (PyCFunction) Target_chat, METH_VARARGS | METH_KEYWORDS,
+	"Create a Chat object for the given command"
       },
 
       {	NULL }
@@ -449,6 +453,38 @@ out:
 /*
  * Wait for command(s) to complete
  */
+PyObject *
+Target_wait_common(twopence_Target *tgtObject, int pid)
+{
+	struct twopence_target *handle;
+	struct backgroundedCommand *bg;
+	PyObject *result;
+	twopence_status_t status;
+
+	if ((handle = tgtObject->handle) == NULL)
+		return NULL;
+
+	pid = twopence_wait(handle, pid, &status);
+	if (pid < 0)
+		return twopence_Exception("wait", pid);
+
+	if (pid == 0) {
+		Py_INCREF(Py_None);
+		return Py_None;
+	}
+
+	bg = Target_findBackgrounded(tgtObject, pid);
+	if (bg == NULL) {
+		PyErr_SetString(PyExc_SystemError, "Target.wait(): No record of PID returned by target");
+		return NULL;
+	}
+
+	result = Target_buildCommandStatus(bg->object, &bg->cmd, &status);
+	backgroundedCommandFree(bg);
+
+	return result;
+}
+
 static PyObject *
 Target_wait(PyObject *self, PyObject *args, PyObject *kwds)
 {
@@ -456,11 +492,8 @@ Target_wait(PyObject *self, PyObject *args, PyObject *kwds)
 		"command",
 		NULL
 	};
-	struct twopence_target *handle;
 	twopence_Target *tgtObject = (twopence_Target *) self;
-	struct backgroundedCommand *bg;
-	PyObject *argObject = NULL, *result;
-	twopence_status_t status;
+	PyObject *argObject = NULL;
 	int pid = 0;
 
 	if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O", kwlist, &argObject))
@@ -488,28 +521,7 @@ Target_wait(PyObject *self, PyObject *args, PyObject *kwds)
 		return NULL;
 	}
 
-	if ((handle = Target_handle(self)) == NULL)
-		return NULL;
-
-	pid = twopence_wait(handle, pid, &status);
-	if (pid < 0)
-		return twopence_Exception("wait", pid);
-
-	if (pid == 0) {
-		Py_INCREF(Py_None);
-		return Py_None;
-	}
-
-	bg = Target_findBackgrounded(tgtObject, pid);
-	if (bg == NULL) {
-		PyErr_SetString(PyExc_SystemError, "Target.wait(): No record of PID returned by target");
-		return NULL;
-	}
-
-	result = Target_buildCommandStatus(bg->object, &bg->cmd, &status);
-	backgroundedCommandFree(bg);
-
-	return result;
+	return Target_wait_common(tgtObject, pid);
 }
 
 /*
@@ -582,6 +594,87 @@ Target_waitAll(PyObject *self, PyObject *args, PyObject *kwds)
 	}
 
 	return (PyObject *) result;
+}
+
+static PyObject *
+Target_chat(PyObject *self, PyObject *args, PyObject *kwds)
+{
+	twopence_Target *tgtObject = (twopence_Target *) self;
+	twopence_Command *cmdObject = NULL;
+	twopence_Chat *chatObject = NULL;
+	struct backgroundedCommand *bg = NULL;
+	PyObject *result = NULL;
+	int rc;
+
+	if (PySequence_Check(args)
+	 && PySequence_Fast_GET_SIZE(args) == 1) {
+		/* Single argument can be an object of type Command or a string */
+		PyObject *object = PySequence_Fast_GET_ITEM(args, 0);
+
+		if (Command_Check(object)) {
+			cmdObject = (twopence_Command *) object;
+			Py_INCREF(cmdObject);
+		}
+	}
+
+	if (cmdObject == NULL) {
+		cmdObject = (twopence_Command *) twopence_callType(&twopence_CommandType, args, kwds);
+		if (cmdObject == NULL)
+			goto out;
+	}
+
+	if (cmdObject->pid != 0) {
+		PyErr_SetString(PyExc_SystemError, "Command already executing");
+		goto out;
+	}
+
+	bg = backgroundedCommandNew(cmdObject);
+	if (Command_build(cmdObject, &bg->cmd) < 0)
+		goto failed;
+
+	chatObject = (twopence_Chat *) twopence_callType(&twopence_ChatType, NULL, NULL);
+	if (chatObject == NULL)
+		goto failed;
+
+	chatObject->target = tgtObject;
+	Py_INCREF(tgtObject);
+
+	twopence_chat_init(&chatObject->chat,
+			twopence_command_alloc_buffer(&bg->cmd, TWOPENCE_STDIN, 65536),
+			twopence_command_alloc_buffer(&bg->cmd, TWOPENCE_STDOUT, 65536));
+
+	rc = twopence_chat_begin(tgtObject->handle, &bg->cmd, &chatObject->chat);
+	if (rc < 0) {
+		twopence_Exception("run(background)", rc);
+		goto failed;
+	}
+	if (rc == 0) {
+		PyErr_SetString(PyExc_SystemError, "Target.run() of a backgrounded command returns pid 0");
+		goto failed;
+	}
+
+	Target_recordBackgrounded(tgtObject, bg);
+	bg->pid = rc;
+
+	cmdObject->pid = bg->pid;
+	chatObject->pid = bg->pid;
+
+	result = (PyObject *) chatObject;
+
+out:
+	if (cmdObject) {
+		Py_DECREF(cmdObject);
+	}
+
+	return result;
+
+failed:
+	if (bg)
+		backgroundedCommandFree(bg);
+	if (chatObject) {
+		Py_DECREF(chatObject);
+	}
+	goto out;
 }
 
 /*
