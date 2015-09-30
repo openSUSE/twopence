@@ -645,11 +645,11 @@ Target_chat(PyObject *self, PyObject *args, PyObject *kwds)
 
 	rc = twopence_chat_begin(tgtObject->handle, &bg->cmd, &chatObject->chat);
 	if (rc < 0) {
-		twopence_Exception("run(background)", rc);
+		twopence_Exception("chat()", rc);
 		goto failed;
 	}
 	if (rc == 0) {
-		PyErr_SetString(PyExc_SystemError, "Target.run() of a backgrounded command returns pid 0");
+		PyErr_SetString(PyExc_SystemError, "Target.chat() of a backgrounded command returns pid 0");
 		goto failed;
 	}
 
@@ -658,6 +658,9 @@ Target_chat(PyObject *self, PyObject *args, PyObject *kwds)
 
 	cmdObject->pid = bg->pid;
 	chatObject->pid = bg->pid;
+
+	chatObject->command = cmdObject;
+	Py_INCREF(cmdObject);
 
 	result = (PyObject *) chatObject;
 

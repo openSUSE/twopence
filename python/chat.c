@@ -68,7 +68,7 @@ PyTypeObject twopence_ChatType = {
 	.tp_new		= Chat_new,
 	.tp_dealloc	= (destructor) Chat_dealloc,
 
-//	.tp_getattr	= (getattrfunc) Chat_getattr,
+	.tp_getattr	= (getattrfunc) Chat_getattr,
 };
 
 /*
@@ -86,6 +86,7 @@ Chat_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 	/* init members */
 	self->pid = 0;
 	self->target = NULL;
+	self->command = NULL;
 	memset(&self->chat, 0, sizeof(self->chat));
 
 	return (PyObject *)self;
@@ -118,6 +119,7 @@ Chat_dealloc(twopence_Chat *self)
 {
 	twopence_chat_destroy(&self->chat);
 	drop_object((PyObject **) &self->target);
+	drop_object((PyObject **) &self->command);
 }
 
 int
@@ -129,8 +131,17 @@ Chat_Check(PyObject *self)
 static PyObject *
 Chat_getattr(twopence_Chat *self, char *name)
 {
-	PyErr_Format(PyExc_AttributeError, "%s", name);
-	return NULL;
+	if (!strcmp(name, "commandline")
+	 || !strcmp(name, "timeout")
+	 || !strcmp(name, "user")) {
+		if (self->command == NULL) {
+			PyErr_Format(PyExc_AttributeError, "No command object when querying attribute %s", name);
+			return NULL;
+		}
+		return self->command->ob_type->tp_getattr((PyObject *) self->command, name);
+	}
+
+	return Py_FindMethod(twopence_chatMethods, (PyObject *) self, name);
 }
 
 /*

@@ -94,6 +94,7 @@ typedef struct {
 	PyObject_HEAD
 
 	twopence_Target *target;
+	twopence_Command *command;
 	twopence_chat_t	chat;
 	unsigned int	pid;
 } twopence_Chat;

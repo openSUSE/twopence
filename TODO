@@ -20,6 +20,11 @@ FUNCTIONALITY
    o minimalistic options for the twopence_exit command
      -h --help -v --version
 
+   o chat scripts:
+   	support send_eof() to close stdin
+	support collecting everything between now and the
+		receipt of the next expect string
+
    o accept a directory as destination filename for inject and extract
    o be able to inject or extract a full directory tree
      -r --recursive
