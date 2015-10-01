@@ -1355,6 +1355,7 @@ twopence_ssh_wait(struct twopence_target *opaque_handle, int want_pid, twopence_
   twopence_ssh_transaction_t *trans = NULL;
   int rc;
 
+  twopence_debug2("%s(pid=%d)", __func__, want_pid);
   while (true) {
     trans = __twopence_ssh_get_completed_transaction(handle, want_pid);
     if (trans != NULL)
@@ -1399,6 +1400,13 @@ twopence_ssh_chat_send(twopence_target_t *opaque_handle, int pid, twopence_iostr
 
   __twopence_ssh_transaction_detach_stdin(trans);
   __twopence_ssh_transaction_setup_stdin(trans, stream, false);
+
+  /* Push data to server */
+  if (trans->stdin.fd < 0 && !trans->stdin.eof) {
+    if (__twopence_ssh_transaction_drain_stdin(trans) < 0)
+      return -1;
+  }
+
   return 0;
 }
 
