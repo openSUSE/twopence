@@ -20,8 +20,11 @@
 #include <sys/types.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+#include <ctype.h>
 #include <assert.h>
 
+#include "twopence.h"
 #include "buffer.h"
 #include "utils.h"
 
@@ -293,4 +296,55 @@ twopence_buf_compact(twopence_buf_t *bp)
 		memmove(bp->base, bp->base + bp->head, count);
 	bp->head = 0;
 	bp->tail = count;
+}
+
+/*
+ * Buffer dumping functions
+ */
+static void
+__twopence_buf_dump(const twopence_buf_t *bp, void (*func)(const char *, void *), void *data)
+{
+	static const unsigned int BYTESPERLINE = 32;
+	static const unsigned int OCTET_OFFSET = 6;
+	static const unsigned int TEXT_OFFSET = 6 + 3 * BYTESPERLINE + 2;
+	char linebuf[256];
+	unsigned int i, j, k;
+
+	for (i = bp->head, j = k = 0; i < bp->tail; ++i, ++k) {
+		static const char *hexdigit = "0123456789abcdef";
+		unsigned char cc;
+
+		if (k == BYTESPERLINE) {
+			func(linebuf, data);
+			k = 0;
+		}
+		if (k == 0) {
+			snprintf(linebuf, sizeof(linebuf), "%04x: %*.*s",
+					i - bp->head,
+					TEXT_OFFSET, TEXT_OFFSET, "");
+		}
+
+		cc = ((unsigned char *) bp->base)[i];
+		linebuf[OCTET_OFFSET + k * 3] = hexdigit[cc >> 4];
+		linebuf[OCTET_OFFSET + k * 3 + 1] = hexdigit[cc & 15];
+		linebuf[TEXT_OFFSET + k] = (isalnum(cc) || ispunct(cc))? cc : '.';
+		linebuf[TEXT_OFFSET + k  + 1] = '\0';
+	}
+
+	if (k)
+		func(linebuf, data);
+}
+
+static void
+__twopence_buf_dump_print(const char *line, void *data)
+{
+	unsigned int lvl = *(unsigned int *) data;
+
+	__twopence_debug(lvl, "%s", line);
+}
+
+void
+twopence_buf_dump(const twopence_buf_t *bp, unsigned int debuglevel)
+{
+	__twopence_buf_dump(bp, __twopence_buf_dump_print, &debuglevel);
 }

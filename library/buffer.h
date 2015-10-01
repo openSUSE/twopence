@@ -60,5 +60,6 @@ extern const char *	twopence_buf_gets(twopence_buf_t *bp);
 extern void		twopence_buf_reset(twopence_buf_t *bp);
 extern void		twopence_buf_compact(twopence_buf_t *bp);
 extern int		twopence_buf_index(const twopence_buf_t *bp, const char *string);
+extern void		twopence_buf_dump(const twopence_buf_t *bp, unsigned int debuglevel);
 
 #endif /* TWOPENCE_BUFFER_H */
