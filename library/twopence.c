@@ -235,12 +235,13 @@ twopence_chat_init(twopence_chat_t *chat, twopence_buf_t *sendbuf, twopence_buf_
   memset(chat, 0, sizeof(*chat));
   chat->sendbuf = sendbuf;
   chat->recvbuf = recvbuf;
+  twopence_buf_init(&chat->consumed);
 }
 
 void
 twopence_chat_destroy(twopence_chat_t *chat)
 {
-  /* Nothing for now */
+  twopence_buf_destroy(&chat->consumed);
 }
 
 int
@@ -294,6 +295,8 @@ twopence_chat_expect(twopence_target_t *target, twopence_chat_t *chat, const cha
   struct timeval __deadline, *deadline;
   twopence_buf_t *bp = chat->recvbuf;
 
+  twopence_buf_destroy(&chat->consumed);
+
   deadline = NULL;
   if (timeout >= 0) {
     gettimeofday(&__deadline, NULL);
@@ -305,8 +308,12 @@ twopence_chat_expect(twopence_target_t *target, twopence_chat_t *chat, const cha
     int nbytes, pos;
 
     if ((pos = twopence_buf_index(bp, string)) >= 0) {
-      /* Consume everything up to and including the string we waited for */
+      /* Consume everything up to and including the string we waited for.
+       * We return the data we skipped over in chat->consumed.
+       */
       nbytes = pos + strlen(string);
+      twopence_buf_ensure_tailroom(&chat->consumed, nbytes);
+      twopence_buf_append(&chat->consumed, twopence_buf_head(bp), nbytes);
       twopence_buf_pull(bp, nbytes);
       return nbytes;
     }

@@ -141,6 +141,13 @@ Chat_getattr(twopence_Chat *self, char *name)
 		return self->command->ob_type->tp_getattr((PyObject *) self->command, name);
 	}
 
+	if (!strcmp(name, "consumed")) {
+		PyObject *buffer = twopence_callType(&PyByteArray_Type, NULL, NULL);
+
+		twopence_AppendBuffer(buffer, &self->chat.consumed);
+		return buffer;
+	}
+
 	return Py_FindMethod(twopence_chatMethods, (PyObject *) self, name);
 }
 

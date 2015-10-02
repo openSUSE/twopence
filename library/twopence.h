@@ -208,6 +208,11 @@ struct twopence_chat {
 	twopence_buf_t *	recvbuf;
 	twopence_buf_t *	sendbuf;
 	twopence_iostream_t *	stdin;
+
+	/* When chat_recv returns, this buffer contains the
+	 * data we skipped over, including the string we
+	 * were waiting for. */
+	twopence_buf_t		consumed;
 };
 
 /*
