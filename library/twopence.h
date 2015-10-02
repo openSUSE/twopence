@@ -81,6 +81,7 @@ typedef struct twopence_command twopence_command_t;
 typedef struct twopence_iostream twopence_iostream_t;
 typedef struct twopence_file_xfer twopence_file_xfer_t;
 typedef struct twopence_chat twopence_chat_t;
+typedef struct twopence_expect twopence_expect_t;
 
 struct twopence_plugin {
 	const char *		name;
@@ -220,6 +221,14 @@ struct twopence_chat {
 	char *			found;
 };
 
+#define TWOPENCE_EXPECT_MAX_STRINGS	16
+struct twopence_expect {
+	unsigned int		timeout;
+
+	unsigned int		nstrings;
+	const char *		strings[TWOPENCE_EXPECT_MAX_STRINGS];
+};
+
 /*
  * The target type
  */
@@ -336,7 +345,7 @@ extern int		twopence_chat_begin(twopence_target_t *, twopence_command_t *cmd, tw
  *
  * In case of any errors, the (negative) error code will be returned.
  */
-extern int		twopence_chat_expect(twopence_target_t *, twopence_chat_t *chat, const char *string, int timeout);
+extern int		twopence_chat_expect(twopence_target_t *, twopence_chat_t *chat, const twopence_expect_t *args);
 
 /*
  * Send the given string to the command's standard input

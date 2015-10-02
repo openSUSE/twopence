@@ -291,7 +291,7 @@ twopence_chat_begin(twopence_target_t *target, twopence_command_t *cmd, twopence
  * function will return TWOPENCE_COMMAND_TIMEOUT_ERROR.
  */
 int
-twopence_chat_expect(twopence_target_t *target, twopence_chat_t *chat, const char *string, int timeout)
+twopence_chat_expect(twopence_target_t *target, twopence_chat_t *chat, const twopence_expect_t *args)
 {
   struct timeval __deadline, *deadline;
   twopence_buf_t *bp = chat->recvbuf;
@@ -300,16 +300,28 @@ twopence_chat_expect(twopence_target_t *target, twopence_chat_t *chat, const cha
   twopence_strfree(&chat->found);
 
   deadline = NULL;
-  if (timeout >= 0) {
+  if (args->timeout >= 0) {
     gettimeofday(&__deadline, NULL);
-    __deadline.tv_sec += timeout;
+    __deadline.tv_sec += args->timeout;
     deadline = &__deadline;
   }
 
   while (true) {
-    int nbytes, pos;
+    const char *string = NULL;
+    int k, nbytes, pos;
 
-    if ((pos = twopence_buf_index(bp, string)) >= 0) {
+    for (k = 0, pos = -1; k < args->nstrings; ++k) {
+      const char *s = args->strings[k];
+      int at;
+
+      at = twopence_buf_index(bp, s);
+      if (at >= 0 && (pos < 0 || at < pos || (at == pos && strlen(s) > strlen(string)))) {
+	string = s;
+	pos = at;
+      }
+    }
+
+    if (pos >= 0) {
       /* Consume everything up to and including the string we waited for.
        * We return the data we skipped over in chat->consumed.
        */

@@ -478,7 +478,19 @@ of seconds before giving up. If no timeout is given, twopence will wait
 indefinitely (ie until the command timeout).
 .IP
 If a matching string is found, all pending output up to and including
-to the given string is discarded from the internal buffers.
+to the given string is discarded from the internal buffers. The consumed
+data is returned in \fBchat.consumed\fP, and the
+matched string is returned in \fBchat.found\fP.
+.TP
+.B "Chat.expect(listOrTuple)
+This method works very much like the basic \fBexpect()\fP function, except
+that you can provide a sequence of strings to wait for. If more than one
+of the strings is found in the command's output, the earliest match
+is returned (ie the match that comes first in the command's output
+stream).
+.IP
+Again, the consumed data is returned in \fBchat.consumed\fP, and the
+matched string is returned in \fBchat.found\fP.
 .TP
 .B "Chat.send(string)
 This method will write the specified string to the command's input.

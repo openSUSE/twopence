@@ -160,6 +160,59 @@ Chat_getattr(twopence_Chat *self, char *name)
 }
 
 /*
+ * Check if all strings passed into chat_expect() are valid
+ */
+static bool
+Chat_expect_set_strings(twopence_expect_t *e, PyObject *expectObj)
+{
+	unsigned int k;
+
+	if (PyString_Check(expectObj)) {
+		e->strings[0] = PyString_AsString(expectObj);
+		e->nstrings = 1;
+	} else
+	if (PySequence_Check(expectObj)) {
+		unsigned int count = PySequence_Size(expectObj);
+
+		if (count == 0) {
+			PyErr_SetString(PyExc_TypeError, "chat.expect(): empty <expect> tuple");
+			return false;
+		}
+		if (count > TWOPENCE_EXPECT_MAX_STRINGS) {
+			PyErr_SetString(PyExc_TypeError, "chat.expect(): too many elements in <expect> argument");
+			return false;
+		}
+
+		for (k = 0; k < count; ++k) {
+			PyObject *item = PySequence_GetItem(expectObj, k);
+
+			if (!PyString_Check(item))
+				goto bad_string;
+			e->strings[k] = PyString_AsString(item);
+		}
+		e->nstrings = count;
+	} else {
+		PyErr_SetString(PyExc_TypeError, "chat.expect(): invalid <expect> argument");
+		return false;
+	}
+
+	if (e->nstrings == 0)
+		return false;
+	for (k = 0; k < e->nstrings; ++k) {
+		const char *s = e->strings[k];
+
+		if (s == NULL || s[0] == '\0')
+			goto bad_string;
+	}
+
+	return true;
+
+bad_string:
+	PyErr_SetString(PyExc_TypeError, "chat.expect(): bad string in <expect> argument");
+	return false;
+}
+
+/*
  * Wait for command to produce a given output
  */
 static PyObject *
@@ -167,16 +220,18 @@ Chat_expect(PyObject *self, PyObject *args, PyObject *kwds)
 {
 	twopence_Chat *chatObject = (twopence_Chat *) self;
 	static char *kwlist[] = {
-		"string",
+		"expect",
 		"timeout",
 		NULL
 	};
-	PyObject *result = NULL;
-	char *expected;
+	PyObject *expectObj, *result = NULL;
+	twopence_expect_t expect;
 	int timeout = -1;
 	int rv;
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|i", kwlist, &expected, &timeout))
+	memset(&expect, 0, sizeof(expect));
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|i", kwlist, &expectObj, &timeout))
 		return NULL;
 
 	if (chatObject->target == NULL) {
@@ -184,12 +239,11 @@ Chat_expect(PyObject *self, PyObject *args, PyObject *kwds)
 		return NULL;
 	}
 
-	if (expected[0] == '\0') {
-		PyErr_SetString(PyExc_TypeError, "target.expect(): invalid string argument");
+	expect.timeout = timeout;
+	if (!Chat_expect_set_strings(&expect, expectObj))
 		return NULL;
-	}
 
-	rv = twopence_chat_expect(chatObject->target->handle, &chatObject->chat, expected, timeout);
+	rv = twopence_chat_expect(chatObject->target->handle, &chatObject->chat, &expect);
 	if (rv <= 0) {
 		/* There are a number of reasons for getting here:
 		 *  - command exited without producing further output (nbytes is 0 in this case)

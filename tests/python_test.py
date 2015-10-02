@@ -947,5 +947,22 @@ except:
 	testCaseException()
 testCaseReport()
 
+testCaseBegin("Check chat scripting with multiple expect strings")
+try:
+	mydata = "here it is"
+
+	chat = target.chat("echo This is a BadSurprise - not a Success")
+	print "Waiting for prompt"
+	if not chat.expect(["Success", "Bad", "BadSurprise"], timeout = 5):
+		testCaseFail("timed out waiting for output")
+	elif chat.found == "BadSurprise":
+		print "Good, found the expected string \"BadSurprise\""
+	else:
+		print "chat.expect() found string \"%s\"" % chat.found
+		testCaseFail("chat.expect() returned wrong result (should have been BadSurprise)")
+except:
+	testCaseException()
+testCaseReport()
+
 
 testSuiteExit()
