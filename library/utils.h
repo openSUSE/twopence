@@ -51,5 +51,6 @@ extern void *		twopence_malloc(size_t size);
 extern void *		twopence_realloc(void *p, size_t size);
 extern void *		twopence_calloc(size_t nmemb, size_t size);
 extern char *		twopence_strdup(const char *s);
+extern void		twopence_strfree(char **sp);
 
 #endif /* UTILS_H */

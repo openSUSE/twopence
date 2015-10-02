@@ -242,6 +242,7 @@ void
 twopence_chat_destroy(twopence_chat_t *chat)
 {
   twopence_buf_destroy(&chat->consumed);
+  twopence_strfree(&chat->found);
 }
 
 int
@@ -296,6 +297,7 @@ twopence_chat_expect(twopence_target_t *target, twopence_chat_t *chat, const cha
   twopence_buf_t *bp = chat->recvbuf;
 
   twopence_buf_destroy(&chat->consumed);
+  twopence_strfree(&chat->found);
 
   deadline = NULL;
   if (timeout >= 0) {
@@ -311,6 +313,8 @@ twopence_chat_expect(twopence_target_t *target, twopence_chat_t *chat, const cha
       /* Consume everything up to and including the string we waited for.
        * We return the data we skipped over in chat->consumed.
        */
+      chat->found = twopence_strdup(string);
+
       nbytes = pos + strlen(string);
       twopence_buf_ensure_tailroom(&chat->consumed, nbytes);
       twopence_buf_append(&chat->consumed, twopence_buf_head(bp), nbytes);

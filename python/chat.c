@@ -147,6 +147,14 @@ Chat_getattr(twopence_Chat *self, char *name)
 		twopence_AppendBuffer(buffer, &self->chat.consumed);
 		return buffer;
 	}
+	if (!strcmp(name, "found")) {
+		if (self->chat.found == NULL) {
+			Py_INCREF(Py_None);
+			return Py_None;
+		}
+
+		return PyString_FromString(self->chat.found);
+	}
 
 	return Py_FindMethod(twopence_chatMethods, (PyObject *) self, name);
 }

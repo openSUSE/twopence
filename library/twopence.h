@@ -213,6 +213,11 @@ struct twopence_chat {
 	 * data we skipped over, including the string we
 	 * were waiting for. */
 	twopence_buf_t		consumed;
+
+	/* When chat_recv returns, this contains the
+	 * string we matched.
+	 */
+	char *			found;
 };
 
 /*
