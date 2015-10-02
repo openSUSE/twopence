@@ -31,6 +31,7 @@ struct twopence_buf {
 	unsigned int	head;
 	unsigned int	tail;
 	unsigned int	size;
+	unsigned int	dynamic : 1;
 };
 
 extern void		twopence_buf_init(twopence_buf_t *bp);

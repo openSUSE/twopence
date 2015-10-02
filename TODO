@@ -4,8 +4,6 @@ BUGS
    o server: in open_file_as, be careful with user accounts
      that have no home directory set, or have "/" as home.
 
-   o buffer.c: fix the memory leak when we resize the buffer
-
 REFACTORING
    o not sure there is much point in having two concurrent APIs to do the same:
      refactor shell and ruby wrappers to use directly twopence_run_test()?

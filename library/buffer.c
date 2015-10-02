@@ -45,6 +45,8 @@ twopence_buf_init_static(twopence_buf_t *bp, void *data, size_t len)
 void
 twopence_buf_destroy(twopence_buf_t *bp)
 {
+	if (bp->dynamic)
+		free(bp->base);
 	twopence_buf_init(bp);
 }
 
@@ -150,9 +152,16 @@ twopence_buf_resize(twopence_buf_t *bp, unsigned int want_size)
 
 	assert(want_size <= new_size);
 
-	bp->base = twopence_realloc(bp->base, new_size);
-	assert(bp->base);
+	/* twopence_{m,re}alloc never return a NULL pointer */
+	if (bp->base == NULL || bp->dynamic) {
+		bp->base = twopence_realloc(bp->base, new_size);
+	} else {
+		void *old_base = bp->base;
+		bp->base = twopence_malloc(new_size);
+		memcpy(bp->base, old_base, bp->size);
+	}
 
+	bp->dynamic = 1;
 	bp->size = new_size;
 	return true;
 }
