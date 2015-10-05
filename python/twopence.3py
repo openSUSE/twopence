@@ -255,6 +255,60 @@ target.run(cmd)
 .\" --------------------------------------------------------------
 .\"
 .\"
+.SS Running Commands in Chat mode
+.\" --------------------------------------------------------------
+Sometimes, it's desirable to run a command interactively, i.e. to wait
+for the command to print out a prompt, feed some text to it, wait for
+more output, etc. The typical use case for this would be testing
+applications like the
+.BR su (8)
+command.
+.P
+This is supported in the python bindings using so-called chat objects.
+The following example illustrates how to handle a simple chat script:
+.in +2
+.nf
+\fB
+  chat = target.chat("su -c 'echo success' joedoe")
+  if not chat.expect("ssword:", timeout = 15):
+    print "timed out waiting for password prompt"
+    return False
+
+  chat.send(password + "\\n")
+  if not chat.expect("success", timeout = 15):
+    print "did not receive success message"
+    return False
+
+  if not chat.wait():
+    print "command exited with error"
+    return False
+\fP
+.fi
+.in
+.P
+The
+.B Target.chat()
+method behaves a lot like the
+.B run()
+method; in fact, chat scripts internally use a backgrounded command
+to do its job. As such, it accepts
+.B user
+and
+.B timeout
+arguments; however, other attributes such as
+.B stdout
+are ignored. It is also possible to create a
+.B Command
+object and pass it to the
+.B chat()
+method.
+.P
+For a list of methods supported by chat objects, please refer to section
+.I Chat Objects
+below.
+.\" --------------------------------------------------------------
+.\"
+.\"
 .SS File Transfers
 .\" --------------------------------------------------------------
 The twopence python bindings support file transfers through the
@@ -401,6 +455,59 @@ standard output and standard error, respectively.
 In the context of a file transfer to or from a local buffer, this
 attribute references the byte array object containing the buffered
 data.
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Chat Objects
+.\" --------------------------------------------------------------
+Command chats are implemented by running a command asynchronously
+(i.e. in the background). In addition, the command is run with its
+standard I/O connected to a tty, because that is the only way to
+coerce eg the SSH protocol to forward the command's output immediately
+rather than buffer it indefinitely.
+.P
+To start a command in chat mode, use the
+.BR Target.chat() method.
+.TP
+.B "Chat.expect(string)
+This method will wait for the command to print the specified string.
+Optionally, you can pass a
+.B timeout
+attribute that instructs twopence to wait up to the specified number
+of seconds before giving up. If no timeout is given, twopence will wait
+indefinitely (ie until the command timeout).
+.IP
+If a matching string is found, all pending output up to and including
+to the given string is discarded from the internal buffers. The consumed
+data is returned in \fBchat.consumed\fP, and the
+matched string is returned in \fBchat.found\fP.
+.TP
+.B "Chat.expect(listOrTuple)
+This method works very much like the basic \fBexpect()\fP function, except
+that you can provide a sequence of strings to wait for. If more than one
+of the strings is found in the command's output, the earliest match
+is returned (ie the match that comes first in the command's output
+stream).
+.IP
+Again, the consumed data is returned in \fBchat.consumed\fP, and the
+matched string is returned in \fBchat.found\fP.
+.TP
+.B "Chat.send(string)
+This method will write the specified string to the command's input.
+Note that no implicit newlines will be appended by twopence.
+.TP
+.B "Chat.recvline()
+This will return all pending data up to the next newline, optionally
+waiting for more data if the buffer does not contain enough data.
+.IP
+Similarly to the \fBexpect()\fP method, you can specify an optional
+\fBtimeout\fP attribute that limits the time twopence will wait for
+a complete line.
+.TP
+.B "Chat.wait()
+This will wait for the command to complete, and return its exit
+status as a \fBStatus\fP object. Note that the content of the status
+object's \fBstdout\fP and \fBstderr\fP objects is undefined.
 .\" --------------------------------------------------------------
 .\"
 .\"

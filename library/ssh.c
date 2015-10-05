@@ -103,6 +103,7 @@ struct twopence_ssh_transaction {
     twopence_iostream_t *stream;
     int			fd;
     bool		eof;
+    bool		propagate_eof;
     int			was_blocking;
   } stdin;
 
@@ -115,6 +116,12 @@ struct twopence_ssh_transaction {
   bool			eof_sent;
   bool			use_tty;
   bool			interrupted;
+
+  struct {
+    bool		waiting;	/* true iff we're in wait_for_output */
+    unsigned int	nreceived;	/* number of bytes received */
+    const struct timeval *timeout;	/* how long to wait for more input */
+  } chat;
 
   /* Right now, we need the callbacks for exactly one reason -
    * to catch the exit signal of the remote process.
@@ -176,7 +183,7 @@ __twopence_ssh_transaction_send_eof(twopence_ssh_transaction_t *trans)
 
   if (trans->channel == NULL || trans->eof_sent)
     return SSH_OK;
-  if (trans->use_tty)
+  if (trans->use_tty && !trans->eof_seen)
     rc = ssh_channel_write(trans->channel, "\004", 1);
   if (rc == SSH_OK)
     rc = ssh_channel_send_eof(trans->channel);
@@ -307,17 +314,24 @@ __twopence_ssh_transaction_set_exit_signal(twopence_ssh_transaction_t *trans, in
 }
 
 static void
+__twopence_ssh_transaction_setup_stdin(twopence_ssh_transaction_t *trans, twopence_iostream_t *stdin_stream, bool propagate)
+{
+  /* Set stdin to non-blocking IO */
+  trans->stdin.was_blocking = twopence_iostream_set_blocking(stdin_stream, false);
+  trans->stdin.stream = stdin_stream;
+  trans->stdin.propagate_eof = propagate;
+  trans->stdin.eof = false;
+  trans->stdin.fd = -1;
+}
+
+static void
 __twopence_ssh_transaction_setup_stdio(twopence_ssh_transaction_t *trans,
 		twopence_iostream_t *stdin_stream,
 		twopence_iostream_t *stdout_stream,
 		twopence_iostream_t *stderr_stream)
 {
-  if (stdin_stream) {
-    /* Set stdin to non-blocking IO */
-    trans->stdin.was_blocking = twopence_iostream_set_blocking(stdin_stream, false);
-    trans->stdin.stream = stdin_stream;
-    trans->stdin.fd = -1;
-  }
+  if (stdin_stream)
+    __twopence_ssh_transaction_setup_stdin(trans, stdin_stream, true);
 
   trans->stdout.stream = stdout_stream;
   trans->stderr.stream = stderr_stream;
@@ -367,6 +381,7 @@ __twopence_ssh_data_callback(ssh_session session, ssh_channel channel, void *dat
       __twopence_ssh_transaction_fail(trans, TWOPENCE_RECEIVE_RESULTS_ERROR);
       return SSH_ERROR;
     }
+    trans->chat.nreceived += len;
   }
   return len;
 }
@@ -472,6 +487,8 @@ __twopence_ssh_transaction_execute_command(twopence_ssh_transaction_t *trans, tw
 		  &cmd->iostream[TWOPENCE_STDOUT],
 		  &cmd->iostream[TWOPENCE_STDERR]);
 
+  trans->stdin.propagate_eof = !cmd->keepopen_stdin;
+
   // Execute the command
   if (ssh_channel_request_exec(trans->channel, cmd->command) != SSH_OK)
     return TWOPENCE_SEND_COMMAND_ERROR;
@@ -546,6 +563,13 @@ __twopence_ssh_transaction_mark_stdin_eof(twopence_ssh_transaction_t *trans)
   twopence_debug("%s: stdin is at EOF\n", __func__);
   trans->stdin.eof = true;
 
+  /* When executing a chat script, we do not want to close the
+   * remote command's EOF as soon as we reach the end of the send
+   * buffer - the caller may write more data to the buffer later.
+   */
+  if (!trans->stdin.propagate_eof)
+    return 0;
+
   if (__twopence_ssh_transaction_send_eof(trans) == SSH_ERROR)
     return -1;
 
@@ -589,6 +613,24 @@ __twopence_ssh_transaction_forward_stdin(twopence_ssh_transaction_t *trans)
   return 0;
 }
 
+/*
+ * Write all data pending on stdin to the remote.
+ * This function is only called when stdin is connected to a buffer
+ * or similar.
+ */
+static int
+__twopence_ssh_transaction_drain_stdin(twopence_ssh_transaction_t *trans)
+{
+  while (!trans->stdin.eof) {
+    if (__twopence_ssh_transaction_forward_stdin(trans) < 0) {
+      __twopence_ssh_transaction_fail(trans, TWOPENCE_FORWARD_INPUT_ERROR);
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
 static int
 __twopence_ssh_stdin_cb(socket_t fd, int revents, void *userdata)
 {
@@ -614,13 +656,8 @@ __twopence_ssh_transaction_enable_poll(ssh_event event, twopence_ssh_transaction
     trans->stdin.fd = twopence_iostream_getfd(stream);
     if (trans->stdin.fd < 0) {
       twopence_debug("%s: writing stdin synchronously to peer\n", __func__);
-
-      while (!trans->stdin.eof) {
-        if (__twopence_ssh_transaction_forward_stdin(trans) < 0) {
-          __twopence_ssh_transaction_fail(trans, TWOPENCE_FORWARD_INPUT_ERROR);
-	  return -1;
-	}
-      }
+      if (__twopence_ssh_transaction_drain_stdin(trans) < 0)
+	return -1;
     } else {
       ssh_event_add_fd(event, trans->stdin.fd, POLLIN, __twopence_ssh_stdin_cb, trans);
     }
@@ -673,6 +710,13 @@ __twopence_ssh_poll(struct twopence_ssh_target *handle)
 	 */
         return __twopence_ssh_transaction_get_exit_status(trans);
       }
+
+      if (trans->chat.waiting) {
+        if (trans->chat.nreceived)
+	  return trans->chat.nreceived;
+	if (trans->eof_seen)
+	  return 0;
+      }
     }
 
     gettimeofday(&now, NULL);
@@ -682,6 +726,11 @@ __twopence_ssh_poll(struct twopence_ssh_target *handle)
       if (!__twopence_ssh_check_timeout(&now, &trans->command_timeout, &timeout)) {
         __twopence_ssh_transaction_fail(trans, TWOPENCE_COMMAND_TIMEOUT_ERROR);
         return 0;
+      }
+      if (trans->chat.timeout
+       && !__twopence_ssh_check_timeout(&now, trans->chat.timeout, &timeout)) {
+	/* Do not fail the transaction, just return a timeout */
+	return TWOPENCE_COMMAND_TIMEOUT_ERROR;
       }
     }
 
@@ -712,12 +761,11 @@ __twopence_ssh_transaction_add_running(struct twopence_ssh_target *handle, twope
   trans->pid = handle->transactions.next_pid++;
 }
 
-static twopence_ssh_transaction_t *
-__twopence_ssh_get_completed_transaction(struct twopence_ssh_target *handle, unsigned int want_pid)
+static inline twopence_ssh_transaction_t *
+__twopence_ssh_get_transaction(twopence_ssh_transaction_t **pos, unsigned int want_pid, bool unlink)
 {
-  twopence_ssh_transaction_t **pos, *trans;
+  twopence_ssh_transaction_t *trans;
 
-  pos = &handle->transactions.done;
   while ((trans = *pos) != NULL) {
     if (want_pid == 0 || trans->pid == want_pid)
       break;
@@ -728,10 +776,31 @@ __twopence_ssh_get_completed_transaction(struct twopence_ssh_target *handle, uns
   if (trans == NULL)
     return NULL;
 
-  *pos = trans->next;
-  trans->next = NULL;
+  if (unlink) {
+    *pos = trans->next;
+    trans->next = NULL;
+  }
 
   return trans;
+}
+
+static twopence_ssh_transaction_t *
+__twopence_ssh_transaction_by_pid(struct twopence_ssh_target *handle, unsigned int want_pid)
+{
+  twopence_ssh_transaction_t *result = NULL;
+
+  if (want_pid != 0) {
+    result = __twopence_ssh_get_transaction(&handle->transactions.running, want_pid, false);
+    if (result == NULL)
+      result = __twopence_ssh_get_transaction(&handle->transactions.done, want_pid, false);
+  }
+  return result;
+}
+
+static twopence_ssh_transaction_t *
+__twopence_ssh_get_completed_transaction(struct twopence_ssh_target *handle, unsigned int want_pid)
+{
+  return __twopence_ssh_get_transaction(&handle->transactions.done, want_pid, true);
 }
 
 static int
@@ -1286,6 +1355,7 @@ twopence_ssh_wait(struct twopence_target *opaque_handle, int want_pid, twopence_
   twopence_ssh_transaction_t *trans = NULL;
   int rc;
 
+  twopence_debug2("%s(pid=%d)", __func__, want_pid);
   while (true) {
     trans = __twopence_ssh_get_completed_transaction(handle, want_pid);
     if (trans != NULL)
@@ -1318,6 +1388,68 @@ twopence_ssh_wait(struct twopence_target *opaque_handle, int want_pid, twopence_
   return rc;
 }
 
+static int
+twopence_ssh_chat_send(twopence_target_t *opaque_handle, int pid, twopence_iostream_t *stream)
+{
+  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
+  twopence_ssh_transaction_t *trans = NULL;
+
+  trans = __twopence_ssh_transaction_by_pid(handle, pid);
+  if (trans == NULL)
+    return TWOPENCE_INVALID_TRANSACTION;
+
+  __twopence_ssh_transaction_detach_stdin(trans);
+  __twopence_ssh_transaction_setup_stdin(trans, stream, false);
+
+  /* Push data to server */
+  if (trans->stdin.fd < 0 && !trans->stdin.eof) {
+    if (__twopence_ssh_transaction_drain_stdin(trans) < 0)
+      return -1;
+  }
+
+  return 0;
+}
+
+static int
+twopence_ssh_chat_recv(twopence_target_t *opaque_handle, int pid, const struct timeval *deadline)
+{
+  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
+  twopence_ssh_transaction_t *trans = NULL;
+  int rc;
+
+  trans = __twopence_ssh_transaction_by_pid(handle, pid);
+  if (trans == NULL)
+    return TWOPENCE_INVALID_TRANSACTION;
+
+  /* The caller may have added some more data to the write buffer. Drain it now */
+  if (trans->stdin.fd < 0 && !trans->stdin.eof) {
+    if (__twopence_ssh_transaction_drain_stdin(trans) < 0)
+      return -1;
+  }
+
+  trans->chat.nreceived = 0;
+  while (!trans->done && !trans->chat.nreceived && !trans->eof_seen) {
+    /* Note, deadline may be NULL; in this case, we time out when
+     * the command times out. */
+    trans->chat.timeout = deadline;
+
+    /* This flag tells __twopence_ssh_poll to return as soon as we've
+     * received new data on the command's stdout */
+    trans->chat.waiting = true;
+
+    rc = __twopence_ssh_poll(handle);
+
+    trans->chat.waiting = false;
+    trans->chat.timeout = NULL;
+
+    if (rc < 0)
+      return rc;
+
+    (void) __twopence_ssh_reap_completed(handle);
+  }
+
+  return trans->chat.nreceived;
+}
 
 // Inject a file into the remote host
 //
@@ -1447,6 +1579,8 @@ const struct twopence_plugin twopence_ssh_ops = {
 	.init = twopence_ssh_init,
 	.run_test = twopence_ssh_run_test,
 	.wait = twopence_ssh_wait,
+	.chat_recv = twopence_ssh_chat_recv,
+	.chat_send = twopence_ssh_chat_send,
 	.inject_file = twopence_ssh_inject_file,
 	.extract_file = twopence_ssh_extract_file,
 	.exit_remote = twopence_ssh_exit_remote,

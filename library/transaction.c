@@ -256,6 +256,10 @@ twopence_transaction_set_timeout(twopence_transaction_t *trans, long timeout)
 bool
 twopence_transaction_update_timeout(const twopence_transaction_t *trans, twopence_timeout_t *tmo)
 {
+	if (trans->client.chat_deadline
+	 && !twopence_timeout_update(tmo, trans->client.chat_deadline))
+		return false;
+
 	return twopence_timeout_update(tmo, &trans->client.deadline);
 }
 
@@ -688,7 +692,9 @@ twopence_transaction_recv_packet(twopence_transaction_t *trans, const twopence_h
 			twopence_debug("%s: received %u bytes of data on channel %s\n",
 					twopence_transaction_describe(trans), twopence_buf_count(payload),
 					twopence_transaction_channel_name(sink));
-			if (sink && !twopence_transaction_channel_write_data(trans, sink, payload))
+
+			trans->stats.nbytes_received += twopence_buf_count(payload);
+			if (!twopence_transaction_channel_write_data(trans, sink, payload))
 				twopence_transaction_fail(trans, errno);
 			return;
 		}

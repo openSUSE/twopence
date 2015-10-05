@@ -464,6 +464,21 @@ except:
 	testCaseException()
 testCaseReport()
 
+testCaseBegin("Run command in tty")
+try:
+	cmd = twopence.Command("tty")
+	cmd.useTty = True
+	cmd.timeout = 5
+	status = target.run(cmd)
+	if testCaseCheckStatus(status):
+		dev = str(status.stdout).strip();
+		if dev[:4] != "/dev":
+			testCaseFail("expected command to return a device path, instead got '%s'" % dev);
+except:
+	testCaseException()
+testCaseReport()
+
+
 try:
 	testCaseBegin("check whether target supports backgrounded commands")
 	target.wait()
@@ -897,6 +912,54 @@ try:
 			print "Great, the variable was unset"
 		else:
 			testCaseFail("Command gave us \"%s\" (should have been empty)" % (output))
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("Check chat scripting")
+try:
+	mydata = "here it is"
+
+	chat = target.chat("read -p 'Give it to me: ' DATA; echo -n \"data=$DATA\"")
+	print "Waiting for prompt"
+	if not chat.expect("to me:", timeout = 5):
+		testCaseFail("did not receive prompt")
+	else:
+		print "Received prompt, sending answer"
+		chat.send("%s\n" % mydata);
+
+		print "Waiting for command to print data="
+		if not chat.expect("data="):
+			testCaseFail("did not receive answer")
+		else:
+			print "Got it; receiving rest of the line"
+			answer = chat.recvline()
+			if not answer:
+				testCaseFail("did not receive answer")
+			elif answer.strip() != mydata:
+				testCaseFail("did not receive expected answer, remote echoed \"%s\"" % answer);
+			else:
+				print "Great, received expected data"
+
+		if not chat.wait():
+			testCaseFail("chat command exited with non-zero status")
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("Check chat scripting with multiple expect strings")
+try:
+	mydata = "here it is"
+
+	chat = target.chat("echo This is a BadSurprise - not a Success")
+	print "Waiting for prompt"
+	if not chat.expect(["Success", "Bad", "BadSurprise"], timeout = 5):
+		testCaseFail("timed out waiting for output")
+	elif chat.found == "BadSurprise":
+		print "Good, found the expected string \"BadSurprise\""
+	else:
+		print "chat.expect() found string \"%s\"" % chat.found
+		testCaseFail("chat.expect() returned wrong result (should have been BadSurprise)")
 except:
 	testCaseException()
 testCaseReport()

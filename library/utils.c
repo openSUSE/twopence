@@ -223,3 +223,12 @@ twopence_strdup(const char *s)
 
   check_and_return(p);
 }
+
+void
+twopence_strfree(char **sp)
+{
+  if (*sp != NULL) {
+	  free(*sp);
+	  *sp = NULL;
+  }
+}

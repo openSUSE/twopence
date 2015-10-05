@@ -263,9 +263,8 @@ __twopence_pipe_local_source_eof(twopence_transaction_t *trans, twopence_trans_c
  * This can be fd 0, any other file, or even a buffer object.
  */
 static void
-twopence_pipe_transaction_attach_stdin(twopence_transaction_t *trans, twopence_command_t *cmd)
+__twopence_pipe_transaction_attach_stdin(twopence_transaction_t *trans, twopence_iostream_t *stream)
 {
-  twopence_iostream_t *stream = &cmd->iostream[TWOPENCE_STDIN];
   twopence_trans_channel_t *channel;
 
   channel = twopence_transaction_attach_local_source_stream(trans, TWOPENCE_STDIN, stream);
@@ -275,6 +274,12 @@ twopence_pipe_transaction_attach_stdin(twopence_transaction_t *trans, twopence_c
     twopence_iostream_set_blocking(stream, false);
     /* FIXME: need to set it back to original blocking state at some point */
   }
+}
+
+static void
+twopence_pipe_transaction_attach_stdin(twopence_transaction_t *trans, twopence_command_t *cmd)
+{
+  __twopence_pipe_transaction_attach_stdin(trans, &cmd->iostream[TWOPENCE_STDIN]);
 }
 
 static void
@@ -508,6 +513,62 @@ __twopence_pipe_command(struct twopence_pipe_target *handle, twopence_command_t 
 out:
   twopence_transaction_free(trans);
   return rc;
+}
+
+/*
+ * Chat scripting: send some data
+ */
+int
+twopence_pipe_chat_send(twopence_target_t *opaque_handle, int xid, twopence_iostream_t *stream)
+{
+  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
+  twopence_trans_channel_t *channel;
+  twopence_transaction_t *trans;
+
+  trans = twopence_conn_find_transaction(handle->connection, xid);
+  if (trans == NULL)
+    return TWOPENCE_INVALID_TRANSACTION;
+
+  twopence_transaction_close_source(trans, TWOPENCE_STDIN);
+  __twopence_pipe_transaction_attach_stdin(trans, stream);
+
+  channel = twopence_transaction_attach_local_source_stream(trans, TWOPENCE_STDIN, stream);
+  if (channel) {
+    twopence_transaction_channel_set_name(channel, "stdin");
+    /* Do NOT set the eof callback to __twopence_pipe_local_source_eof because we
+     * do NOT want to send and EOF indication when we've drained the send buffer.
+     */
+  }
+  return 0;
+}
+
+int
+twopence_pipe_chat_recv(twopence_target_t *opaque_handle, int xid, const struct timeval *deadline)
+{
+  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
+  twopence_transaction_t *trans;
+  unsigned int nreceived;
+
+  trans = twopence_conn_find_transaction(handle->connection, xid);
+  if (trans == NULL)
+    return TWOPENCE_INVALID_TRANSACTION;
+
+  nreceived = trans->stats.nbytes_received;
+  while (!trans->done && nreceived == trans->stats.nbytes_received && trans->local_sink != 0) {
+    int rc;
+
+    if (!twopence_conn_has_pending_transactions(handle->connection))
+      break;
+
+    trans->client.chat_deadline = deadline;
+    rc = __twopence_pipe_doio(handle);
+    trans->client.chat_deadline = NULL;
+
+    if (rc < 0)
+      return rc;
+  }
+
+  return trans->stats.nbytes_received - nreceived;
 }
 
 // Inject a file into the remote host

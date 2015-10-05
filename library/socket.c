@@ -719,8 +719,11 @@ twopence_sock_doio(twopence_sock_t *sock)
 		if (tailroom != 0) {
 			n = twopence_sock_recv_buffer(sock, sock->recv_buf);
 			twopence_debug2("socket_recv_buffer returns %d\n", n);
-			if (n < 0)
-				return n;
+			if (n < 0) {
+				if (!(pfd->revents & POLLHUP))
+					return n;
+				n = 0;
+			}
 			if (n == 0)
 				sock->read_eof = true;
 		}

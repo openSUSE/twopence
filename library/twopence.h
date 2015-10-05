@@ -23,6 +23,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <stdbool.h>
 #include <stdio.h>
+#include <sys/time.h>
 #include "buffer.h"
 
 struct pollfd;
@@ -52,6 +53,7 @@ struct pollfd;
 #define TWOPENCE_INTERNAL_ERROR			-17
 #define TWOPENCE_TRANSPORT_ERROR		-18
 #define TWOPENCE_INCOMPATIBLE_PROTOCOL_ERROR	-19
+#define TWOPENCE_INVALID_TRANSACTION		-20
 
 typedef struct twopence_target twopence_target_t;
 
@@ -78,6 +80,8 @@ typedef struct twopence_status {
 typedef struct twopence_command twopence_command_t;
 typedef struct twopence_iostream twopence_iostream_t;
 typedef struct twopence_file_xfer twopence_file_xfer_t;
+typedef struct twopence_chat twopence_chat_t;
+typedef struct twopence_expect twopence_expect_t;
 
 struct twopence_plugin {
 	const char *		name;
@@ -87,6 +91,8 @@ struct twopence_plugin {
 
 	int			(*run_test)(struct twopence_target *, struct twopence_command *, twopence_status_t *);
 	int			(*wait)(struct twopence_target *, int, twopence_status_t *);
+	int			(*chat_recv)(twopence_target_t *, int, const struct timeval *);
+	int			(*chat_send)(twopence_target_t *, int, twopence_iostream_t *);
 
 	int			(*inject_file)(struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);
 	int			(*extract_file)(struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);
@@ -160,6 +166,11 @@ struct twopence_command {
 	 */
 	bool			background;
 
+	/* Do not propagate local EOF of stdin to remote command.
+	 * This is needed for chat scripting
+	 */
+	bool			keepopen_stdin;
+
 	/* This is the set of environment variables being
 	 * passed from the client to the server.
 	 */
@@ -190,6 +201,32 @@ struct twopence_file_xfer {
 
 	/* if true, print dots for every chunk of data transferred */
 	bool			print_dots;
+};
+
+struct twopence_chat {
+	int			pid;
+
+	twopence_buf_t *	recvbuf;
+	twopence_buf_t *	sendbuf;
+	twopence_iostream_t *	stdin;
+
+	/* When chat_recv returns, this buffer contains the
+	 * data we skipped over, including the string we
+	 * were waiting for. */
+	twopence_buf_t		consumed;
+
+	/* When chat_recv returns, this contains the
+	 * string we matched.
+	 */
+	char *			found;
+};
+
+#define TWOPENCE_EXPECT_MAX_STRINGS	16
+struct twopence_expect {
+	unsigned int		timeout;
+
+	unsigned int		nstrings;
+	const char *		strings[TWOPENCE_EXPECT_MAX_STRINGS];
 };
 
 /*
@@ -275,6 +312,52 @@ extern int		twopence_run_test(struct twopence_target *, twopence_command_t *, tw
  * either an error (negative) or the "pid" of the completed process.
  */
 extern int		twopence_wait(struct twopence_target *, int, twopence_status_t *);
+
+/*
+ * Initialize a chat object
+ */
+extern void		twopence_chat_init(twopence_chat_t *chat, twopence_buf_t *, twopence_buf_t *);
+
+/*
+ * Destroy a chat object
+ */
+extern void		twopence_chat_destroy(twopence_chat_t *chat);
+
+/*
+ * Run the specified command and set it up for chat scripting.
+ *
+ * This requires backgrounding support.
+ */
+extern int		twopence_chat_begin(twopence_target_t *, twopence_command_t *cmd, twopence_chat_t *chat);
+
+/*
+ * Wait for the command to output the expected string.
+ *
+ * If the string is received, remove all data up to and including the string from the
+ * local receive buffer, and return the number of bytes consumed.
+ *
+ * If timeout is non-negative, wait for at most the specified number of seconds before giving up.
+ * In case of a timeout, a COMMAND_TIMEOUT error is returned.
+ * If @timeout is negative, the overall command timeout applies.
+ *
+ * If the command exited, or closed its output channels, without having printed the expected
+ * string, this function will return 0.
+ *
+ * In case of any errors, the (negative) error code will be returned.
+ */
+extern int		twopence_chat_expect(twopence_target_t *, twopence_chat_t *chat, const twopence_expect_t *args);
+
+/*
+ * Send the given string to the command's standard input
+ */
+extern void		twopence_chat_puts(twopence_target_t *, twopence_chat_t *chat, const char *string);
+
+/*
+ * Read one line of text from the remote command's output.
+ * If no full line is found in the receive buffer, wait for a complete line for up to @timeout seconds.
+ * If @timeout is negative, the overall command timeout applies.
+ */
+extern char *		twopence_chat_gets(twopence_target_t *, twopence_chat_t *chat, char *buf, size_t size, int timeout);
 
 /*
  * Run a test command, and print output

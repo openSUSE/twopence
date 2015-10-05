@@ -31,6 +31,7 @@ struct twopence_buf {
 	unsigned int	head;
 	unsigned int	tail;
 	unsigned int	size;
+	unsigned int	dynamic : 1;
 };
 
 extern void		twopence_buf_init(twopence_buf_t *bp);
@@ -59,5 +60,7 @@ extern bool		twopence_buf_puts(twopence_buf_t *bp, const char *s);
 extern const char *	twopence_buf_gets(twopence_buf_t *bp);
 extern void		twopence_buf_reset(twopence_buf_t *bp);
 extern void		twopence_buf_compact(twopence_buf_t *bp);
+extern int		twopence_buf_index(const twopence_buf_t *bp, const char *string);
+extern void		twopence_buf_dump(const twopence_buf_t *bp, unsigned int debuglevel);
 
 #endif /* TWOPENCE_BUFFER_H */
