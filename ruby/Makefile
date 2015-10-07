@@ -14,6 +14,9 @@ twopence-$(VERSION).gem: twopence.gemspec Rakefile ext/twopence/extconf.rb \
                     ../library/twopence.h ../library/buffer.h
 	gem build twopence.gemspec
 
+twopence.gemspec: twopence.gemspec.in
+	../subst.sh < $< > $@
+
 install: twopence-$(VERSION).gem
 	ln -sf $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION) $(DESTDIR)$(LIBDIR)/libtwopence.so
 	CFLAGS="-I$(DESTDIR)$(INCDIR)" LDFLAGS="-L$(DESTDIR)$(LIBDIR)" DESTDIR="" \
