@@ -29,6 +29,10 @@ end
 trap("INT") { $target.interrupt_command(); exit() }
 
 # We can send a command to the system under tests
+# local = results of command ex. locally
+# remote = error of command ex. on the SUT
+# command = return code of the command.
+
 printf("\nlocal, remote, command = $target.test_and_print_results('ls -l')\n")
 local, remote, command = $target.test_and_print_results('ls -l')
 printf("local=%d remote=%d command=%d\n\n", local, remote, command)
