@@ -6,6 +6,6 @@ compiler:
   - gcc
 before_install:
   - sudo apt-get -qq update
-  - sudo apt-get install -y libssh-dev ruby-dev rake-compiler python-dev make
+  - sudo apt-get install -y libssh-dev ruby-dev rake-compiler python-dev make pkg-config
 script:
   - make
