@@ -9,7 +9,13 @@ CFLAGS	= -fPIC -I/usr/include/python -I/usr/include/python2.7
 CFLAGS  += -I../library $(CCOPT)
 
 LIBDIR ?= /usr/lib64
-PYDIR  := $(shell readlink -f $(LIBDIR)/python/site-packages)
+# if /usr/lib64/python exist then use readlink (openSUSE)
+ifeq ($(wildcard $(LIBDIR)/python/),)
+    #fedora, ubuntu
+    PYDIR := $(LIBDIR)/python2.7/site-packages/
+else
+    PYDIR := $(shell readlink -f $(LIBDIR)/python/site-packages)
+endif
 
 OBJS	= extension.o \
 	  command.o \
