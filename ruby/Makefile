@@ -25,15 +25,15 @@ ifeq ($(SUSE) ,0)
 		echo "SUSE"
 		# for suse/openSUSE spec.file
 		CFLAGS="-I$(DESTDIR)$(INCDIR)" LDFLAGS="-L$(DESTDIR)$(LIBDIR)" DESTDIR="" \
-		gem install --local \
-                   --build-root "$(DESTDIR)/" \
-                   --install-dir "$(RBDIR)/" \
-                   -V --force twopence-$(VERSION).gem
+		  gem install --local \
+                     --build-root "$(DESTDIR)/" \
+                     --install-dir "$(RBDIR)/" \
+                     -V --force twopence-$(VERSION).gem
 else
 		CFLAGS="-I$(DESTDIR)$(INCDIR)" LDFLAGS="-L$(DESTDIR)$(LIBDIR)" DESTDIR="" \
-                gem install --local \
-                  --install-dir "$(RBDIR)/" \
-                   -V --force twopence-$(VERSION).gem
+                  gem install --local \
+                     --install-dir "$(RBDIR)/" \
+                     -V --force twopence-$(VERSION).gem
 endif
 	rm $(DESTDIR)$(LIBDIR)/libtwopence.so
 	rm -f $(DESTDIR)$(RBDIR)/gems/twopence-$(VERSION)/ext/twopence/siteconf*.rb

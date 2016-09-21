@@ -9,7 +9,7 @@ CFLAGS	= -fPIC -I/usr/include/python -I/usr/include/python2.7
 CFLAGS  += -I../library $(CCOPT)
 
 LIBDIR ?= /usr/lib64
-# if /usr/lib64/python exist then use readlink (openSUSE)
+# if /usr/lib64/python exists then use readlink (openSUSE)
 ifeq ($(wildcard $(LIBDIR)/python/),)
     #fedora, ubuntu
     PYDIR := $(LIBDIR)/python2.7/site-packages/
