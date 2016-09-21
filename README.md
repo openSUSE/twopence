@@ -50,7 +50,7 @@ $ apt-get install rake-compiler
 $ apt-get install python-dev
 ```
 
-* on FEDORA 
+* on Fedora
 ```console
 $ dnf install libssh-devel
 $ dnf install ruby-devel
