@@ -6,6 +6,7 @@ LIBDIR    ?= /usr/lib64
 INCDIR    ?= /usr/include
 VERSION   := $(shell ../subst.sh --version)
 RBDIR      = $(LIBDIR)/ruby/gems/$(RBVERSION)
+SUSE      := $(shell cat /etc/os-release | grep 'SUSE' >/dev/null; echo $$?)
 
 all: twopence-$(VERSION).gem
 
@@ -19,11 +20,21 @@ twopence.gemspec: twopence.gemspec.in
 
 install: twopence-$(VERSION).gem
 	ln -sf $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION) $(DESTDIR)$(LIBDIR)/libtwopence.so
-	CFLAGS="-I$(DESTDIR)$(INCDIR)" LDFLAGS="-L$(DESTDIR)$(LIBDIR)" DESTDIR="" \
-	  gem install --local \
-            --build-root "$(DESTDIR)/" \
-            --install-dir "$(RBDIR)/" \
-            -V --force twopence-$(VERSION).gem
+
+ifeq ($(SUSE) ,0)
+		echo "SUSE"
+		# for suse/openSUSE spec.file
+		CFLAGS="-I$(DESTDIR)$(INCDIR)" LDFLAGS="-L$(DESTDIR)$(LIBDIR)" DESTDIR="" \
+		  gem install --local \
+                     --build-root "$(DESTDIR)/" \
+                     --install-dir "$(RBDIR)/" \
+                     -V --force twopence-$(VERSION).gem
+else
+		CFLAGS="-I$(DESTDIR)$(INCDIR)" LDFLAGS="-L$(DESTDIR)$(LIBDIR)" DESTDIR="" \
+                  gem install --local \
+                     --install-dir "$(RBDIR)/" \
+                     -V --force twopence-$(VERSION).gem
+endif
 	rm $(DESTDIR)$(LIBDIR)/libtwopence.so
 	rm -f $(DESTDIR)$(RBDIR)/gems/twopence-$(VERSION)/ext/twopence/siteconf*.rb
 
