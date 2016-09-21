@@ -21,7 +21,6 @@ install: twopence-$(VERSION).gem
 	ln -sf $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION) $(DESTDIR)$(LIBDIR)/libtwopence.so
 	CFLAGS="-I$(DESTDIR)$(INCDIR)" LDFLAGS="-L$(DESTDIR)$(LIBDIR)" DESTDIR="" \
 	  gem install --local \
-            --build-root "$(DESTDIR)/" \
             --install-dir "$(RBDIR)/" \
             -V --force twopence-$(VERSION).gem
 	rm $(DESTDIR)$(LIBDIR)/libtwopence.so
