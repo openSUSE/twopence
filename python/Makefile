@@ -5,7 +5,8 @@ else
 CCOPT	= -Wall -O2 -g
 endif
 
-CFLAGS	= -fPIC -I/usr/include/python -I../library $(CCOPT)
+CFLAGS	= -fPIC -I/usr/include/python -I/usr/include/python2.7 
+CFLAGS  += -I../library $(CCOPT)
 
 LIBDIR ?= /usr/lib64
 PYDIR  := $(shell readlink -f $(LIBDIR)/python/site-packages)
