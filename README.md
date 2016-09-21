@@ -50,6 +50,16 @@ $ apt-get install rake-compiler
 $ apt-get install python-dev
 ```
 
+* on FEDORA 
+```console
+$ dnf install libssh-devel
+$ dnf install ruby-devel
+$ dnf install rubygem-rake-compiler
+$ dnf install python-devel
+$ dnf install redhat-rpm-config
+```
+
+
 * then run the following command, as a normal user:
 
 ```console
