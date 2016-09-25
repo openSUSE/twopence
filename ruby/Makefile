@@ -20,7 +20,7 @@ twopence.gemspec: twopence.gemspec.in
 
 install: twopence-$(VERSION).gem
 	ln -sf $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION) $(DESTDIR)$(LIBDIR)/libtwopence.so
-
+	cp ../library/libtwopence.so ext/twopence/
 ifeq ($(SUSE) ,0)
 		echo "SUSE"
 		# for suse/openSUSE spec.file
@@ -30,10 +30,7 @@ ifeq ($(SUSE) ,0)
                      --install-dir "$(RBDIR)/" \
                      -V --force twopence-$(VERSION).gem
 else
-		CFLAGS="-I$(DESTDIR)$(INCDIR)" LDFLAGS="-L$(DESTDIR)$(LIBDIR)" DESTDIR="" \
-                  gem install --local \
-                     --install-dir "$(RBDIR)/" \
-                     -V --force twopence-$(VERSION).gem
+	gem install twopence-$(VERSION).gem
 endif
 	rm $(DESTDIR)$(LIBDIR)/libtwopence.so
 	rm -f $(DESTDIR)$(RBDIR)/gems/twopence-$(VERSION)/ext/twopence/siteconf*.rb
