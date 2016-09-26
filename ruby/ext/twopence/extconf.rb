@@ -8,5 +8,5 @@ dir_config(extension_name)
 
 # $LDFLAGS = '/usr/lib64/libtwopence.so' + ' '  + $LDFLAGS
 # $CFLAGS = ENV['CFLAGS'] + ' ' + $CFLAGS
-have_library('twopence', 'twopence_target_new')
+have_library('twopence', 'twopence_target_new') or raise
 create_makefile(extension_name)
