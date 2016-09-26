@@ -1,5 +1,10 @@
 .PHONY: all install clean
 
+DEBIAN := $(shell cat /etc/os-release | grep 'Debian' >/dev/null && echo "true" || echo "false")
+FEDORA := $(shell cat /etc/os-release | grep 'Fedora' >/dev/null && echo "true" || echo "false")
+SUSE   := $(shell cat /etc/os-release | grep 'SUSE' >/dev/null && echo "true" || echo "false")
+UBUNTU := $(shell cat /etc/os-release | grep 'Ubuntu' >/dev/null && echo "true" || echo "false")
+
 VERSION:= $(shell ../subst.sh --version)
 
 ifdef RPM_OPT_FLAGS
@@ -10,7 +15,11 @@ endif
 
 CFLAGS	= -D_GNU_SOURCE -fPIC $(CCOPT)
 
-LIBDIR ?= /usr/lib64
+ifeq ($(UBUNTU),true)
+  LIBDIR  ?= /usr/lib/x86_64-linux-gnu
+else
+  LIBDIR  ?= /usr/lib64
+endif
 INCDIR ?= /usr/include
 MANDIR ?= /usr/share/man
 
