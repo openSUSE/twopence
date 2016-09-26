@@ -2,7 +2,7 @@
 
 ARCH      ?= x86_64
 RBVERSION ?= 2.1.0
-LIBDIR    ?= /usr/lib64
+LIBDIR    ?= /usr/lib/x86_64-linux-gnu
 INCDIR    ?= /usr/include
 VERSION   := $(shell ../subst.sh --version)
 RBDIR      = $(LIBDIR)/ruby/gems/$(RBVERSION)
@@ -28,7 +28,6 @@ else
 endif
 	rm $(DESTDIR)$(LIBDIR)/libtwopence.so
 	rm -f $(DESTDIR)$(RBDIR)/gems/twopence-$(VERSION)/ext/twopence/siteconf*.rb
-
 clean:
 	rm -f ext/library/twopence.h
 	rm -f ext/library/buffer.h
