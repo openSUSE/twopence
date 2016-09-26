@@ -11,7 +11,6 @@ endif
 CFLAGS	= -D_GNU_SOURCE -fPIC $(CCOPT)
 LIBDIR ?= /usr/lib/x86_64-linux-gnu
 #LIBDIR ?= /usr/lib64
-LIBDIR ?= /usr/lib/x86_64-linux-gnu
 INCDIR ?= /usr/include
 MANDIR ?= /usr/share/man
 
