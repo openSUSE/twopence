@@ -20,7 +20,7 @@ twopence.gemspec: twopence.gemspec.in
 
 install: twopence-$(VERSION).gem
 	ln -sf $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION) $(DESTDIR)$(LIBDIR)/libtwopence.so
-	cp ../library/libtwopence.so ext/twopence/
+
 ifeq ($(SUSE) ,0)
 		echo "SUSE"
 		# for suse/openSUSE spec.file
