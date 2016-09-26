@@ -9,8 +9,8 @@ CCOPT	= -Wall -O2 -g
 endif
 
 CFLAGS	= -D_GNU_SOURCE -fPIC $(CCOPT)
-
-LIBDIR ?= /usr/lib64
+LIBDIR ?= /usr/lib/x86_64-linux-gnu
+#LIBDIR ?= /usr/lib64
 INCDIR ?= /usr/include
 MANDIR ?= /usr/share/man
 

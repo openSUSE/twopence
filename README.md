@@ -57,6 +57,7 @@ $ dnf install ruby-devel
 $ dnf install rubygem-rake-compiler
 $ dnf install python-devel
 $ dnf install redhat-rpm-config
+$ dnf install gcc glibc-devel rpm-build
 ```
 
 
