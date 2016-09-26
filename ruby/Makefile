@@ -26,7 +26,7 @@ ifeq ($(SUSE) ,0)
 else
 	gem install twopence-$(VERSION).gem
 	cd /home/travis/build/MalloZup/lavanda/twopence/ruby/ext/twopence/
-	sudo make install
+	make install
 endif
 	rm $(DESTDIR)$(LIBDIR)/libtwopence.so
 	rm -f $(DESTDIR)$(RBDIR)/gems/twopence-$(VERSION)/ext/twopence/siteconf*.rb
