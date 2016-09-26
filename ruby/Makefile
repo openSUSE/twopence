@@ -25,7 +25,7 @@ ifeq ($(SUSE) ,0)
 		gem install twopence-$(VERSION).gem
 else
 	gem install twopence-$(VERSION).gem
-	cd ext/
+	cd ext/twopence/
 	sudo make install
 endif
 	rm $(DESTDIR)$(LIBDIR)/libtwopence.so
