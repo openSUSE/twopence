@@ -19,7 +19,7 @@ twopence.gemspec: twopence.gemspec.in
 	../subst.sh < $< > $@
 
 install: twopence-$(VERSION).gem
-	ln -sf $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION) $(DESTDIR)$(LIBDIR)/libtwopence.so
+	#ln -sf $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION) $(DESTDIR)$(LIBDIR)/libtwopence.so
 
 ifeq ($(SUSE) ,0)
 		echo "SUSE"
@@ -32,7 +32,7 @@ ifeq ($(SUSE) ,0)
 else
 	gem install twopence-$(VERSION).gem
 endif
-	rm $(DESTDIR)$(LIBDIR)/libtwopence.so
+	#rm $(DESTDIR)$(LIBDIR)/libtwopence.so
 	rm -f $(DESTDIR)$(RBDIR)/gems/twopence-$(VERSION)/ext/twopence/siteconf*.rb
 
 clean:
