@@ -32,9 +32,7 @@ install: twopence-$(VERSION).gem
 
 ifeq ($(UBUNTU),true)
 	CFLAGS="-I$(DESTDIR)$(INCDIR)" LDFLAGS="-L$(DESTDIR)$(LIBDIR)" DESTDIR="" \
-	       gem install \
-                     --build-root "$(DESTDIR)/" \
-                     twopence
+	       gem install -V --force twopence-$(VERSION).gem
 else ifeq ($(FEDORA),true)
 	# There will probably be problems on Fedora when building
 	# from a specfile, because we don't use $(DESTDIR)
