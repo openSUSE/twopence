@@ -24,7 +24,7 @@ install: twopence-$(VERSION).gem
 ifeq ($(SUSE) ,0)
 		gem install twopence-$(VERSION).gem
 else
-	gem install twopence-$(VERSION).gem
+	gem install -V --force twopence-$(VERSION).gem
 endif
 	rm $(DESTDIR)$(LIBDIR)/libtwopence.so
 	rm -f $(DESTDIR)$(RBDIR)/gems/twopence-$(VERSION)/ext/twopence/siteconf*.rb
