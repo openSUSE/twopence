@@ -19,14 +19,14 @@ twopence.gemspec: twopence.gemspec.in
 	../subst.sh < $< > $@
 
 install: twopence-$(VERSION).gem
-	cp $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION) $(DESTDIR)$(LIBDIR)/libtwopence.so
+	ln -sf $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION) $(DESTDIR)$(LIBDIR)/libtwopence.so
 
 ifeq ($(SUSE) ,0)
 		gem install twopence-$(VERSION).gem
 else
 	gem install twopence-$(VERSION).gem
 endif
-	# rm $(DESTDIR)$(LIBDIR)/libtwopence.so
+	rm $(DESTDIR)$(LIBDIR)/libtwopence.so
 	rm -f $(DESTDIR)$(RBDIR)/gems/twopence-$(VERSION)/ext/twopence/siteconf*.rb
 
 clean:
