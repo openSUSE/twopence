@@ -25,10 +25,7 @@ ifeq ($(SUSE) ,0)
 		echo "SUSE"
 		# for suse/openSUSE spec.file
 		CFLAGS="-I$(DESTDIR)$(INCDIR)" LDFLAGS="-L$(DESTDIR)$(LIBDIR)" DESTDIR="" \
-		  gem install --local \
-                     --build-root "$(DESTDIR)/" \
-                     --install-dir "$(RBDIR)/" \
-                     -V --force twopence-$(VERSION).gem
+		  gem install twopence-$(VERSION).gem
 else
 	gem install twopence-$(VERSION).gem
 endif
