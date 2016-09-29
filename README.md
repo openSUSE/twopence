@@ -35,28 +35,18 @@ Have a look at the examples:
 * run the following commands as root (openSUSE/SLE):
 
 ```console
-$ zypper install libssh-devel
-$ zypper install ruby-devel
-$ zypper install rubygem-rake-compiler
-$ zypper install python-devel
+# zypper install libssh-devel ruby-devel rubygem-rake-compiler python-devel
 ```
 
 * on Ubuntu:
 
 ```console
-$ apt-get install libssh-dev
-$ apt-get install ruby-dev
-$ apt-get install rake-compiler
-$ apt-get install python-dev
+# apt-get install libssh-dev ruby-dev rake-compiler python-dev
 ```
 
 * on Fedora
 ```console
-$ dnf install libssh-devel
-$ dnf install ruby-devel
-$ dnf install rubygem-rake-compiler
-$ dnf install python-devel
-$ dnf install redhat-rpm-config
+# dnf install libssh-devel ruby-devel rubygem-rake-compiler python-devel redhat-rpm-config
 ```
 
 
