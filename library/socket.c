@@ -268,6 +268,20 @@ twopence_sock_recv_buffer(twopence_sock_t *sock, twopence_buf_t *bp)
 	return n;
 }
 
+int
+twopence_sock_recv_buffer_blocking(twopence_sock_t *sock, twopence_buf_t *bp)
+{
+	int n = 0, f;
+
+	f = fcntl(sock->fd, F_GETFL);
+	fcntl(sock->fd, F_SETFL, f & ~O_NONBLOCK);
+
+	n = twopence_sock_recv_buffer(sock, bp);
+
+	fcntl(sock->fd, F_SETFL, f);
+	return n;
+}
+
 twopence_buf_t *
 twopence_sock_take_recvbuf(twopence_sock_t *sock)
 {
