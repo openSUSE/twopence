@@ -317,9 +317,9 @@ __twopence_buf_dump(const twopence_buf_t *bp, void (*func)(const char *, void *)
 	static const unsigned int OCTET_OFFSET = 6;
 	static const unsigned int TEXT_OFFSET = 6 + 3 * BYTESPERLINE + 2;
 	char linebuf[256];
-	unsigned int i, j, k;
+	unsigned int i, k;
 
-	for (i = bp->head, j = k = 0; i < bp->tail; ++i, ++k) {
+	for (i = bp->head, k = 0; i < bp->tail; ++i, ++k) {
 		static const char *hexdigit = "0123456789abcdef";
 		unsigned char cc;
 
