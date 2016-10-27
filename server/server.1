@@ -92,6 +92,11 @@ The TCP based server implementation does not provide any sort of
 authentication or on-the-wire encryption, as this is intended
 purely for testing purposes.
 .B Use at your own risk!
+.IP "\fB--port-stdio
+This expects an open socket on file descriptor 0; typically one end of
+an AF_LOCAL socket pair. However, any other type of stream socket
+should work as well. If the socket is not connected, the server
+will try to listen on this socket and service incoming connections.
 .PP
 .\" --------------------------------------------------------------
 .\"
@@ -122,6 +127,10 @@ This option can be used to disable the audit trail.
 This option can be used to explicitly request an audit trail. It is 
 supported for backward compatibility, because earlier versions defaulted to
 no audit trail.
+.IP "\fB--root-directory\fP \fIpath\fP
+Perform a chroot operation to the given \fIpath\fP prior to servicing
+incoming tests. If the \fB--daemon\fP option is specified, too, the
+server will chroot first, and then become a daemon.
 .\" --------------------------------------------------------------
 .\"
 .\"
