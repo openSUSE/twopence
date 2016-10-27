@@ -275,13 +275,14 @@ server_set_port(struct server_port *port, const char *type, const char *name)
 //////////////////////////////////////////////////////////////////
 int main(int argc, char *argv[])
 {
-  enum { OPT_ONESHOT, OPT_AUDIT, OPT_NOAUDIT };
+  enum { OPT_ONESHOT, OPT_AUDIT, OPT_NOAUDIT, OPT_PORT_STDIO };
   static struct option long_opts[] = {
     { "one-shot", no_argument, NULL, OPT_ONESHOT },
     { "port-serial", required_argument, NULL, 'S' },
     { "port-pty", no_argument, NULL, 'P' },
     { "port-unix", required_argument, NULL, 'U' },
     { "port-tcp", required_argument, NULL, 'T' },
+    { "port-stdio", no_argument, NULL, OPT_PORT_STDIO },
     { "daemon", no_argument, NULL, 'D' },
     { "debug", no_argument, NULL, 'd' },
     { "audit", no_argument, NULL, OPT_AUDIT },
@@ -321,6 +322,11 @@ int main(int argc, char *argv[])
 
     case 'P':
       if (!server_set_port(&opt_port, "pty", optarg))
+	goto usage;
+      break;
+
+    case OPT_PORT_STDIO:
+      if (!server_set_port(&opt_port, "stdio", NULL))
 	goto usage;
       break;
 
@@ -446,12 +452,50 @@ int main(int argc, char *argv[])
     do {
       server_listen(twopence_sock_new(listen_fd));
     } while (!opt_oneshot);
+  } else
+  if (!strcmp(opt_port.type, "stdio")) {
+    struct sockaddr_storage addr;
+    socklen_t alen;
+
+    if (opt_daemon) {
+      server_daemonize();
+      opt_daemon = false;
+    }
+
+    /* Check whether the socket we're being given is connected
+     * or not. If it's not connected, try to put it in listen mode */
+    alen = sizeof(addr);
+    if (getpeername(0, (struct sockaddr *) &addr, &alen) == 0) {
+      do {
+        server_run(twopence_sock_new(0));
+      } while (!opt_oneshot);
+    } else {
+      if (errno == ENOTSOCK) {
+        fprintf(stderr, "Cannot open stdio port: fd 0 is not a socket\n");
+        goto socket_error;
+      }
+      if (errno != ENOTCONN) {
+        fprintf(stderr, "Cannot open stdio port: getpeername returns unexpected error: %m\n");
+        goto socket_error;
+      }
+
+      if (listen(0, 0) < 0) {
+        fprintf(stderr, "Unable to listen on stdio socket: %m\n");
+        goto socket_error;
+      }
+      do {
+        server_listen(twopence_sock_new(0));
+      } while (!opt_oneshot);
+    }
   } else {
-    fprintf(stderr, "serial port type %s not yet implemented\n", opt_port.type);
+    fprintf(stderr, "Server port type %s not yet implemented\n", opt_port.type);
     exit(TWOPENCE_SERVER_SOCKET_ERROR);
   }
 
   return 0;
+
+socket_error:
+  exit(TWOPENCE_SERVER_SOCKET_ERROR);
 }
 
 void
