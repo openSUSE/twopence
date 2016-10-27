@@ -138,7 +138,7 @@ testCaseBegin("Check the plugin type")
 try:
 	t = target.type
 	print "plugin type is", t
-	if t != "ssh" and t != "virtio" and t != "serial" and t != "tcp":
+	if t not in ("ssh", "virtio", "serial", "tcp", "chroot", "local"):
 		testCaseFail("Unknwon plugin type \"%s\"" % t)
 except:
 	testCaseException()
@@ -451,7 +451,7 @@ except:
 	testCaseException()
 testCaseReport()
 
-testCaseBegin("run a command procuding lots of output")
+testCaseBegin("run a command producing lots of output")
 try:
 	cmd = twopence.Command("dd if=/dev/zero bs=1k count=1k", suppressOutput = 1)
 	status = target.run(cmd)

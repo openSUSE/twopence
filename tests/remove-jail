@@ -1,0 +1,23 @@
+#!/bin/bash
+
+set -e
+
+myname="remove-jail"
+
+rootdir=$1
+if [ -z "$rootdir" ]; then
+	echo "$myname: missing root directory argument" >&2
+	exit 1
+fi
+
+echo "*** Destroying chroot jail $rootdir ***"
+
+if mount | grep -qs "$rootdir/dev/pts"; then
+	umount $rootdir/dev/pts
+fi
+
+if mount | grep -qs "$rootdir/proc"; then
+	umount $rootdir/proc
+fi
+
+rm --one-file-system -rf $rootdir

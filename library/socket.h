@@ -33,6 +33,7 @@ extern void		twopence_sock_set_noclose(twopence_sock_t *);
 extern void		twopence_sock_free(twopence_sock_t *sock);
 extern int		twopence_sock_id(const twopence_sock_t *sock);
 extern int		twopence_sock_recv_buffer(twopence_sock_t *sock, twopence_buf_t *bp);
+extern int		twopence_sock_recv_buffer_blocking(twopence_sock_t *sock, twopence_buf_t *bp);
 extern int		twopence_sock_write(twopence_sock_t *sock, twopence_buf_t *bp, unsigned int count);
 extern int		twopence_sock_send_buffer(twopence_sock_t *sock, twopence_buf_t *bp);
 extern void		twopence_sock_queue_xmit(twopence_sock_t *sock, twopence_buf_t *bp);

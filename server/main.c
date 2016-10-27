@@ -275,22 +275,25 @@ server_set_port(struct server_port *port, const char *type, const char *name)
 //////////////////////////////////////////////////////////////////
 int main(int argc, char *argv[])
 {
-  enum { OPT_ONESHOT, OPT_AUDIT, OPT_NOAUDIT };
+  enum { OPT_ONESHOT, OPT_AUDIT, OPT_NOAUDIT, OPT_PORT_STDIO, OPT_ROOT_DIRECTORY };
   static struct option long_opts[] = {
     { "one-shot", no_argument, NULL, OPT_ONESHOT },
     { "port-serial", required_argument, NULL, 'S' },
     { "port-pty", no_argument, NULL, 'P' },
     { "port-unix", required_argument, NULL, 'U' },
     { "port-tcp", required_argument, NULL, 'T' },
+    { "port-stdio", no_argument, NULL, OPT_PORT_STDIO },
     { "daemon", no_argument, NULL, 'D' },
     { "debug", no_argument, NULL, 'd' },
     { "audit", no_argument, NULL, OPT_AUDIT },
     { "no-audit", no_argument, NULL, OPT_NOAUDIT },
+    { "root-directory", required_argument, NULL, OPT_ROOT_DIRECTORY },
     { NULL }
   };
   int opt_oneshot = 0;
   struct server_port opt_port;
   bool opt_daemon = false;
+  char *opt_root_directory = NULL;
   int c;
 
   // Welcome message, check arguments
@@ -324,6 +327,11 @@ int main(int argc, char *argv[])
 	goto usage;
       break;
 
+    case OPT_PORT_STDIO:
+      if (!server_set_port(&opt_port, "stdio", NULL))
+	goto usage;
+      break;
+
     case OPT_AUDIT:
       server_audit = true;
       break;
@@ -340,6 +348,10 @@ int main(int argc, char *argv[])
     case 'T':
       if (!server_set_port(&opt_port, "tcp", optarg))
 	goto usage;
+      break;
+
+    case OPT_ROOT_DIRECTORY:
+      opt_root_directory = optarg;
       break;
 
     default:
@@ -361,6 +373,9 @@ int main(int argc, char *argv[])
 		"    This is not implemented yet.\n"
 		"--port-tcp number:\n"
 		"    create a TCP socket and listen on the given port number for incoming connections\n"
+		"--port-stdio:\n"
+		"    expect an open socket on fd 0/1, and service requests received on this socket\n"
+		"    This may be either a connected socket, or a bound socket to listen on\n"
 		"\n"
 		"Supported options:\n"
 		"--daemon\n"
@@ -373,6 +388,9 @@ int main(int argc, char *argv[])
 		"    Print an audit trail of operations to the log (default)\n"
 		"--no-audit\n"
 		"    Disable the audit trail\n"
+		"--root-directory path\n"
+		"    Perform a chroot operation to the specified directory before\n"
+		"    starting to service requests.\n"
 		"\n"
 		"The default serial port is %s\n"
 		, argv[0], TWOPENCE_SERIAL_PORT_DEFAULT);
@@ -389,6 +407,17 @@ int main(int argc, char *argv[])
   if (optind < argc) {
     fprintf(stderr, "Too many arguments\n");
     goto usage;
+  }
+
+  if (opt_root_directory) {
+    if (chroot(opt_root_directory) < 0) {
+      fprintf(stderr, "Unable to change root directory to \"%s\": chroot failed: %m\n", opt_root_directory);
+      exit(TWOPENCE_SERVER_PARAMETER_ERROR);
+    }
+    if (chdir("/") < 0) {
+      fprintf(stderr, "Unable to change root directory to \"%s\": chdir failed: %m\n", opt_root_directory);
+      exit(TWOPENCE_SERVER_PARAMETER_ERROR);
+    }
   }
 
   /* Open the port */
@@ -446,12 +475,50 @@ int main(int argc, char *argv[])
     do {
       server_listen(twopence_sock_new(listen_fd));
     } while (!opt_oneshot);
+  } else
+  if (!strcmp(opt_port.type, "stdio")) {
+    struct sockaddr_storage addr;
+    socklen_t alen;
+
+    if (opt_daemon) {
+      server_daemonize();
+      opt_daemon = false;
+    }
+
+    /* Check whether the socket we're being given is connected
+     * or not. If it's not connected, try to put it in listen mode */
+    alen = sizeof(addr);
+    if (getpeername(0, (struct sockaddr *) &addr, &alen) == 0) {
+      /* Connected mode implies one-shot behavior - when the client
+       * goes away and closes the socket, then it's gone for good. */
+      server_run(twopence_sock_new(0));
+    } else {
+      if (errno == ENOTSOCK) {
+        fprintf(stderr, "Cannot open stdio port: fd 0 is not a socket\n");
+        goto socket_error;
+      }
+      if (errno != ENOTCONN) {
+        fprintf(stderr, "Cannot open stdio port: getpeername returns unexpected error: %m\n");
+        goto socket_error;
+      }
+
+      if (listen(0, 0) < 0) {
+        fprintf(stderr, "Unable to listen on stdio socket: %m\n");
+        goto socket_error;
+      }
+      do {
+        server_listen(twopence_sock_new(0));
+      } while (!opt_oneshot);
+    }
   } else {
-    fprintf(stderr, "serial port type %s not yet implemented\n", opt_port.type);
+    fprintf(stderr, "Server port type %s not yet implemented\n", opt_port.type);
     exit(TWOPENCE_SERVER_SOCKET_ERROR);
   }
 
   return 0;
+
+socket_error:
+  exit(TWOPENCE_SERVER_SOCKET_ERROR);
 }
 
 void

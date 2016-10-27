@@ -268,6 +268,20 @@ twopence_sock_recv_buffer(twopence_sock_t *sock, twopence_buf_t *bp)
 	return n;
 }
 
+int
+twopence_sock_recv_buffer_blocking(twopence_sock_t *sock, twopence_buf_t *bp)
+{
+	int n = 0, f;
+
+	f = fcntl(sock->fd, F_GETFL);
+	fcntl(sock->fd, F_SETFL, f & ~O_NONBLOCK);
+
+	n = twopence_sock_recv_buffer(sock, bp);
+
+	fcntl(sock->fd, F_SETFL, f);
+	return n;
+}
+
 twopence_buf_t *
 twopence_sock_take_recvbuf(twopence_sock_t *sock)
 {
@@ -634,6 +648,7 @@ poll_bit_string(int events)
 		{ POLLOUT, "POLLOUT" },
 		{ POLLERR, "POLLERR" },
 		{ POLLHUP, "POLLHUP" },
+		{ POLLNVAL, "POLLNVAL" },
 		{ 0, NULL }
 	};
 	static char buffer[60];
@@ -702,6 +717,11 @@ twopence_sock_doio(twopence_sock_t *sock)
 
 	if (pfd->revents != 0)
 		twopence_debug2("twopence_sock_doio(%d, pfd=<fd=%d, revents=%s)\n", sock->fd, pfd->fd, poll_bit_string(pfd->revents));
+
+	if (pfd->revents & POLLNVAL) {
+		twopence_sock_mark_dead(sock);
+		return TWOPENCE_TRANSPORT_ERROR;
+	}
 
 	if (pfd->revents & POLLOUT) {
 		if ((n = twopence_sock_send_queued(sock)) < 0)

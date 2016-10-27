@@ -1,0 +1,99 @@
+#!/bin/bash
+
+set -e
+
+myname="build-jail"
+
+rootdir=$1
+if [ -z "$rootdir" ]; then
+	echo "$myname: missing root directory argument" >&2
+	exit 1
+fi
+
+echo "*** Building chroot jail $rootdir ***"
+
+mkdir -p $rootdir
+for dir in {,/usr}/{bin,sbin,lib,lib64} /etc /root /proc; do
+	mkdir -p -m 755 $rootdir/$dir
+done
+
+mkdir -p -m 1777 $rootdir/tmp
+
+cat <<EOF | cpio -vp --make-directories $rootdir
+/dev/null
+/dev/ptmx
+/dev/zero
+/dev/tty
+/etc/passwd
+/etc/group
+/etc/services
+/etc/hosts
+EOF
+
+ls /lib*/libnss* | cpio -vp --make-directories $rootdir
+
+apps="
+bash
+cat
+cmp
+dd
+find
+hostname
+id
+install
+ls
+mkdir
+mknod
+ping
+ps
+pwd
+rm
+sh
+sleep
+stat
+touch
+tty
+wc
+"
+
+for app in $apps; do
+	path=`type -P $app`
+	if [ -z "$path" ]; then
+		echo "$myname: Could not find $app; skipping" >&2
+		continue
+	fi
+	cp -p $path $rootdir$path >&2
+
+	ldd $path |
+		sed -e 's:.*=> ::' \
+		    -e 's:(.*)::' \
+		    -e 's/[[:space:]]//' \
+		    -e '/^\//!d' |
+		while read lib; do
+			echo "$lib"
+			readlink -f "$lib"
+		done
+done | sort -u | cpio -vp  $rootdir
+
+for file in /bin/pwd /bin/sh /bin/ls; do
+	[ -L $file ] || continue
+
+	dest=`readlink $file`
+	ln -sf $dest $rootdir$file
+done
+
+chroot $rootdir install -o testuser -d /home/testuser
+
+# Put some crap into the home directories of root and testuser,
+# so that test cases with /bin/ls don't return empty data
+touch $rootdir/home/testuser/file{1,2,3,4,5}
+touch $rootdir/root/file{1,2,3,4,5}
+
+# Create an inaccessible directory in /etc
+mkdir -p -m 700 $rootdir/etc/inaccessible
+
+mkdir -p $rootdir/dev/pts
+mount -t devpts nil $rootdir/dev/pts
+
+mkdir -p $rootdir/proc
+mount -t proc nil $rootdir/proc
