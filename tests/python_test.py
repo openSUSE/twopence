@@ -451,7 +451,7 @@ except:
 	testCaseException()
 testCaseReport()
 
-testCaseBegin("run a command procuding lots of output")
+testCaseBegin("run a command producing lots of output")
 try:
 	cmd = twopence.Command("dd if=/dev/zero bs=1k count=1k", suppressOutput = 1)
 	status = target.run(cmd)
