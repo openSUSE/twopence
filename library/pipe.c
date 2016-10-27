@@ -165,7 +165,7 @@ __twopence_pipe_read_packet(twopence_sock_t *sock)
     int count;
 
     /* FIXME: heed the link timeout */
-    count = twopence_sock_recv_buffer(sock, bp);
+    count = twopence_sock_recv_buffer_blocking(sock, bp);
     if (count == 0) {
       twopence_log_error("unexpected EOF on link");
       return NULL;
