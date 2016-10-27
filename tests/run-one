@@ -57,8 +57,10 @@ tcp)
 	../server/twopence_test_server --no-audit --daemon --port-tcp=default $TWOPENCE_SERVER_OPTIONS
 	TARGET=tcp:localhost;;
 chroot)
+	ROOTDIR=$PWD/rootdir
+	./build-jail $ROOTDIR
 	export TWOPENCE_SERVER_PATH=../server/twopence_test_server
-	TARGET=chroot:$PWD/rootdir;;
+	TARGET=chroot:$ROOTDIR;;
 local)
 	export TWOPENCE_SERVER_PATH=../server/twopence_test_server
 	TARGET=local;;
@@ -79,6 +81,10 @@ virtio|tcp)
 	if ! killall -TERM twopence_test_server; then
 		echo "*** Unable to kill server; did it crash?" >&2
 		status=1
+	fi;;
+chroot)
+	if [ -n "$ROOTDIR" ]; then
+		./remove-jail $ROOTDIR
 	fi;;
 esac
 

@@ -8,7 +8,7 @@ all install: ;
 tests:
 	: >summary
 	set -x; \
-	for plugin in virtio ssh; do \
+	for plugin in virtio ssh chroot local; do \
 		for test in shell_test.sh python_test.py ruby_test.sh; do \
 			api=$${test/_test*}; \
 			./run-one $$plugin ./$$test | tee logfile; \
