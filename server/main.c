@@ -275,7 +275,7 @@ server_set_port(struct server_port *port, const char *type, const char *name)
 //////////////////////////////////////////////////////////////////
 int main(int argc, char *argv[])
 {
-  enum { OPT_ONESHOT, OPT_AUDIT, OPT_NOAUDIT, OPT_PORT_STDIO };
+  enum { OPT_ONESHOT, OPT_AUDIT, OPT_NOAUDIT, OPT_PORT_STDIO, OPT_ROOT_DIRECTORY };
   static struct option long_opts[] = {
     { "one-shot", no_argument, NULL, OPT_ONESHOT },
     { "port-serial", required_argument, NULL, 'S' },
@@ -287,11 +287,13 @@ int main(int argc, char *argv[])
     { "debug", no_argument, NULL, 'd' },
     { "audit", no_argument, NULL, OPT_AUDIT },
     { "no-audit", no_argument, NULL, OPT_NOAUDIT },
+    { "root-directory", required_argument, NULL, OPT_ROOT_DIRECTORY },
     { NULL }
   };
   int opt_oneshot = 0;
   struct server_port opt_port;
   bool opt_daemon = false;
+  char *opt_root_directory = NULL;
   int c;
 
   // Welcome message, check arguments
@@ -348,6 +350,10 @@ int main(int argc, char *argv[])
 	goto usage;
       break;
 
+    case OPT_ROOT_DIRECTORY:
+      opt_root_directory = optarg;
+      break;
+
     default:
     usage:
 	fprintf(stderr,
@@ -395,6 +401,17 @@ int main(int argc, char *argv[])
   if (optind < argc) {
     fprintf(stderr, "Too many arguments\n");
     goto usage;
+  }
+
+  if (opt_root_directory) {
+    if (chroot(opt_root_directory) < 0) {
+      fprintf(stderr, "Unable to change root directory to \"%s\": chroot failed: %m\n", opt_root_directory);
+      exit(TWOPENCE_SERVER_PARAMETER_ERROR);
+    }
+    if (chdir("/") < 0) {
+      fprintf(stderr, "Unable to change root directory to \"%s\": chdir failed: %m\n", opt_root_directory);
+      exit(TWOPENCE_SERVER_PARAMETER_ERROR);
+    }
   }
 
   /* Open the port */
