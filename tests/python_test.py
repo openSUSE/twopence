@@ -138,7 +138,7 @@ testCaseBegin("Check the plugin type")
 try:
 	t = target.type
 	print "plugin type is", t
-	if t != "ssh" and t != "virtio" and t != "serial" and t != "tcp":
+	if t not in ("ssh", "virtio", "serial", "tcp", "chroot", "local"):
 		testCaseFail("Unknwon plugin type \"%s\"" % t)
 except:
 	testCaseException()
