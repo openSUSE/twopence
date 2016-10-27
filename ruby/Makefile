@@ -13,6 +13,7 @@ ifeq ($(UBUNTU),true)
 else
   LIBDIR  ?= /usr/lib64
   RBVERSION ?= 2.1.0
+  RBDIR      = $(LIBDIR)/ruby/gems/$(RBVERSION)
 endif
 INCDIR    ?= /usr/include
 VERSION   := $(shell ../subst.sh --version)
