@@ -29,7 +29,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "twopence.h"
 #include "utils.h"
 
-
 int
 twopence_plugin_type(const char *plugin_name)
 {
@@ -41,6 +40,10 @@ twopence_plugin_type(const char *plugin_name)
     return TWOPENCE_PLUGIN_SERIAL;
   if (!strcmp(plugin_name, "tcp"))
     return TWOPENCE_PLUGIN_TCP;
+  if (!strcmp(plugin_name, "chroot"))
+    return TWOPENCE_PLUGIN_CHROOT;
+  if (!strcmp(plugin_name, "local"))
+    return TWOPENCE_PLUGIN_LOCAL;
 
   return TWOPENCE_PLUGIN_UNKNOWN;
 }
@@ -71,8 +74,10 @@ twopence_target_split(char **target_spec_p)
     return NULL;
 
   len = strcspn(plugin, ":");
-  if (len == 0)
-    return NULL;
+  if (len == 0) {
+    *target_spec_p = NULL;
+    return plugin;
+  }
 
   /* NUL terminate the plugin string */
   if (plugin[len] != '\0') {
@@ -96,6 +101,8 @@ __twopence_get_plugin_ops(const char *name, const struct twopence_plugin **ret)
   [TWOPENCE_PLUGIN_SERIAL]	= &twopence_serial_ops,
   [TWOPENCE_PLUGIN_SSH]		= &twopence_ssh_ops,
   [TWOPENCE_PLUGIN_TCP]		= &twopence_tcp_ops,
+  [TWOPENCE_PLUGIN_CHROOT]	= &twopence_chroot_ops,
+  [TWOPENCE_PLUGIN_LOCAL]	= &twopence_local_ops,
   };
   int type;
 

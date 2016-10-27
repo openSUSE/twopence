@@ -57,6 +57,22 @@ server. The argument is a host name or address, optionally followed
 by a colon and a port number. Both IPv6 and IPv4 are supported.
 If a hostname is given that resolves to more than one address,
 each address is tried in turn, until a connection can be established.
+.TP
+.B chroot
+This will run the twopence server locally in a chroot environment.
+The argument is the path of the chroot jail. The test server itself
+does not have to be installed inside the jail; it is invoked in the
+containing system using the \fB--root-directory\fP option.
+.IP
+By default, this will try to start the server using \fBexecvp\fP(2), i.e.
+by searching the directories given by the \fBPATH\fP environment variable.
+If the server binary does not reside in a directory specified by
+the seartch path, or if you want to override the search, you can specify
+the server's full path in \dBTWOPENCE_SERVER_PATH\fP variable.
+.TP
+.B local
+This will run the twopence server locally, unconfined. Beware that all
+operations will be performed on the actual system files!
 .PP
 Once a handle for the desired target has been obtained, the
 application can perform actions on the SUT:

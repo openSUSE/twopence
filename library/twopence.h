@@ -107,6 +107,8 @@ enum {
 	TWOPENCE_PLUGIN_SSH = 1,
 	TWOPENCE_PLUGIN_SERIAL = 2,
 	TWOPENCE_PLUGIN_TCP = 3,
+	TWOPENCE_PLUGIN_CHROOT = 4,
+	TWOPENCE_PLUGIN_LOCAL = 5,
 
 	__TWOPENCE_PLUGIN_MAX
 };
@@ -115,6 +117,8 @@ extern const struct twopence_plugin twopence_ssh_ops;
 extern const struct twopence_plugin twopence_virtio_ops;
 extern const struct twopence_plugin twopence_serial_ops;
 extern const struct twopence_plugin twopence_tcp_ops;
+extern const struct twopence_plugin twopence_chroot_ops;
+extern const struct twopence_plugin twopence_local_ops;
 
 /*
  * Output related data types.
