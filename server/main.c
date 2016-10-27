@@ -489,9 +489,9 @@ int main(int argc, char *argv[])
      * or not. If it's not connected, try to put it in listen mode */
     alen = sizeof(addr);
     if (getpeername(0, (struct sockaddr *) &addr, &alen) == 0) {
-      do {
-        server_run(twopence_sock_new(0));
-      } while (!opt_oneshot);
+      /* Connected mode implies one-shot behavior - when the client
+       * goes away and closes the socket, then it's gone for good. */
+      server_run(twopence_sock_new(0));
     } else {
       if (errno == ENOTSOCK) {
         fprintf(stderr, "Cannot open stdio port: fd 0 is not a socket\n");
