@@ -102,7 +102,7 @@ __twopence_chroot_open(struct twopence_pipe_target *pipe_handle)
     char *argv[MAX_ARGC + 1];
     int argc = 0, i;
 
-    argv[argc++] = "twopence-server";
+    argv[argc++] = "twopence_test_server";
     if (handle->directory) {
       argv[argc++] = "--root-directory";
       argv[argc++] = handle->directory;
