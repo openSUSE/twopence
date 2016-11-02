@@ -115,7 +115,6 @@ __twopence_chroot_open(struct twopence_pipe_target *pipe_handle)
 
     close(fd[0]);
     dup2(fd[1], 0);
-    dup2(fd[1], 1);
 
     server_path = getenv("TWOPENCE_SERVER_PATH");
     if (server_path) {
