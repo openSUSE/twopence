@@ -666,23 +666,6 @@ __twopence_ssh_transaction_enable_poll(ssh_event event, twopence_ssh_transaction
   return 0;
 }
 
-static bool
-__twopence_ssh_check_timeout(const struct timeval *now, const struct timeval *expires, int *msec)
-{
-    struct timeval until;
-    long until_ms;
-
-    if (timercmp(expires, now, <))
-      return false;
-
-    timersub(expires, now, &until);
-    until_ms = 1000 * until.tv_sec + until.tv_usec / 1000;
-    if (*msec < 0 || until_ms < *msec)
-      *msec = until_ms;
-
-    return true;
-}
-
 static int
 __twopence_ssh_poll(struct twopence_ssh_target *handle)
 {
@@ -691,8 +674,7 @@ __twopence_ssh_poll(struct twopence_ssh_target *handle)
 
   fflush(stdout);
   do {
-    struct timeval now;
-    int timeout;
+    twopence_timeout_t timeout;
     int rc;
 
     twopence_debug("%s: try to do some I/O", __func__);
@@ -719,23 +701,22 @@ __twopence_ssh_poll(struct twopence_ssh_target *handle)
       }
     }
 
-    gettimeofday(&now, NULL);
-    timeout = -1;
+    twopence_timeout_init(&timeout);
 
     for (trans = handle->transactions.running; trans; trans = trans->next) {
-      if (!__twopence_ssh_check_timeout(&now, &trans->command_timeout, &timeout)) {
+      if (!twopence_timeout_update(&timeout, &trans->command_timeout)) {
         __twopence_ssh_transaction_fail(trans, TWOPENCE_COMMAND_TIMEOUT_ERROR);
         return 0;
       }
       if (trans->chat.timeout
-       && !__twopence_ssh_check_timeout(&now, trans->chat.timeout, &timeout)) {
+       && !twopence_timeout_update(&timeout, trans->chat.timeout)) {
 	/* Do not fail the transaction, just return a timeout */
 	return TWOPENCE_COMMAND_TIMEOUT_ERROR;
       }
     }
 
-    twopence_debug("polling for events; timeout=%d\n", timeout);
-    rc = ssh_event_dopoll(event, timeout);
+    twopence_debug("polling for events; timeout=%ld\n", twopence_timeout_msec(&timeout));
+    rc = ssh_event_dopoll(event, twopence_timeout_msec(&timeout));
 
     if (__twopence_ssh_interrupted) {
       twopence_debug("ssh_event_dopoll() interrupted by signal");
