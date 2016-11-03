@@ -335,6 +335,17 @@ twopence_transaction_send_command(twopence_transaction_t *trans, const twopence_
 	return 0;
 }
 
+int
+twopence_transaction_send_interrupt(twopence_transaction_t *trans)
+{
+	twopence_buf_t *bp;
+
+	bp = twopence_protocol_build_simple_packet_ps(&trans->ps, TWOPENCE_PROTO_TYPE_INTR);
+	if (twopence_sock_xmit(trans->socket, bp) < 0)
+		return TWOPENCE_SEND_COMMAND_ERROR;
+	return 0;
+}
+
 twopence_trans_channel_t *
 twopence_transaction_attach_local_sink(twopence_transaction_t *trans, uint16_t id, int fd)
 {

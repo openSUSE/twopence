@@ -81,6 +81,7 @@ extern const char *		twopence_transaction_describe(const twopence_transaction_t 
 extern int			twopence_transaction_send_extract(twopence_transaction_t *, const twopence_file_xfer_t *);
 extern int			twopence_transaction_send_inject(twopence_transaction_t *, const twopence_file_xfer_t *);
 extern int			twopence_transaction_send_command(twopence_transaction_t *, const twopence_command_t *);
+extern int			twopence_transaction_send_interrupt(twopence_transaction_t *);
 extern twopence_trans_channel_t *twopence_transaction_attach_local_sink(twopence_transaction_t *trans, uint16_t id, int fd);
 extern twopence_trans_channel_t *twopence_transaction_attach_local_source(twopence_transaction_t *trans, uint16_t id, int fd);
 extern twopence_trans_channel_t *twopence_transaction_attach_local_sink_stream(twopence_transaction_t *trans, uint16_t id, twopence_iostream_t *);
