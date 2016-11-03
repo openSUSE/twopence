@@ -79,6 +79,9 @@ _twopence_invalid_username(const char *username)
 static int
 __twopence_pipe_open_link(struct twopence_pipe_target *handle)
 {
+  if (handle->connection && twopence_conn_is_closed(handle->connection))
+    return TWOPENCE_TRANSPORT_ERROR;
+
   if (handle->connection == NULL) {
     unsigned int client_id = 0;
     unsigned int keepalive = 0;
@@ -339,7 +342,13 @@ __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transac
   int xid = trans->id;
   int rc;
 
-  while (twopence_conn_reap_transaction(handle->connection, xid) == NULL) {
+  while (true) {
+    if (handle->connection == NULL)
+      return TWOPENCE_TRANSPORT_ERROR; /* shouldn't happen */
+
+    if (twopence_conn_reap_transaction(handle->connection, xid) != NULL)
+      break;
+
     if ((rc = __twopence_pipe_doio(handle)) < 0) {
       /* Oops, transport error.
        * Cancel all transaction and mark them as failed */
@@ -525,6 +534,10 @@ twopence_pipe_chat_send(twopence_target_t *opaque_handle, int xid, twopence_iost
   twopence_trans_channel_t *channel;
   twopence_transaction_t *trans;
 
+  /* Should not happen: */
+  if (handle->connection == NULL)
+    return TWOPENCE_TRANSPORT_ERROR;
+
   trans = twopence_conn_find_transaction(handle->connection, xid);
   if (trans == NULL)
     return TWOPENCE_INVALID_TRANSACTION;
@@ -548,6 +561,10 @@ twopence_pipe_chat_recv(twopence_target_t *opaque_handle, int xid, const struct 
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
   twopence_transaction_t *trans;
   unsigned int nreceived;
+
+  /* Should not happen: */
+  if (handle->connection == NULL)
+    return TWOPENCE_TRANSPORT_ERROR;
 
   trans = twopence_conn_find_transaction(handle->connection, xid);
   if (trans == NULL)
