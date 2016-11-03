@@ -99,6 +99,13 @@ typedef struct {
 	unsigned int	pid;
 } twopence_Chat;
 
+typedef struct {
+	PyObject_HEAD
+
+	twopence_timer_t *timer;
+	PyObject *	callback;
+} twopence_Timer;
+
 
 
 extern PyTypeObject	twopence_TargetType;
@@ -106,6 +113,7 @@ extern PyTypeObject	twopence_CommandType;
 extern PyTypeObject	twopence_TransferType;
 extern PyTypeObject	twopence_StatusType;
 extern PyTypeObject	twopence_ChatType;
+extern PyTypeObject	twopence_TimerType;
 
 extern int		Command_init(twopence_Command *self, PyObject *args, PyObject *kwds);
 extern int		Command_Check(PyObject *);

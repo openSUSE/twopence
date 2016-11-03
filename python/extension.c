@@ -117,4 +117,5 @@ inittwopence(void)
 	twopence_registerType(m, "Transfer", &twopence_TransferType);
 	twopence_registerType(m, "Status", &twopence_StatusType);
 	twopence_registerType(m, "Chat", &twopence_ChatType);
+	twopence_registerType(m, "Timer", &twopence_TimerType);
 }
