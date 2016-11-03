@@ -1,7 +1,7 @@
 /*
 Twopence python bindings
 
-Copyright (C) 2014, 2015 SUSE
+Copyright (C) 2014-2016 SUSE
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -181,8 +181,8 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 	Py_INCREF(stderrObject);
 	self->stderr = stderrObject;
 
-	if (stdinObject == NULL || stdinObject == Py_None) {
-		/* Do not pipe any input to the command */
+	if (stdinObject == NULL) {
+		/* Default: pipe our stdin to the remote command */
 	} else
 	if (PyString_Check(stdinObject)) {
 		char *s;
@@ -191,6 +191,7 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 			return -1;
 		self->stdinPath = twopence_strdup(s);
 	} else {
+		/* This can also be Py_None */
 		Py_INCREF(stdinObject);
 		self->stdin = stdinObject;
 	}
@@ -312,6 +313,9 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 			return -1;
 		}
 		twopence_command_iostream_redirect(cmd, TWOPENCE_STDIN, fd, true);
+	} else
+	if (self->stdin == Py_None) {
+		/* Do not pipe anything to the command's stdin */
 	} else
 	if (self->stdin) {
 		if (!Command_redirect_iostream(cmd, TWOPENCE_STDIN, self->stdin, NULL))
