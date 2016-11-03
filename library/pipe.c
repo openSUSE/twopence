@@ -745,6 +745,9 @@ twopence_pipe_wait(struct twopence_target *opaque_handle, int want_pid, twopence
   twopence_transaction_t *trans = NULL;
   int rc;
 
+  if (handle->connection == NULL)
+    return 0;
+
   twopence_debug("%s: waiting for pid %d", __func__, want_pid);
   while (true) {
     trans = __twopence_pipe_get_completed_transaction(handle, want_pid);
