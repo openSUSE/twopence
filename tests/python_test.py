@@ -83,6 +83,38 @@ def testCaseCheckStatusQuiet(status, expectExitCode = 0):
 		return False
 	return True
 
+def testCaseSetupTimerTest():
+	global __testCaseTimeOut
+	__testCaseTimeOut = False
+
+def testCaseTimerCallback():
+	global __testCaseTimeOut
+	__testCaseTimeOut = True
+
+def testCaseTimedOut():
+	global __testCaseTimeOut
+	return __testCaseTimeOut
+
+def testCaseVerifyPythonAttr(object, attrname, expect):
+	typeName = type(object).__name__
+
+	value = getattr(object, attrname)
+	if value != expect:
+		testCaseFail("%s object: attribute %s has unexpected value %s (should be %s)" %
+			(typeName, attrname, value, expect))
+		return False
+
+	print "Attribute verify OK: %s.%s=%s" % (typeName, attrname, value)
+	return True
+
+def testCaseVerifyPythonSetAttr(object, attrname, value):
+	typeName = type(object).__name__
+
+	print "Setting attribute %s.%s=%s"  % (typeName, attrname, value)
+	setattr(object, attrname, value)
+
+	testCaseVerifyPythonAttr(object, attrname, value)
+
 def testCaseException():
 	info = sys.exc_info()
 	testCaseFail("caught python exception %s: %s" % info[0:2])
@@ -960,6 +992,100 @@ try:
 	else:
 		print "chat.expect() found string \"%s\"" % chat.found
 		testCaseFail("chat.expect() returned wrong result (should have been BadSurprise)")
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("Check timer attributes")
+try:
+	testCaseSetupTimerTest()
+
+	timer = twopence.Timer(60)
+	print "Timer id is", timer.id
+
+	testCaseVerifyPythonSetAttr(timer, "callback",  testCaseTimerCallback)
+	testCaseVerifyPythonAttr(timer, "state",  "active")
+
+	print "Cancelling timer"
+	timer.cancel()
+	testCaseVerifyPythonAttr(timer, "state",  "cancelled")
+
+	del timer
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("Check timer")
+try:
+	testCaseSetupTimerTest()
+
+	print "Set a 2 second timer, and run a command that sleeps for 4 seconds"
+	timer = twopence.Timer(2, callback = testCaseTimerCallback)
+	status = target.run("sleep 4")
+
+	testCaseVerifyPythonAttr(timer, "state", "expired")
+	testCaseVerifyPythonAttr(timer, "remaining", 0)
+	if testCaseTimedOut():
+		print "OK, callback was invoked"
+	else:
+		testCaseFail("callback was not invoked")
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("Verify that a paused timer does not interrupt command execution")
+try:
+	testCaseSetupTimerTest()
+
+	print "Set a 2 second timer, pause it, and run a command that sleeps for 4 seconds"
+	timer = twopence.Timer(2, callback = testCaseTimerCallback)
+	timer.pause()
+	testCaseVerifyPythonAttr(timer, "state", "paused")
+
+	status = target.run("sleep 4")
+
+	timer.cancel()
+	testCaseVerifyPythonAttr(timer, "state", "cancelled")
+	if not testCaseTimedOut():
+		print "OK, callback was not invoked"
+	else:
+		testCaseFail("callback should not have been invoked")
+except:
+	testCaseException()
+testCaseReport()
+
+testCaseBegin("Verify that timer.unpause() works")
+try:
+	import time
+
+	testCaseSetupTimerTest()
+
+	print "Set a timer, pause and unpause it, and expect it to fire"
+	timer = twopence.Timer(3, callback = testCaseTimerCallback)
+
+	print "Pausing timer"
+	timer.pause()
+
+	print "Sleeping for 1 second"
+	print "Unpausing timer"
+	timer.unpause()
+	testCaseVerifyPythonAttr(timer, "state", "active")
+
+	remaining = timer.remaining
+	if remaining >= 2.5:
+		print "OK, timer.remaining=%f" % remaining
+	else:
+		testCaseFail("timer.remaining=%f (should be close to 3)" % remaining)
+
+	print "Run a command that sleeps for 3 seconds"
+	status = target.run("sleep 3")
+
+	testCaseVerifyPythonAttr(timer, "state", "expired")
+	testCaseVerifyPythonAttr(timer, "remaining", 0)
+	if testCaseTimedOut():
+		print "OK, callback was invoked"
+	else:
+		testCaseFail("callback was not invoked")
 except:
 	testCaseException()
 testCaseReport()
