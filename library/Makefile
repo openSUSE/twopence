@@ -35,6 +35,7 @@ LIB_OBJS= twopence.o \
 	  connection.o \
 	  iostream.o \
 	  socket.o \
+	  timer.o \
 	  buffer.o \
 	  logging.o \
 	  utils.o

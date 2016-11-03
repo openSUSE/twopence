@@ -715,6 +715,8 @@ __twopence_ssh_poll(struct twopence_ssh_target *handle)
       }
     }
 
+    twopence_timers_update_timeout(&timeout);
+
     twopence_debug("polling for events; timeout=%ld\n", twopence_timeout_msec(&timeout));
     rc = ssh_event_dopoll(event, twopence_timeout_msec(&timeout));
 
@@ -728,6 +730,11 @@ __twopence_ssh_poll(struct twopence_ssh_target *handle)
       twopence_debug("ssh_event_dopoll() returns error");
       return TWOPENCE_INTERNAL_ERROR;
     }
+
+    /* We do this as the last thing before returning, in order to minimize the
+     * risk of harmful user behavior */
+    twopence_timers_run();
+
   } while (true);
 
   return 0;
