@@ -84,19 +84,25 @@ twopence_registerType(PyObject *m, const char *name, PyTypeObject *type)
 }
 
 PyObject *
-twopence_callType(PyTypeObject *typeObject, PyObject *args, PyObject *kwds)
+twopence_callObject(PyObject *callable, PyObject *args, PyObject *kwds)
 {
 	PyObject *obj;
 
 	if (args == NULL) {
 		args = PyTuple_New(0);
-		obj = PyObject_Call((PyObject *) typeObject, args, NULL);
+		obj = PyObject_Call(callable, args, NULL);
 		Py_DECREF(args);
 	} else {
-		obj = PyObject_Call((PyObject *) typeObject, args, kwds);
+		obj = PyObject_Call(callable, args, kwds);
 	}
 
 	return obj;
+}
+
+PyObject *
+twopence_callType(PyTypeObject *typeObject, PyObject *args, PyObject *kwds)
+{
+	return twopence_callObject((PyObject *) typeObject, args, kwds);
 }
 
 PyMODINIT_FUNC
