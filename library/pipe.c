@@ -676,6 +676,17 @@ out:
   return rc;
 }
 
+//
+static int
+__twopence_pipe_disconnect(struct twopence_pipe_target *handle)
+{
+  if (handle->connection) {
+    twopence_conn_close(handle->connection);
+    twopence_conn_cancel_transactions(handle->connection, TWOPENCE_TRANSPORT_ERROR);
+  }
+  return 0;
+}
+
 // Tell the remote test server to exit
 //
 // Returns 0 if everything went fine, or a negative error code if failed
@@ -840,6 +851,17 @@ twopence_pipe_interrupt_command(struct twopence_target *opaque_handle)
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
   return __twopence_pipe_interrupt_command(handle);
+}
+
+/*
+ * Disconnect from the SUT
+ */
+int
+twopence_pipe_disconnect(twopence_target_t *opaque_handle)
+{
+  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
+
+  return __twopence_pipe_disconnect(handle);
 }
 
 // Tell the remote test server to exit

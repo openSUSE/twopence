@@ -42,6 +42,18 @@ Please do not use the \fBattrs\fP argument.
 .\" --------------------------------------------------------------
 .\"
 .\"
+.SS Target management methods
+.\" --------------------------------------------------------------
+The \fBTarget\fP class supports the following methods:
+.TP
+.BR disconnect ()
+This will cancel all pending transactions. Calling \fBwait()\fP
+on any of these will raise a transport error exception.
+The handle should be considered invalid afterwards, and should not
+be used afterwards for anything other than waiting for commands.
+.\" --------------------------------------------------------------
+.\"
+.\"
 .SS Target Object Attributes
 .\" --------------------------------------------------------------
 The target object supports these attributes:

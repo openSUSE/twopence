@@ -648,6 +648,15 @@ twopence_exit_remote(struct twopence_target *target)
 }
 
 int
+twopence_disconnect(twopence_target_t *target)
+{
+  if (target->ops->disconnect == NULL)
+    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
+
+  return target->ops->disconnect(target);
+}
+
+int
 twopence_interrupt_command(struct twopence_target *target)
 {
   if (target->ops->interrupt_command == NULL)

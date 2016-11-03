@@ -98,6 +98,7 @@ struct twopence_plugin {
 	int			(*extract_file)(struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);
 	int			(*exit_remote)(struct twopence_target *);
 	int			(*interrupt_command)(struct twopence_target *);
+	int			(*disconnect)(twopence_target_t *);
 	void			(*end)(struct twopence_target *);
 };
 
@@ -483,6 +484,21 @@ extern int		twopence_recv_file(struct twopence_target *target,
  *   Returns 0 if everything went fine.
  */
 extern int		twopence_exit_remote(struct twopence_target *target);
+
+/*
+ * Disconnect from the SUT, and cancel all pending transactions.
+ *
+ * It will be possible to reap the status of pending commands
+ * after this, but all attempts to interact with the remote
+ * system will return TWOPENCE_TRANSPORT_ERROR.
+ *
+ * Input:
+ *   handle: the handle returned by the initialization function
+ *
+ * Output:
+ *   Returns 0 if everything went fine.
+ */
+extern int		twopence_disconnect(twopence_target_t *target);
 
 /*
  * Interrupt current command

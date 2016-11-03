@@ -124,7 +124,7 @@ In order to dispose of a target object, call this function:
 .fi
 .ni
 .PP
-
+See also the description of \fBtwopence_target_disconnect\fP(3) below.
 .\" --------------------------------------------------------------
 .\"
 .\"
@@ -579,7 +579,26 @@ This will not work equally well on all targets. In particular, while the
 SSH protocol does provide for commands to deliver signals to a command
 remotely, this is currently not implemented in openssh's sshd. A workaround
 exists in the twopence library, but it is far from perfect.
-
+.\" --------------------------------------------------------------
+.\"
+.\"
+.SS Disconnecting from the System Under Test
+When using \fBtwopence_target_free\fP(3) to destroy the target handle,
+all state on pending transactions, etc, will also be lost. A less
+destructive approach is to disconnect from the SUT but otherwise
+retain the target handle:
+.PP
+.in +2
+.nf
+.B "int twopence_disconnect(twopence_target_t *target);
+.fi
+.in
+.PP
+This will drop the underlying transport connection, and cancel all
+pending transactions. 
+It will be possible to reap the status of pending commands
+after this, but all attempts to interact with the remote
+system will return TWOPENCE_TRANSPORT_ERROR.
 .\" --------------------------------------------------------------
 .\"
 .\"
