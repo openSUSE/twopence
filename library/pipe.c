@@ -229,7 +229,7 @@ __twopence_pipe_handshake(twopence_sock_t *sock, unsigned int *client_id, unsign
  * Wrap command transaction state into a struct.
  * We may want to reuse the server side transaction code here, at some point.
  */
-twopence_transaction_t *
+static twopence_transaction_t *
 twopence_pipe_transaction_new(struct twopence_pipe_target *handle, unsigned int type)
 {
   twopence_transaction_t *trans;
@@ -574,8 +574,8 @@ twopence_pipe_chat_recv(twopence_target_t *opaque_handle, int xid, const struct 
 // Inject a file into the remote host
 //
 // Returns 0 if everything went fine
-int __twopence_pipe_inject_file
-  (struct twopence_pipe_target *handle, twopence_file_xfer_t *xfer, twopence_status_t *status)
+static int
+__twopence_pipe_inject_file(struct twopence_pipe_target *handle, twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
   twopence_transaction_t *trans;
   twopence_trans_channel_t *channel;
@@ -618,8 +618,9 @@ out:
 // Extract a file from the remote host
 //
 // Returns 0 if everything went fine, or a negative error code if failed
-int _twopence_extract_virtio_serial
-  (struct twopence_pipe_target *handle, twopence_file_xfer_t *xfer, twopence_status_t *status)
+static int
+__twopence_pipe_extract_file(struct twopence_pipe_target *handle, twopence_file_xfer_t *xfer,
+				twopence_status_t *status)
 {
   twopence_transaction_t *trans;
   twopence_trans_channel_t *sink;
@@ -661,8 +662,8 @@ out:
 // Tell the remote test server to exit
 //
 // Returns 0 if everything went fine, or a negative error code if failed
-int _twopence_exit_virtio_serial
-  (struct twopence_pipe_target *handle)
+static int
+__twopence_pipe_exit_remote(struct twopence_pipe_target *handle)
 {
   // Open link for sending interrupt command
   if (__twopence_pipe_open_link(handle) < 0)
@@ -678,8 +679,8 @@ int _twopence_exit_virtio_serial
 // Interrupt current command
 //
 // Returns 0 if everything went fine, or a negative error code if failed
-int _twopence_interrupt_virtio_serial
-  (struct twopence_pipe_target *handle)
+static int
+__twopence_pipe_interrupt_command(struct twopence_pipe_target *handle)
 {
   twopence_transaction_t *trans;
 
@@ -726,8 +727,8 @@ twopence_pipe_set_option(struct twopence_target *opaque_handle, int option, cons
  *
  */
 int
-twopence_pipe_run_test
-  (struct twopence_target *opaque_handle, twopence_command_t *cmd, twopence_status_t *status_ret)
+twopence_pipe_run_test(struct twopence_target *opaque_handle, twopence_command_t *cmd,
+			twopence_status_t *status_ret)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
@@ -803,7 +804,7 @@ twopence_pipe_extract_file(struct twopence_target *opaque_handle,
   int rc;
 
   // Extract it
-  rc = _twopence_extract_virtio_serial(handle, xfer, status);
+  rc = __twopence_pipe_extract_file(handle, xfer, status);
   if (rc == 0 && (status->major != 0 || status->minor != 0))
     rc = TWOPENCE_REMOTE_FILE_ERROR;
 
@@ -818,7 +819,7 @@ twopence_pipe_interrupt_command(struct twopence_target *opaque_handle)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
-  return _twopence_interrupt_virtio_serial(handle);
+  return __twopence_pipe_interrupt_command(handle);
 }
 
 // Tell the remote test server to exit
@@ -829,7 +830,7 @@ twopence_pipe_exit_remote(struct twopence_target *opaque_handle)
 {
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
-  return _twopence_exit_virtio_serial(handle);
+  return __twopence_pipe_exit_remote(handle);
 }
 
 // Close the library
