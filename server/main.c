@@ -5,7 +5,7 @@ The idea is to avoid interfering with networks test. This enables to test
 even with all network interfaces are shut down.
 
 
-Copyright (C) 2014-2015 SUSE
+Copyright (C) 2014-2016 SUSE
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -374,7 +374,7 @@ int main(int argc, char *argv[])
 		"--port-tcp number:\n"
 		"    create a TCP socket and listen on the given port number for incoming connections\n"
 		"--port-stdio:\n"
-		"    expect an open socket on fd 0/1, and service requests received on this socket\n"
+		"    expect an open socket on fd 0, and service requests received on this socket\n"
 		"    This may be either a connected socket, or a bound socket to listen on\n"
 		"\n"
 		"Supported options:\n"

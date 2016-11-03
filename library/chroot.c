@@ -97,23 +97,24 @@ __twopence_chroot_open(struct twopence_pipe_target *pipe_handle)
   }
 
   if (pid == 0) {
+    static const unsigned int MAX_ARGC = 15;
     const char *server_path;
-    char *argv[16];
-    int argc = 0;
+    char *argv[MAX_ARGC + 1];
+    int argc = 0, i;
 
-    argv[argc++] = "twopence-server";
+    argv[argc++] = "twopence_test_server";
     if (handle->directory) {
       argv[argc++] = "--root-directory";
       argv[argc++] = handle->directory;
     }
 
     argv[argc++] = "--port-stdio";
-    /* argv[argc++] = "--debug"; */
+    for (i = 0; i < twopence_debug_level && argc < MAX_ARGC; ++i)
+	    argv[argc++] = "--debug";
     argv[argc++] = NULL;
 
     close(fd[0]);
     dup2(fd[1], 0);
-    dup2(fd[1], 1);
 
     server_path = getenv("TWOPENCE_SERVER_PATH");
     if (server_path) {
