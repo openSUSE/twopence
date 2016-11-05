@@ -705,7 +705,7 @@ else:
 testCaseReport()
 
 crossTargetConcurrencySupport = backgroundingSupported
-if target.type != "virtio" and target.type != "tcp" and target.type != "serial":
+if target.type not in ("virtio", "serial", "tcp", "chroot", "local"):
     crossTargetConcurrencySupport = False
 
 testCaseBegin("run concurrent processes on multiple targets")
