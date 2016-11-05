@@ -82,6 +82,9 @@ typedef struct {
 	PyObject_HEAD
 
 	int		remoteStatus;
+	int		localError;
+	int		exitSignal;
+
 	/* for cmd operations */
 	PyObject *	stdout;
 	PyObject *	stderr;

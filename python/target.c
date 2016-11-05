@@ -316,12 +316,13 @@ Target_buildCommandStatus(twopence_Command *cmdObject, twopence_command_t *cmd, 
 	statusObject = (twopence_Status *) twopence_callType(&twopence_StatusType, NULL, NULL);
 	if (rc < 0) {
 		/* Command failed due to a local erorr */
-		statusObject->remoteStatus = 0x200 | ((-rc) & 0xFF);
+		statusObject->localError = rc;
 	} else
 	if (status->major == EFAULT) {
 		/* Command exited with a signal */
-		statusObject->remoteStatus = 0x100 | (status->minor & 0xFF);
+		statusObject->exitSignal = status->minor;
 	} else {
+		/* Regular command exit */
 		statusObject->remoteStatus = status->minor;
 	}
 	if (cmdObject->stdout) {
@@ -350,7 +351,6 @@ Target_buildCommandStatusShort(twopence_Command *cmdObject, twopence_command_t *
 		return NULL;
 
 	statusObject = (twopence_Status *) twopence_callType(&twopence_StatusType, NULL, NULL);
-	statusObject->remoteStatus = status->minor;
 
 	return statusObject;
 }
@@ -574,14 +574,18 @@ Target_waitAll(twopence_Target *self, PyObject *args, PyObject *kwds)
 
 		if (result == NULL)
 			result = Target_buildCommandStatusShort(bg->object, &bg->cmd, &status);
+
+		/* We do this here rather than inside Target_buildCommandStatusShort,
+		 * because we want to accumulate error information */
 		if (status.major == EFAULT) {
 			/* Command exited with a signal */
-			result->remoteStatus = 0x100 | (status.minor & 0xFF);
-		} else if (status.major == EIO) {
-			/* Command failed due to a local erorr */
-			result->remoteStatus = 0x200 | (status.minor & 0xFF);
-		} else if (status.minor) {
-			result->remoteStatus = status.minor;
+			result->exitSignal = status.minor;
+		} else {
+			/* Regular command exit; but make sure
+			 * we do not overwrite a previous non-zero exit value
+			 */
+			if (result->remoteStatus == 0)
+				result->remoteStatus = status.minor;
 		}
 
 		backgroundedCommandFree(bg);

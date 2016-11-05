@@ -93,12 +93,13 @@ would look like this:
 .fi
 .P
 The \fBStatus\fP object returned by the \fBrun()\fP method carries several bits and pieces
-of information. The most important one being the remote exit status contained in
-\fBstatus.code\fP. If the command exited regularly, this will be the command's exit status.
-If the command died from a signal, its value will be 256 plus the termination signal
-(sorry, no translation of platform dependent signal numbers).
+of information. The most important one being the remote exit status reported by
+\fBstatus\fP. If the command exited regularly, \fBstatus.exitStatus\fP will be the
+command's exit status.
+If the command died from a signal, \fBstatus.exitSignal\fP will contain the
+name of the signal (\fBNone\fP otherwise).
 .P
-In order to allow for simple testing whether a command's exit status was zero, the
+In order to allow for simple testing whether a command exited cleanly with status of zero, the
 \fBStatus\fP class supports a built-in conversion to boolean, so that you can use it
 like this:
 .P
@@ -451,11 +452,21 @@ any such objects.
 .B code
 This is the status code of the remote command, or the status of the
 file transfer.
-If the remote command exited after receiving a signal, the status
+If the remote command was killed by a signal, the status
 code will be 256 plus the number of the termination signal.
 .TP
+.B localError
+If the command was run with \fBsoftfail\fP set to \fBTrue\fP, and
+a local error occurred, this attribute will contain the integer
+error code. Otherwise, this will be 0.
+.TP
+.B exitSignal
+If the command was killed by a signal, this will contain the
+name of the signal, such as \fB"HUP"\fP or \fB"TERM"\fP. Otherwise,
+this attribute returns \fBNone\fP.
+.TP
 .B message
-contains a descriptive message of the remote status, to be used
+contains a descriptive message of the status object, to be used
 in printing diagnostics. This is more of a convenience than really
 useful.
 .TP
