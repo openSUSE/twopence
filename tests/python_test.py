@@ -1090,5 +1090,20 @@ except:
 	testCaseException()
 testCaseReport()
 
+testCaseBegin("Check whether we can cancel transactions")
+try:
+	cmd = twopence.Command("sleep 10", softfail = True)
+	timer = twopence.Timer(2, callback = target.cancel_transactions)
+	status = target.run(cmd)
+
+	testCaseCheckStatus(status, 512 + 21)
+except:
+	testCaseFail("Command should have soft-failed");
+	import traceback
+
+	print traceback.format_exc(None)
+
+testCaseReport()
+
 
 testSuiteExit()
