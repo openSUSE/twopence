@@ -1550,6 +1550,18 @@ twopence_ssh_interrupt_command(struct twopence_target *opaque_handle)
   return __twopence_ssh_interrupt_ssh(handle);
 }
 
+// Cancel all pending transactions
+//
+// Returns 0 if everything went fine
+static int
+twopence_ssh_cancel_transactions(struct twopence_target *opaque_handle)
+{
+  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
+
+  __twopence_ssh_cancel_transactions(handle, TWOPENCE_COMMAND_CANCELED_ERROR);
+  return 0;
+}
+
 // Disconnect from remote, and cancel all pending transactions
 //
 // Returns 0 if everything went fine
@@ -1603,6 +1615,7 @@ const struct twopence_plugin twopence_ssh_ops = {
 	.extract_file = twopence_ssh_extract_file,
 	.exit_remote = twopence_ssh_exit_remote,
 	.interrupt_command = twopence_ssh_interrupt_command,
+	.cancel_transactions = twopence_ssh_cancel_transactions,
 	.disconnect = twopence_ssh_disconnect,
 	.end = twopence_ssh_end,
 };

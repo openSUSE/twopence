@@ -41,6 +41,7 @@ static PyObject *	Target_recvfile(twopence_Target *self, PyObject *args, PyObjec
 static PyObject *	Target_setenv(twopence_Target *, PyObject *, PyObject *);
 static PyObject *	Target_unsetenv(twopence_Target *, PyObject *, PyObject *);
 static PyObject *	Target_disconnect(twopence_Target *, PyObject *, PyObject *);
+static PyObject *	Target_cancel_transactions(twopence_Target *, PyObject *, PyObject *);
 static PyObject *	Target_chat(twopence_Target *, PyObject *, PyObject *);
 
 /*
@@ -91,6 +92,9 @@ static PyMethodDef twopence_targetMethods[] = {
       },
       {	"disconnect", (PyCFunction) Target_disconnect, METH_VARARGS | METH_KEYWORDS,
 	"Close the connection to the target"
+      },
+      {	"cancel_transactions", (PyCFunction) Target_cancel_transactions, METH_VARARGS | METH_KEYWORDS,
+	"Cancel all pending transactions"
       },
 
       {	NULL }
@@ -898,6 +902,23 @@ Target_disconnect(twopence_Target *self, PyObject *args, PyObject *kwds)
 
 	if (self->handle != NULL)
 		twopence_disconnect(self->handle);
+
+	Py_INCREF(Py_None);
+	return Py_None;
+}
+
+static PyObject *
+Target_cancel_transactions(twopence_Target *self, PyObject *args, PyObject *kwds)
+{
+	static char *kwlist[] = {
+		NULL
+	};
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "", kwlist))
+		return NULL;
+
+	if (self->handle != NULL)
+		twopence_cancel_transactions(self->handle);
 
 	Py_INCREF(Py_None);
 	return Py_None;

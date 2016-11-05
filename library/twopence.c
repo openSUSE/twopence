@@ -648,6 +648,15 @@ twopence_exit_remote(struct twopence_target *target)
 }
 
 int
+twopence_cancel_transactions(twopence_target_t *target)
+{
+  if (target->ops->cancel_transactions == NULL)
+    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
+
+  return target->ops->cancel_transactions(target);
+}
+
+int
 twopence_disconnect(twopence_target_t *target)
 {
   if (target->ops->disconnect == NULL)
@@ -713,6 +722,8 @@ twopence_strerror(int rc)
       return "Protocol versions not compatible between client and server";
     case TWOPENCE_INVALID_TRANSACTION:
       return "Invalid transaction ID";
+    case TWOPENCE_COMMAND_CANCELED_ERROR:
+      return "Command canceled by user";
   }
   return "Unknow error";
 }

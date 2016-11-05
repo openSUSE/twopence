@@ -54,6 +54,7 @@ struct pollfd;
 #define TWOPENCE_TRANSPORT_ERROR		-18
 #define TWOPENCE_INCOMPATIBLE_PROTOCOL_ERROR	-19
 #define TWOPENCE_INVALID_TRANSACTION		-20
+#define TWOPENCE_COMMAND_CANCELED_ERROR		-21
 
 typedef struct twopence_target twopence_target_t;
 
@@ -99,6 +100,7 @@ struct twopence_plugin {
 	int			(*extract_file)(struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);
 	int			(*exit_remote)(struct twopence_target *);
 	int			(*interrupt_command)(struct twopence_target *);
+	int			(*cancel_transactions)(twopence_target_t *);
 	int			(*disconnect)(twopence_target_t *);
 	void			(*end)(struct twopence_target *);
 };
@@ -515,6 +517,17 @@ extern int		twopence_recv_file(struct twopence_target *target,
  *   Returns 0 if everything went fine.
  */
 extern int		twopence_exit_remote(struct twopence_target *target);
+
+/*
+ * Cancel all pending transactions with a status of TWOPENCE_COMMAND_CANCELED_ERROR
+ *
+ * Input:
+ *   handle: the handle returned by the initialization function
+ *
+ * Output:
+ *   Returns 0 if everything went fine.
+ */
+extern int		twopence_cancel_transactions(twopence_target_t *target);
 
 /*
  * Disconnect from the SUT, and cancel all pending transactions.
