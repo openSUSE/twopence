@@ -476,9 +476,6 @@ __twopence_pipe_command(struct twopence_pipe_target *handle, twopence_command_t 
   twopence_transaction_t *trans;
   int rc;
 
-  // By default, no major and no minor
-  memset(status_ret, 0, sizeof(*status_ret));
-
   // Check that the username is valid
   if (_twopence_invalid_username(cmd->user))
     return TWOPENCE_PARAMETER_ERROR;

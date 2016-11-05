@@ -1339,9 +1339,6 @@ twopence_ssh_run_test
   if (cmd->command == NULL)
     return TWOPENCE_PARAMETER_ERROR;
 
-  /* 'major' makes no sense for SSH and 'minor' defaults to 0 */
-  memset(status_ret, 0, sizeof(*status_ret));
-
   // Execute the command
   return __twopence_ssh_command_ssh(handle, cmd, status_ret);
 }

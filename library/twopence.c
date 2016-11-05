@@ -209,6 +209,8 @@ twopence_target_passenv(twopence_target_t *target, const char *name)
 int
 twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twopence_status_t *status)
 {
+  memset(status, 0, sizeof(*status));
+
   if (target->ops->run_test == NULL)
     return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 
@@ -227,6 +229,8 @@ twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twope
 int
 twopence_wait(struct twopence_target *target, int pid, twopence_status_t *status)
 {
+  memset(status, 0, sizeof(*status));
+
   if (target->ops->wait == NULL)
     return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 
@@ -576,6 +580,8 @@ twopence_inject_file
 int
 twopence_send_file(struct twopence_target *target, twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
+  memset(status, 0, sizeof(*status));
+
   if (target->ops->inject_file == NULL)
     return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 
@@ -587,7 +593,6 @@ twopence_send_file(struct twopence_target *target, twopence_file_xfer_t *xfer, t
   if (xfer->remote.mode == 0)
     xfer->remote.mode = 0644;
 
-  memset(status, 0, sizeof(*status));
   return target->ops->inject_file(target, xfer, status);
 }
 
@@ -623,6 +628,8 @@ twopence_extract_file
 int
 twopence_recv_file(struct twopence_target *target, twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
+  memset(status, 0, sizeof(*status));
+
   if (target->ops->inject_file == NULL)
     return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 
@@ -634,7 +641,6 @@ twopence_recv_file(struct twopence_target *target, twopence_file_xfer_t *xfer, t
   if (xfer->remote.mode == 0)
     xfer->remote.mode = 0644;
 
-  memset(status, 0, sizeof(*status));
   return target->ops->extract_file(target, xfer, status);
 }
 
