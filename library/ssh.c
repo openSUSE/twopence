@@ -976,6 +976,8 @@ __twopence_ssh_command_ssh
   if (trans == NULL)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
+  status_ret->pid = trans->pid;
+
   rc = __twopence_ssh_transaction_open_session(trans, cmd->user);
   if (rc != 0) {
     __twopence_ssh_transaction_free(trans);
@@ -1015,7 +1017,8 @@ __twopence_ssh_command_ssh
   if (trans->exception) {
     rc = trans->exception;
   } else {
-    *status_ret = trans->status;
+    status_ret->major = trans->status.major;
+    status_ret->minor = trans->status.minor;
     rc = 0;
   }
 
@@ -1375,10 +1378,12 @@ twopence_ssh_wait(struct twopence_target *opaque_handle, int want_pid, twopence_
 
   assert(trans->done);
 
+  status->pid = trans->pid;
   if (trans->exception < 0) {
     rc = trans->exception;
   } else {
-    *status = trans->status;
+    status->major = trans->status.major;
+    status->minor = trans->status.minor;
     rc = trans->pid;
   }
 

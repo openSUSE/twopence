@@ -64,6 +64,9 @@ typedef struct twopence_target twopence_target_t;
  *		indicating any issues encountered while executing
  *		the command.
  * minor:	this is the exit status of the command itself.
+ * pid:		the pid of the command. This is mostly useful
+ *		when wait() returns an error, and you wish to
+ *		know which command errored out.
  *
  * FIXME: we should dissect the status code on the SUT rather than
  * the system running twopence, as the exit code, signal information
@@ -75,6 +78,7 @@ typedef struct twopence_target twopence_target_t;
 typedef struct twopence_status {
 	int			major;
 	int			minor;
+	int			pid;
 } twopence_status_t;
 
 /* Forward decls for the plugin functions */

@@ -357,7 +357,10 @@ __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transac
     }
   }
 
-  *status = trans->client.status_ret;
+  status->pid = trans->id;
+  status->major = trans->client.status_ret.major;
+  status->minor = trans->client.status_ret.minor;
+
   if (trans->client.exception < 0)
     return trans->client.exception;
 
@@ -798,14 +801,18 @@ twopence_pipe_wait(struct twopence_target *opaque_handle, int want_pid, twopence
   if (trans == NULL)
     return 0;
 
+  status->pid = trans->id;
+
   twopence_debug("%s: returning status for transaction %s", __func__, twopence_transaction_describe(trans));
   if (trans->client.exception < 0) {
     rc = trans->client.exception;
   } else {
-    *status = trans->client.status_ret;
+    status->major = trans->client.status_ret.major;
+    status->minor = trans->client.status_ret.minor;
     rc = trans->id;
   }
 
+  status->pid = trans->id;
   twopence_transaction_free(trans);
   return rc;
 }
