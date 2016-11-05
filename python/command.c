@@ -116,6 +116,7 @@ Command_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 	self->quiet = 0;
 	self->useTty = 0;
 	self->background = false;
+	self->softfail = false;
 	self->pid = 0;
 
 	twopence_env_init(&self->environ);
@@ -144,6 +145,7 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 		"suppressOutput",
 		"quiet",
 		"background",
+		"softfail",
 		NULL
 	};
 	PyObject *stdinObject = NULL, *stdoutObject = NULL, *stderrObject = NULL;
@@ -151,11 +153,12 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 	long timeout = 0L;
 	int quiet = 0;
 	int background = 0;
+	int softfail = 0;
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|slOOOiii", kwlist,
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "s|slOOOiiii", kwlist,
 				&command, &user, &timeout, &stdinObject, &stdoutObject, &stderrObject,
 				&quiet, &quiet,
-				&background))
+				&background, &softfail))
 		return -1;
 
 	self->command = twopence_strdup(command);
@@ -167,6 +170,7 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 	self->stdin = NULL;
 	self->quiet = quiet;
 	self->background = background;
+	self->softfail = softfail;
 
 	if (stdoutObject == NULL) {
 		stdoutObject = twopence_callType(&PyByteArray_Type, NULL, NULL);
@@ -441,6 +445,8 @@ Command_getattr(twopence_Command *self, char *name)
 		return return_bool(self->useTty);
 	if (!strcmp(name, "background"))
 		return return_bool(self->background);
+	if (!strcmp(name, "softfail"))
+		return return_bool(self->softfail);
 	if (!strcmp(name, "environ")) {
 		twopence_env_t *env = &self->environ;
 		PyObject *rv = PyTuple_New(env->count);
@@ -510,6 +516,10 @@ Command_setattr(twopence_Command *self, char *name, PyObject *v)
 	}
 	if (!strcmp(name, "background")) {
 		self->background = !!(PyObject_IsTrue(v));
+		return 0;
+	}
+	if (!strcmp(name, "softfail")) {
+		self->softfail = !!(PyObject_IsTrue(v));
 		return 0;
 	}
 

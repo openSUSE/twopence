@@ -50,6 +50,7 @@ typedef struct {
 	PyObject *	stdin;
 	bool		useTty;
 	bool		background;
+	bool		softfail;
 
 	twopence_env_t	environ;
 

@@ -300,9 +300,12 @@ Target_findBackgrounded(twopence_Target *tgtObject, pid_t pid)
  * Given a command and its status, build a status object
  */
 static PyObject *
-Target_buildCommandStatus(twopence_Command *cmdObject, twopence_command_t *cmd, twopence_status_t *status)
+Target_buildCommandStatus(twopence_Command *cmdObject, twopence_command_t *cmd, twopence_status_t *status, int rc)
 {
 	twopence_Status *statusObject;
+
+	if (rc < 0 && !cmdObject->softfail)
+		return twopence_Exception("command execution failed", rc);
 
 	/* Now funnel the captured data to the respective buffer objects */
 	if (twopence_AppendBuffer(cmdObject->stdout, &cmd->buffer[TWOPENCE_STDOUT]) < 0)
@@ -311,6 +314,10 @@ Target_buildCommandStatus(twopence_Command *cmdObject, twopence_command_t *cmd, 
 		return NULL;
 
 	statusObject = (twopence_Status *) twopence_callType(&twopence_StatusType, NULL, NULL);
+	if (rc < 0) {
+		/* Command failed due to a local erorr */
+		statusObject->remoteStatus = 0x200 | ((-rc) & 0xFF);
+	} else
 	if (status->major == EFAULT) {
 		/* Command exited with a signal */
 		statusObject->remoteStatus = 0x100 | (status->minor & 0xFF);
@@ -430,12 +437,7 @@ Target_run(twopence_Target *self, PyObject *args, PyObject *kwds)
 			goto out;
 
 		rc = twopence_run_test(handle, &cmd, &status);
-		if (rc < 0) {
-			twopence_Exception("run", rc);
-			goto out;
-		}
-
-		result = Target_buildCommandStatus(cmdObject, &cmd, &status);
+		result = Target_buildCommandStatus(cmdObject, &cmd, &status, rc);
 	}
 
 out:
@@ -451,19 +453,25 @@ out:
  * Wait for command(s) to complete
  */
 PyObject *
-Target_wait_common(twopence_Target *tgtObject, int pid)
+Target_wait_common(twopence_Target *tgtObject, int want_pid)
 {
 	struct twopence_target *handle;
 	struct backgroundedCommand *bg;
 	PyObject *result;
 	twopence_status_t status;
+	int pid;
 
 	if ((handle = tgtObject->handle) == NULL)
 		return NULL;
 
-	pid = twopence_wait(handle, pid, &status);
-	if (pid < 0)
+	pid = twopence_wait(handle, want_pid, &status);
+	if (pid < 0) {
+		if (status.pid > 0) {
+			bg = Target_findBackgrounded(tgtObject, status.pid);
+			goto build_status;
+		}
 		return twopence_Exception("wait", pid);
+	}
 
 	if (pid == 0) {
 		Py_INCREF(Py_None);
@@ -476,7 +484,8 @@ Target_wait_common(twopence_Target *tgtObject, int pid)
 		return NULL;
 	}
 
-	result = Target_buildCommandStatus(bg->object, &bg->cmd, &status);
+build_status:
+	result = Target_buildCommandStatus(bg->object, &bg->cmd, &status, pid);
 	backgroundedCommandFree(bg);
 
 	return result;
@@ -568,6 +577,9 @@ Target_waitAll(twopence_Target *self, PyObject *args, PyObject *kwds)
 		if (status.major == EFAULT) {
 			/* Command exited with a signal */
 			result->remoteStatus = 0x100 | (status.minor & 0xFF);
+		} else if (status.major == EIO) {
+			/* Command failed due to a local erorr */
+			result->remoteStatus = 0x200 | (status.minor & 0xFF);
 		} else if (status.minor) {
 			result->remoteStatus = status.minor;
 		}

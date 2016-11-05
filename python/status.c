@@ -160,6 +160,8 @@ Status_message(twopence_Status *self)
 		strcpy(message, "success");
 	} else if (st & 0x100) {
 		snprintf(message, sizeof(message), "crashed (signal %u)", st & 0xFF);
+	} else if (st & 0x200) {
+		snprintf(message, sizeof(message), "local error: %s", twopence_strerror(-(st & 0xFF)));
 	} else {
 		snprintf(message, sizeof(message), "status %d", self->remoteStatus);
 	}

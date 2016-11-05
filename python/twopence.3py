@@ -228,6 +228,14 @@ Do not copy output to the python interpreter's stdout or stderr.
 Execute the command asynchronously. Running a command with \fBbackground\fP set to
 \fBTrue\fP will schedule the command for execution on the SUT and return immediately.
 For details, please refer to the section below.
+.TP
+.BR softfail " (read-write, constructor)
+By default, local errors (such as command timeout, or a broken connection)
+cause an exception to be raised. When setting the command's \fBsoftfail\fP
+attribute to \fBTrue\fP, these issues will be reported through a
+\fBStatus\fP object as usual.
+In this case, the \fBcode\fP attribute of the status object will be 512 + the
+twopence error code.
 .\" --------------------------------------------------------------
 .\"
 .\"
