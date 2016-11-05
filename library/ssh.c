@@ -503,7 +503,7 @@ __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
 
   if (trans->channel == NULL) {
     __twopence_ssh_transaction_fail(trans, TWOPENCE_TRANSPORT_ERROR);
-    return -1;
+    return TWOPENCE_TRANSPORT_ERROR;
   }
 
   /*
@@ -530,10 +530,8 @@ __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
     twopence_log_error("transaction %d has no exit status", trans->pid);
     status->major = 0;
     (void) ssh_channel_get_exit_status(trans->channel);
-    if (!trans->have_exit_status) {
-      twopence_log_error("ssh_channel_get_exit_status didn't set the exit status either, faking it");
-      trans->status.major = EIO;
-    }
+    if (!trans->have_exit_status)
+      return TWOPENCE_TRANSPORT_ERROR;
   }
 
   twopence_debug("exit status is %d/%d\n", status->major, status->minor);
