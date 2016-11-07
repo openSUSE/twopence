@@ -30,17 +30,18 @@ static void		Target_dealloc(twopence_Target *self);
 static PyObject *	Target_new(PyTypeObject *type, PyObject *args, PyObject *kwds);
 static int		Target_init(twopence_Target *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_getattr(twopence_Target *self, char *name);
-static PyObject *	Target_run(PyObject *self, PyObject *args, PyObject *kwds);
-static PyObject *	Target_wait(PyObject *self, PyObject *args, PyObject *kwds);
-static PyObject *	Target_waitAll(PyObject *self, PyObject *args, PyObject *kwds);
+static PyObject *	Target_run(twopence_Target *self, PyObject *args, PyObject *kwds);
+static PyObject *	Target_wait(twopence_Target *self, PyObject *args, PyObject *kwds);
+static PyObject *	Target_waitAll(twopence_Target *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_property(twopence_Target *self, PyObject *args, PyObject *kwds);
-static PyObject *	Target_inject(PyObject *self, PyObject *args, PyObject *kwds);
-static PyObject *	Target_extract(PyObject *self, PyObject *args, PyObject *kwds);
-static PyObject *	Target_sendfile(PyObject *self, PyObject *args, PyObject *kwds);
-static PyObject *	Target_recvfile(PyObject *self, PyObject *args, PyObject *kwds);
+static PyObject *	Target_inject(twopence_Target *self, PyObject *args, PyObject *kwds);
+static PyObject *	Target_extract(twopence_Target *self, PyObject *args, PyObject *kwds);
+static PyObject *	Target_sendfile(twopence_Target *self, PyObject *args, PyObject *kwds);
+static PyObject *	Target_recvfile(twopence_Target *self, PyObject *args, PyObject *kwds);
 static PyObject *	Target_setenv(twopence_Target *, PyObject *, PyObject *);
 static PyObject *	Target_unsetenv(twopence_Target *, PyObject *, PyObject *);
-static PyObject *	Target_chat(PyObject *, PyObject *, PyObject *);
+static PyObject *	Target_disconnect(twopence_Target *, PyObject *, PyObject *);
+static PyObject *	Target_chat(twopence_Target *, PyObject *, PyObject *);
 
 /*
  * Define the python bindings of class "Target"
@@ -87,6 +88,9 @@ static PyMethodDef twopence_targetMethods[] = {
       },
       {	"chat", (PyCFunction) Target_chat, METH_VARARGS | METH_KEYWORDS,
 	"Create a Chat object for the given command"
+      },
+      {	"disconnect", (PyCFunction) Target_disconnect, METH_VARARGS | METH_KEYWORDS,
+	"Close the connection to the target"
       },
 
       {	NULL }
@@ -166,16 +170,6 @@ Target_dealloc(twopence_Target *self)
 	self->handle = NULL;
 
 	drop_object(&self->attrs);
-}
-
-/*
- * Extract twopence target handle from python object.
- * This should really do a type check and throw an exception if it doesn't match
- */
-static struct twopence_target *
-Target_handle(PyObject *self)
-{
-	return ((twopence_Target *) self)->handle;
 }
 
 static PyObject *
@@ -362,7 +356,7 @@ Target_buildCommandStatusShort(twopence_Command *cmdObject, twopence_command_t *
  * To suppress all output, pass "none" objects to 'stdout' und 'stderr'.
  */
 static PyObject *
-Target_run(PyObject *self, PyObject *args, PyObject *kwds)
+Target_run(twopence_Target *self, PyObject *args, PyObject *kwds)
 {
 	struct twopence_target *handle;
 	twopence_Command *cmdObject = NULL;
@@ -395,8 +389,7 @@ Target_run(PyObject *self, PyObject *args, PyObject *kwds)
 		goto out;
 	}
 
-	if ((handle = Target_handle(self)) == NULL)
-		goto out;
+	handle = self->handle;
 
 	memset(&cmd, 0, sizeof(cmd));
 	if (cmdObject->background) {
@@ -486,13 +479,12 @@ Target_wait_common(twopence_Target *tgtObject, int pid)
 }
 
 static PyObject *
-Target_wait(PyObject *self, PyObject *args, PyObject *kwds)
+Target_wait(twopence_Target *self, PyObject *args, PyObject *kwds)
 {
 	static char *kwlist[] = {
 		"command",
 		NULL
 	};
-	twopence_Target *tgtObject = (twopence_Target *) self;
 	PyObject *argObject = NULL;
 	int pid = 0;
 
@@ -521,28 +513,24 @@ Target_wait(PyObject *self, PyObject *args, PyObject *kwds)
 		return NULL;
 	}
 
-	return Target_wait_common(tgtObject, pid);
+	return Target_wait_common(self, pid);
 }
 
 /*
  * Wait for all commands to complete
  */
 static PyObject *
-Target_waitAll(PyObject *self, PyObject *args, PyObject *kwds)
+Target_waitAll(twopence_Target *self, PyObject *args, PyObject *kwds)
 {
 	static char *kwlist[] = {
 		"print_dots",
 		NULL
 	};
-	twopence_target_t *handle;
-	twopence_Target *tgtObject = (twopence_Target *) self;
+	twopence_target_t *handle = self->handle;
 	twopence_Status *result = NULL;
 	int print_dots = 0, ndots = 0;
 
 	if (!PyArg_ParseTupleAndKeywords(args, kwds, "|i", kwlist, &print_dots))
-		return NULL;
-
-	if ((handle = Target_handle(self)) == NULL)
 		return NULL;
 
 	while (true) {
@@ -563,7 +551,7 @@ Target_waitAll(PyObject *self, PyObject *args, PyObject *kwds)
 			break;
 		}
 
-		bg = Target_findBackgrounded(tgtObject, pid);
+		bg = Target_findBackgrounded(self, pid);
 		if (bg == NULL) {
 			if (ndots)
 				printf("\n");
@@ -597,7 +585,7 @@ Target_waitAll(PyObject *self, PyObject *args, PyObject *kwds)
 }
 
 static PyObject *
-Target_chat(PyObject *self, PyObject *args, PyObject *kwds)
+Target_chat(twopence_Target *self, PyObject *args, PyObject *kwds)
 {
 	twopence_Target *tgtObject = (twopence_Target *) self;
 	twopence_Command *cmdObject = NULL;
@@ -684,7 +672,7 @@ failed:
  * inject file into SUT
  */
 static PyObject *
-Target_inject(PyObject *self, PyObject *args, PyObject *kwds)
+Target_inject(twopence_Target *self, PyObject *args, PyObject *kwds)
 {
 	static char *kwlist[] = {
 		"local",
@@ -693,7 +681,7 @@ Target_inject(PyObject *self, PyObject *args, PyObject *kwds)
 		"mode",
 		NULL
 	};
-	struct twopence_target *handle;
+	struct twopence_target *handle = self->handle;
 	char *sourceFile, *destFile;
 	char *user = "root";
 	int omode = 0644;
@@ -703,10 +691,6 @@ Target_inject(PyObject *self, PyObject *args, PyObject *kwds)
 		return NULL;
 
 	/* printf("inject %s -> %s (user %s, mode 0%o)\n", sourceFile, destFile, user, omode); */
-
-	if ((handle = Target_handle(self)) == NULL)
-		return NULL;
-
 	rc = twopence_inject_file(handle, user, sourceFile, destFile, &remoteRc, 0);
 	if (rc < 0)
 		return twopence_Exception("inject", rc);
@@ -718,7 +702,7 @@ Target_inject(PyObject *self, PyObject *args, PyObject *kwds)
  * extract file from SUT
  */
 static PyObject *
-Target_extract(PyObject *self, PyObject *args, PyObject *kwds)
+Target_extract(twopence_Target *self, PyObject *args, PyObject *kwds)
 {
 	static char *kwlist[] = {
 		"local",
@@ -727,7 +711,7 @@ Target_extract(PyObject *self, PyObject *args, PyObject *kwds)
 		"mode",
 		NULL
 	};
-	struct twopence_target *handle;
+	struct twopence_target *handle = self->handle;
 	char *sourceFile, *destFile;
 	char *user = "root";
 	int omode = 0644;
@@ -737,9 +721,6 @@ Target_extract(PyObject *self, PyObject *args, PyObject *kwds)
 		return NULL;
 
 	/* printf("extract %s -> %s (user %s, mode 0%o)\n", sourceFile, destFile, user, omode); */
-	if ((handle = Target_handle(self)) == NULL)
-		return NULL;
-
 	rc = twopence_extract_file(handle, user, sourceFile, destFile, &remoteRc, 0);
 	if (rc < 0)
 		return twopence_Exception("extract", rc);
@@ -776,9 +757,9 @@ Taget_send_recv_common(PyObject *args, PyObject *kwds)
  * transfer a file to the SUT
  */
 static PyObject *
-Target_sendfile(PyObject *self, PyObject *args, PyObject *kwds)
+Target_sendfile(twopence_Target *self, PyObject *args, PyObject *kwds)
 {
-	struct twopence_target *handle;
+	struct twopence_target *handle = self->handle;
 	twopence_Transfer *xferObject = NULL;
 	twopence_Status *statusObject;
 	twopence_file_xfer_t xfer;
@@ -794,9 +775,6 @@ Target_sendfile(PyObject *self, PyObject *args, PyObject *kwds)
 
 	if (Transfer_build_send(xferObject, &xfer) < 0)
 		goto out;
-
-	if ((handle = Target_handle(self)) == NULL)
-		return NULL;
 
 	rc = twopence_send_file(handle, &xfer, &status);
 	if (rc < 0) {
@@ -821,9 +799,9 @@ out:
  * transfer a file to the SUT
  */
 static PyObject *
-Target_recvfile(PyObject *self, PyObject *args, PyObject *kwds)
+Target_recvfile(twopence_Target *self, PyObject *args, PyObject *kwds)
 {
-	struct twopence_target *handle;
+	struct twopence_target *handle = self->handle;
 	twopence_Transfer *xferObject = NULL;
 	twopence_Status *statusObject;
 	twopence_file_xfer_t xfer;
@@ -839,9 +817,6 @@ Target_recvfile(PyObject *self, PyObject *args, PyObject *kwds)
 
 	if (Transfer_build_recv(xferObject, &xfer) < 0)
 		goto out;
-
-	if ((handle = Target_handle(self)) == NULL)
-		return NULL;
 
 	rc = twopence_recv_file(handle, &xfer, &status);
 	if (rc < 0) {
@@ -906,6 +881,23 @@ Target_unsetenv(twopence_Target *self, PyObject *args, PyObject *kwds)
 		return NULL;
 
 	twopence_target_setenv(self->handle, variable, NULL);
+
+	Py_INCREF(Py_None);
+	return Py_None;
+}
+
+static PyObject *
+Target_disconnect(twopence_Target *self, PyObject *args, PyObject *kwds)
+{
+	static char *kwlist[] = {
+		NULL
+	};
+
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "", kwlist))
+		return NULL;
+
+	if (self->handle != NULL)
+		twopence_disconnect(self->handle);
 
 	Py_INCREF(Py_None);
 	return Py_None;

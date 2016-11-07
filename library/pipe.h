@@ -62,6 +62,7 @@ extern int	twopence_pipe_inject_file (struct twopence_target *, twopence_file_xf
 extern int	twopence_pipe_extract_file (struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);
 extern int	twopence_pipe_interrupt_command(struct twopence_target *);
 extern int	twopence_pipe_exit_remote(struct twopence_target *);
+extern int	twopence_pipe_disconnect(twopence_target_t *);
 extern void	twopence_pipe_end(struct twopence_target *);
 
 #endif /* PIPE_H */

@@ -46,6 +46,7 @@ extern bool			twopence_conn_process(twopence_conn_t *conn);
 extern twopence_transaction_t *	twopence_conn_transaction_new(twopence_conn_t *, unsigned int type, const twopence_protocol_state_t *);
 extern int			twopence_conn_xmit_packet(twopence_conn_t *, twopence_buf_t *);
 extern twopence_sock_t *	twopence_conn_accept(twopence_conn_t *);
+extern void			twopence_conn_close(twopence_conn_t *conn);
 extern bool			twopence_conn_is_closed(const twopence_conn_t *);
 extern void			twopence_conn_update_send_keepalive(twopence_conn_t *conn);
 extern void			twopence_conn_update_recv_keepalive(twopence_conn_t *conn);

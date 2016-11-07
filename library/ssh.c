@@ -830,6 +830,19 @@ __twopence_ssh_reap_completed(struct twopence_ssh_target *handle)
   return nreaped;
 }
 
+static void
+__twopence_ssh_cancel_transactions(struct twopence_ssh_target *handle, int error)
+{
+  twopence_ssh_transaction_t *trans;
+
+  /* Flag all pending transactions as having encountered a transport error */
+  for (trans = handle->transactions.running; trans; trans = trans->next)
+    __twopence_ssh_transaction_fail(trans, TWOPENCE_TRANSPORT_ERROR);
+
+  /* Transfer the whole lot from running to done queue */
+  __twopence_ssh_reap_completed(handle);
+}
+
 // Send a file in chunks through SCP
 //
 // Returns 0 if everything went fine, or a negative error code if failed
@@ -1549,6 +1562,23 @@ twopence_ssh_interrupt_command(struct twopence_target *opaque_handle)
   return __twopence_ssh_interrupt_ssh(handle);
 }
 
+// Disconnect from remote, and cancel all pending transactions
+//
+// Returns 0 if everything went fine
+static int
+twopence_ssh_disconnect(struct twopence_target *opaque_handle)
+{
+  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
+
+  __twopence_ssh_cancel_transactions(handle, TWOPENCE_TRANSPORT_ERROR);
+
+  /* We could also mark the handle in a way to make future
+   * command executions etc fail, just for symmetry with the
+   * pipe targets.
+   * But I currently don't see the point of doing that. */
+  return 0;
+}
+
 // Tell the remote test server to exit
 //
 // Returns 0 if everything went fine
@@ -1585,5 +1615,6 @@ const struct twopence_plugin twopence_ssh_ops = {
 	.extract_file = twopence_ssh_extract_file,
 	.exit_remote = twopence_ssh_exit_remote,
 	.interrupt_command = twopence_ssh_interrupt_command,
+	.disconnect = twopence_ssh_disconnect,
 	.end = twopence_ssh_end,
 };
