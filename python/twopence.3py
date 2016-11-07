@@ -523,6 +523,52 @@ object's \fBstdout\fP and \fBstderr\fP objects is undefined.
 .\" --------------------------------------------------------------
 .\"
 .\"
+.SS Using timers
+.\" --------------------------------------------------------------
+In addition to setting a timeout value on individual commands, it is
+also possible to create global timers independent from a target. These
+can be created using the following contructor call:
+.TP
+.BI twopence.Timer( timeout "[, callback =" callable "])
+This will create a \fBTimer\fP object, setting its timeout to the specified
+number of seconds. The \fBtimeout\fP parameter is a double, so fractional
+values can be passed. The optional \fBcallback\fP parameter specifies the
+callback function that will be invoked upon expiration.
+.PP
+Note that the timer will be cancelled when the Timer object is deleted.
+.PP
+\fBTimer\fP objects currently support the following attributes and
+methods:
+.TP
+.BR state " (read-only)
+This describes the state the timer is currently in, which can be
+.BR active ,
+.BR paused ,
+.BR cancelled ", or
+.BR expired .
+.TP
+.BR callback " (read-write)
+This attribute holds a python callable.
+.TP
+.BR remaining " (read-only)
+This attribute returns a floating point value describing the
+remaining time (in seconds) until the timer expires.
+.TP
+.BR pause ()
+This will pause an active timer, and save the remaining time until it
+expires. For timers in a state other than \fBactive\fP, this operation
+will be a no-op.
+.TP
+.BR unpause ()
+This will resume a paused timer. The time of expiry will be adjusted to
+match the remaining time at the point where the timer was paused.
+For timers in a state other than \fBpaused\fP, this operation will be a no-op.
+.TP
+.BR cancel ()
+This will cancel an active timer. No action will be performed.
+.\" --------------------------------------------------------------
+.\"
+.\"
 .SS Twopence Exceptions
 .\" --------------------------------------------------------------
 For now, the twopence python bindings do not define their own

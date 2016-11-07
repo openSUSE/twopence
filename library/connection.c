@@ -592,7 +592,6 @@ twopence_conn_pool_add_connection(twopence_conn_pool_t *pool, twopence_conn_t *c
 	twopence_conn_list_insert(&pool->connections, conn);
 }
 
-
 bool
 twopence_conn_pool_poll(twopence_conn_pool_t *pool)
 {
@@ -613,6 +612,12 @@ twopence_conn_pool_poll(twopence_conn_pool_t *pool)
 	}
 
 	twopence_pollinfo_init(&poll_info, alloca(maxfds * sizeof(struct pollfd)), maxfds);
+
+	/* Check the regular timers.
+	 * Note, if any of them has expired, we will set pinfo->timeout.expired.
+	 * This will cause us to pass a timeout value of 0 to ppoll() later
+	 * in twopence_pollinfo_ppoll() */
+	twopence_timers_update_timeout(&poll_info.timeout);
 
 	for (conn = pool->connections.head; conn; conn = next) {
 		next = conn->next;
@@ -656,6 +661,10 @@ twopence_conn_pool_poll(twopence_conn_pool_t *pool)
 			twopence_conn_close(conn);
 		}
 	}
+
+	/* We do this as the last thing before returning, in order to minimize the
+	 * risk of harmful user behavior */
+	twopence_timers_run();
 
 	return !!pool->connections.head;
 }

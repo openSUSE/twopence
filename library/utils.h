@@ -36,6 +36,10 @@ typedef struct twopence_pollinfo {
 	twopence_timeout_t	timeout;
 } twopence_pollinfo_t;
 
+typedef struct twopence_timer_list {
+	struct twopence_timer *		head;
+} twopence_timer_list_t;
+
 extern void		twopence_timeout_init(twopence_timeout_t *);
 extern bool		twopence_timeout_update(twopence_timeout_t *, const struct timeval *deadline);
 extern long		twopence_timeout_msec(const twopence_timeout_t *);
@@ -52,5 +56,15 @@ extern void *		twopence_realloc(void *p, size_t size);
 extern void *		twopence_calloc(size_t nmemb, size_t size);
 extern char *		twopence_strdup(const char *s);
 extern void		twopence_strfree(char **sp);
+
+extern void		twopence_timer_list_insert(twopence_timer_list_t *list, struct twopence_timer *timer);
+extern void		twopence_timer_list_update_timeout(twopence_timer_list_t *, twopence_timeout_t *);
+extern void		twopence_timer_list_expire(twopence_timer_list_t *list);
+extern void		twopence_timer_list_reap(twopence_timer_list_t *list, twopence_timer_list_t *expired);
+extern void		twopence_timer_list_invoke(twopence_timer_list_t *list);
+extern void		twopence_timer_list_destroy(twopence_timer_list_t *list);
+
+extern void		twopence_timers_update_timeout(twopence_timeout_t *tmo);
+extern void		twopence_timers_run(void);
 
 #endif /* UTILS_H */

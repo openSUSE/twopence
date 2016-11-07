@@ -35,18 +35,16 @@ twopence_timeout_init(twopence_timeout_t *tmo)
 bool
 twopence_timeout_update(twopence_timeout_t *tmo, const struct timeval *deadline)
 {
-	struct timeval delta;
-
 	if (deadline->tv_sec == 0)
 		return true;
 
-	if (timercmp(&tmo->now, deadline, >=))
+	if (timercmp(&tmo->now, deadline, >=)) {
+		tmo->until = tmo->now;
 		return false; /* expired */
+	}
 
-	/* deadline is still in the future. Figure out how much longer we have */
-	timersub(deadline, &tmo->now, &delta);
-	if (!timerisset(&tmo->until) || timercmp(&delta, &tmo->until, <))
-		tmo->until = delta;
+	if (!timerisset(&tmo->until) || timercmp(deadline, &tmo->until, <))
+		tmo->until = *deadline;
 
 	return true;
 }
@@ -54,20 +52,28 @@ twopence_timeout_update(twopence_timeout_t *tmo, const struct timeval *deadline)
 long
 twopence_timeout_msec(const twopence_timeout_t *tmo)
 {
+	struct timeval delta;
+
 	if (!timerisset(&tmo->until))
 		return -1;
-	return 1000 * tmo->until.tv_sec + tmo->until.tv_usec / 1000;
+
+	timersub(&tmo->until, &tmo->now, &delta);
+	return 1000 * delta.tv_sec + delta.tv_usec / 1000;
 }
 
 struct timespec *
 twopence_timeout_timespec(const twopence_timeout_t *tmo)
 {
 	static struct timespec value;
+	struct timeval delta;
 
 	if (!timerisset(&tmo->until))
 		return NULL;
-	value.tv_sec = tmo->until.tv_sec;
-	value.tv_nsec = tmo->until.tv_usec * 1000;
+
+	timersub(&tmo->until, &tmo->now, &delta);
+	value.tv_sec = delta.tv_sec;
+	value.tv_nsec = delta.tv_usec * 1000;
+
 	return &value;
 }
 

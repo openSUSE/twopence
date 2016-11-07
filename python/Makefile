@@ -27,6 +27,7 @@ OBJS	= extension.o \
 	  transfer.o \
 	  status.o \
 	  chat.o \
+	  timer.o \
 	  target.o
 
 all: twopence.so

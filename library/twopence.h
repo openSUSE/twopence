@@ -82,6 +82,7 @@ typedef struct twopence_iostream twopence_iostream_t;
 typedef struct twopence_file_xfer twopence_file_xfer_t;
 typedef struct twopence_chat twopence_chat_t;
 typedef struct twopence_expect twopence_expect_t;
+typedef struct twopence_timer twopence_timer_t;
 
 struct twopence_plugin {
 	const char *		name;
@@ -232,6 +233,36 @@ struct twopence_expect {
 
 	unsigned int		nstrings;
 	const char *		strings[TWOPENCE_EXPECT_MAX_STRINGS];
+};
+
+/*
+ * Timer objects
+ */
+enum {
+	TWOPENCE_TIMER_STATE_ACTIVE,
+	TWOPENCE_TIMER_STATE_PAUSED,
+	TWOPENCE_TIMER_STATE_EXPIRED,
+	TWOPENCE_TIMER_STATE_CANCELLED,
+	TWOPENCE_TIMER_STATE_DEAD,
+};
+
+struct twopence_timer {
+	struct twopence_timer **prev;
+	struct twopence_timer *	next;
+
+	unsigned int		refcount;
+
+	unsigned int		id;
+	unsigned int		connection_id;
+
+	int			state;
+	struct timeval		runtime;
+	struct timeval		expires;
+
+	/* This callback is invoked when the timer expired.
+	 */
+	void			(*callback)(twopence_timer_t *, void *user_data);
+	void *			user_data;
 };
 
 /*
@@ -513,6 +544,12 @@ extern int		twopence_disconnect(twopence_target_t *target);
  */
 extern int		twopence_interrupt_command(struct twopence_target *target);
 
+
+/*
+ * Create a global timer.
+ */
+extern int		twopence_timer_create(unsigned long timeout_ms, twopence_timer_t **timer_ret);
+
 /*
  * Close the library
  *
@@ -579,6 +616,17 @@ extern int		twopence_iostream_getfd(twopence_iostream_t *);
 extern twopence_substream_t *twopence_substream_new_buffer(twopence_buf_t *, bool resizable);
 extern twopence_substream_t *twopence_substream_new_fd(int fd, bool closeit);
 extern void		twopence_substream_close(twopence_substream_t *);
+
+/*
+ * Timer functions
+ */
+extern void		twopence_timer_set_callback(twopence_timer_t *, void (*callback)(twopence_timer_t *, void *), void *);
+extern void		twopence_timer_hold(twopence_timer_t *);
+extern void		twopence_timer_release(twopence_timer_t *);
+extern void		twopence_timer_cancel(twopence_timer_t *);
+extern void		twopence_timer_pause(twopence_timer_t *);
+extern void		twopence_timer_unpause(twopence_timer_t *);
+extern long		twopence_timer_remaining(const twopence_timer_t *);
 
 /*
  * Logging functions
