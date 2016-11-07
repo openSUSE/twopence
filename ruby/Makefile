@@ -25,7 +25,7 @@ twopence-$(VERSION).gem: twopence.gemspec Rakefile ext/twopence/extconf.rb \
                     ../library/twopence.h ../library/buffer.h
 	gem build twopence.gemspec
 
-twopence.gemspec: twopence.gemspec.in
+twopence.gemspec: twopence.gemspec.in ../subst.sh
 	../subst.sh < $< > $@
 
 install: twopence-$(VERSION).gem

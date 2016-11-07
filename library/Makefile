@@ -55,7 +55,7 @@ install: libtwopence.so $(HEADERS)
 	install -m444 $(HEADERS) $(DESTDIR)$(INCDIR)/twopence
 	../instman.sh -z -d "$(DESTDIR)" twopence.3
 
-version.h: version.h.in
+version.h: version.h.in ../subst.sh
 	../subst.sh < $< > $@
 
 clean:
