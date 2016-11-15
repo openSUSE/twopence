@@ -33,7 +33,12 @@ struct pollfd;
 #define TWOPENCE_API_MAJOR_VERSION	0
 #define TWOPENCE_API_MINOR_VERSION	3
 
-/* Error codes */
+/*
+ * Error codes.
+ * Note: if you define new error codes, make sure you extend
+ * twopence_strerror(), and define a symbolic constant in
+ * the python module (ie twopence.FOOBAR_ERROR).
+ */
 #define TWOPENCE_PARAMETER_ERROR		-1
 #define TWOPENCE_OPEN_SESSION_ERROR		-2
 #define TWOPENCE_SEND_COMMAND_ERROR		-3

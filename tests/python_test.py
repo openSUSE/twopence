@@ -1119,8 +1119,7 @@ try:
 	timer = twopence.Timer(2, callback = target.cancel_transactions)
 	status = target.run(cmd)
 
-	# Still a magic number here, not great
-	testCaseCheckLocalError(status, 21)
+	testCaseCheckLocalError(status, twopence.COMMAND_CANCELED_ERROR)
 except:
 	testCaseFail("Command should have soft-failed");
 	import traceback
