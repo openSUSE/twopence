@@ -83,6 +83,46 @@ twopence_registerType(PyObject *m, const char *name, PyTypeObject *type)
 	PyModule_AddObject(m, name, (PyObject *) type);
 }
 
+#define DECLARE_ERROR(x) \
+	{ TWOPENCE_##x, #x }
+
+static void
+twopence_registerErrorConstants(PyObject *m)
+{
+	struct map {
+		int		code;
+		const char *	name;
+	};
+	struct map errorMap[] = {
+		DECLARE_ERROR(PARAMETER_ERROR),
+		DECLARE_ERROR(OPEN_SESSION_ERROR),
+		DECLARE_ERROR(SEND_COMMAND_ERROR),
+		DECLARE_ERROR(FORWARD_INPUT_ERROR),
+		DECLARE_ERROR(RECEIVE_RESULTS_ERROR),
+		DECLARE_ERROR(COMMAND_TIMEOUT_ERROR),
+		DECLARE_ERROR(LOCAL_FILE_ERROR),
+		DECLARE_ERROR(SEND_FILE_ERROR),
+		DECLARE_ERROR(REMOTE_FILE_ERROR),
+		DECLARE_ERROR(RECEIVE_FILE_ERROR),
+		DECLARE_ERROR(INTERRUPT_COMMAND_ERROR),
+		DECLARE_ERROR(INVALID_TARGET_ERROR),
+		DECLARE_ERROR(UNKNOWN_PLUGIN_ERROR),
+		DECLARE_ERROR(INCOMPATIBLE_PLUGIN_ERROR),
+		DECLARE_ERROR(UNSUPPORTED_FUNCTION_ERROR),
+		DECLARE_ERROR(PROTOCOL_ERROR),
+		DECLARE_ERROR(INTERNAL_ERROR),
+		DECLARE_ERROR(TRANSPORT_ERROR),
+		DECLARE_ERROR(INCOMPATIBLE_PROTOCOL_ERROR),
+		DECLARE_ERROR(INVALID_TRANSACTION),
+		DECLARE_ERROR(COMMAND_CANCELED_ERROR),
+		{ -1, NULL }
+	};
+	struct map *em;
+
+	for (em = errorMap; em->name; ++em)
+		PyModule_AddIntConstant(m, em->name, -em->code);
+}
+
 PyObject *
 twopence_callObject(PyObject *callable, PyObject *args, PyObject *kwds)
 {
@@ -118,4 +158,6 @@ inittwopence(void)
 	twopence_registerType(m, "Status", &twopence_StatusType);
 	twopence_registerType(m, "Chat", &twopence_ChatType);
 	twopence_registerType(m, "Timer", &twopence_TimerType);
+
+	twopence_registerErrorConstants(m);
 }

@@ -317,10 +317,12 @@ twopence_conn_cancel_transactions(twopence_conn_t *conn, int error)
 {
 	twopence_transaction_t *trans;
 
-	if (conn->transactions.head)
+	twopence_debug("%s(%s)", __func__, twopence_strerror(error));
+
+	if (conn->transactions.head
+	 && error != TWOPENCE_COMMAND_CANCELED_ERROR)
 		twopence_log_error("remote closed the connection while there were pending transactions");
 
-	twopence_debug("%s()", __func__);
 	while ((trans = conn->transactions.head) != NULL) {
 		twopence_transaction_set_error(trans, error);
 		twopence_conn_transaction_complete(conn, trans);

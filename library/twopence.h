@@ -33,7 +33,12 @@ struct pollfd;
 #define TWOPENCE_API_MAJOR_VERSION	0
 #define TWOPENCE_API_MINOR_VERSION	3
 
-/* Error codes */
+/*
+ * Error codes.
+ * Note: if you define new error codes, make sure you extend
+ * twopence_strerror(), and define a symbolic constant in
+ * the python module (ie twopence.FOOBAR_ERROR).
+ */
 #define TWOPENCE_PARAMETER_ERROR		-1
 #define TWOPENCE_OPEN_SESSION_ERROR		-2
 #define TWOPENCE_SEND_COMMAND_ERROR		-3
@@ -54,6 +59,7 @@ struct pollfd;
 #define TWOPENCE_TRANSPORT_ERROR		-18
 #define TWOPENCE_INCOMPATIBLE_PROTOCOL_ERROR	-19
 #define TWOPENCE_INVALID_TRANSACTION		-20
+#define TWOPENCE_COMMAND_CANCELED_ERROR		-21
 
 typedef struct twopence_target twopence_target_t;
 
@@ -63,6 +69,9 @@ typedef struct twopence_target twopence_target_t;
  *		indicating any issues encountered while executing
  *		the command.
  * minor:	this is the exit status of the command itself.
+ * pid:		the pid of the command. This is mostly useful
+ *		when wait() returns an error, and you wish to
+ *		know which command errored out.
  *
  * FIXME: we should dissect the status code on the SUT rather than
  * the system running twopence, as the exit code, signal information
@@ -74,6 +83,7 @@ typedef struct twopence_target twopence_target_t;
 typedef struct twopence_status {
 	int			major;
 	int			minor;
+	int			pid;
 } twopence_status_t;
 
 /* Forward decls for the plugin functions */
@@ -99,6 +109,7 @@ struct twopence_plugin {
 	int			(*extract_file)(struct twopence_target *, twopence_file_xfer_t *, twopence_status_t *);
 	int			(*exit_remote)(struct twopence_target *);
 	int			(*interrupt_command)(struct twopence_target *);
+	int			(*cancel_transactions)(twopence_target_t *);
 	int			(*disconnect)(twopence_target_t *);
 	void			(*end)(struct twopence_target *);
 };
@@ -515,6 +526,17 @@ extern int		twopence_recv_file(struct twopence_target *target,
  *   Returns 0 if everything went fine.
  */
 extern int		twopence_exit_remote(struct twopence_target *target);
+
+/*
+ * Cancel all pending transactions with a status of TWOPENCE_COMMAND_CANCELED_ERROR
+ *
+ * Input:
+ *   handle: the handle returned by the initialization function
+ *
+ * Output:
+ *   Returns 0 if everything went fine.
+ */
+extern int		twopence_cancel_transactions(twopence_target_t *target);
 
 /*
  * Disconnect from the SUT, and cancel all pending transactions.

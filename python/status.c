@@ -30,6 +30,9 @@ static PyObject *	Status_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 static int		Status_init(twopence_Status *self, PyObject *args, PyObject *kwds);
 static PyObject *	Status_getattr(twopence_Status *self, char *name);
 static int		Status_nonzero(twopence_Status *);
+static int		Status_code(const twopence_Status *self);
+static int		Status_nameToSignal(const char *);
+static const char *	Status_signalToName(int signal);
 
 /*
  * Define the python bindings of class "Status"
@@ -75,6 +78,9 @@ Status_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 
 	/* init members */
 	self->remoteStatus = 0;
+	self->localError = 0;
+	self->exitSignal = 0;
+
 	self->stdout = NULL;
 	self->stderr = NULL;
 	self->command = NULL;
@@ -93,18 +99,32 @@ Status_init(twopence_Status *self, PyObject *args, PyObject *kwds)
 		"status",
 		"stdout",
 		"stderr",
+		"error",
+		"signal",
 		NULL
 	};
 	PyObject *stdoutObject = NULL, *stderrObject = NULL;
-	int exitval = 0;
+	const char *signalName = NULL;
+	int exitval = 0, error = 0, signal = 0;
 
 	if (args == Py_None)
 		return 0;
 
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "|iOO", kwlist, &exitval, &stdoutObject, &stderrObject))
+	if (!PyArg_ParseTupleAndKeywords(args, kwds, "|iOOis", kwlist,
+				&exitval, &stdoutObject, &stderrObject, &error, &signal))
 		return -1;
 
+	if (signalName) {
+		signal = Status_nameToSignal(signalName);
+		if (signal < 0) {
+			PyErr_Format(PyExc_ValueError, "bad signal name \"%s\"", signalName);
+			return -1;
+		}
+	}
+
 	self->remoteStatus = exitval;
+	self->localError = error;
+	self->exitSignal = signal;
 	self->stdout = NULL;
 	self->stderr = NULL;
 	self->buffer = NULL;
@@ -151,15 +171,17 @@ Status_object_attr(twopence_Status *self, PyObject *result)
 static PyObject *
 Status_message(twopence_Status *self)
 {
-	int st = self->remoteStatus;
 	char message[128];
 
 	message[0] = '\0';
 
-	if (st == 0) {
+	if (self->exitSignal) {
+		snprintf(message, sizeof(message), "crashed (received signal %s)",
+				Status_signalToName(self->exitSignal));
+	} else if (self->localError) {
+		snprintf(message, sizeof(message), "local error: %s", twopence_strerror(self->localError));
+	} else if (self->remoteStatus == 0) {
 		strcpy(message, "success");
-	} else if (st & 0x100) {
-		snprintf(message, sizeof(message), "crashed (signal %u)", st & 0xFF);
 	} else {
 		snprintf(message, sizeof(message), "status %d", self->remoteStatus);
 	}
@@ -177,7 +199,18 @@ Status_getattr(twopence_Status *self, char *name)
 	if (!strcmp(name, "buffer"))
 		return Status_object_attr(self, self->buffer);
 	if (!strcmp(name, "code"))
+		return PyInt_FromLong(Status_code(self));
+	if (!strcmp(name, "localError"))
+		return PyInt_FromLong(-self->localError);
+	if (!strcmp(name, "exitStatus"))
 		return PyInt_FromLong(self->remoteStatus);
+	if (!strcmp(name, "exitSignal")) {
+		if (self->exitSignal == 0) {
+			Py_INCREF(Py_None);
+			return Py_None;
+		}
+		return PyString_FromString(Status_signalToName(self->exitSignal));
+	}
 	if (!strcmp(name, "command")) {
 		PyObject *result = self->command;
 
@@ -204,5 +237,75 @@ Status_getattr(twopence_Status *self, char *name)
 static int
 Status_nonzero(twopence_Status *self)
 {
-	return self->remoteStatus == 0;
+	return (self->remoteStatus | self->localError | self->exitSignal) == 0;
+}
+
+static int
+Status_code(const twopence_Status *self)
+{
+	if (self->exitSignal)
+		return 0x100 | self->exitSignal;
+	if (self->localError)
+		return 0x200 | self->localError;
+	return self->remoteStatus;
+}
+
+/*
+ * Signal to name mapping
+ */
+#define SIG(NAME)	{ .no = SIG##NAME, .name = #NAME }, \
+			{ .no = SIG##NAME, .name = "SIG" #NAME }
+
+static struct signal_name {
+	int no;
+	const char *name;
+} signal_names[] = {
+	SIG(HUP),
+	SIG(INT),
+	SIG(QUIT),
+	SIG(ILL),
+	SIG(ABRT),
+	SIG(FPE),
+	SIG(KILL),
+	SIG(SEGV),
+	SIG(ALRM),
+	SIG(PIPE),
+	SIG(TERM),
+	SIG(USR1),
+	SIG(USR2),
+	SIG(CHLD),
+	SIG(BUS),
+	{ 0, NULL }
+};
+
+
+static int
+Status_nameToSignal(const char *name)
+{
+	struct signal_name *n;
+
+	for (n = signal_names; n->name; ++n) {
+		if (!strcasecmp(n->name, name))
+			return n->no;
+	}
+
+	return -1;
+}
+
+static const char *
+Status_signalToName(int signal)
+{
+	static char namebuf[16];
+	struct signal_name *n;
+
+	if (signal == 0)
+		return "none";
+
+	for (n = signal_names; n->name; ++n) {
+		if (n->no == signal)
+			return n->name;
+	}
+
+	snprintf(namebuf, sizeof(namebuf), "SIG%u", signal);
+	return namebuf;
 }

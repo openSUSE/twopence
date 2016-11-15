@@ -204,6 +204,7 @@ const struct twopence_plugin twopence_chroot_ops = {
 	.extract_file = twopence_pipe_extract_file,
 	.exit_remote = twopence_pipe_exit_remote,
 	.interrupt_command = twopence_pipe_interrupt_command,
+	.cancel_transactions = twopence_pipe_cancel_transactions,
 	.disconnect = twopence_pipe_disconnect,
 	.end = twopence_pipe_end,
 };
@@ -221,6 +222,7 @@ const struct twopence_plugin twopence_local_ops = {
 	.extract_file = twopence_pipe_extract_file,
 	.exit_remote = twopence_pipe_exit_remote,
 	.interrupt_command = twopence_pipe_interrupt_command,
+	.cancel_transactions = twopence_pipe_cancel_transactions,
 	.disconnect = twopence_pipe_disconnect,
 	.end = twopence_pipe_end,
 };

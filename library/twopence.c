@@ -209,6 +209,8 @@ twopence_target_passenv(twopence_target_t *target, const char *name)
 int
 twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twopence_status_t *status)
 {
+  memset(status, 0, sizeof(*status));
+
   if (target->ops->run_test == NULL)
     return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 
@@ -227,6 +229,8 @@ twopence_run_test(struct twopence_target *target, twopence_command_t *cmd, twope
 int
 twopence_wait(struct twopence_target *target, int pid, twopence_status_t *status)
 {
+  memset(status, 0, sizeof(*status));
+
   if (target->ops->wait == NULL)
     return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 
@@ -576,6 +580,8 @@ twopence_inject_file
 int
 twopence_send_file(struct twopence_target *target, twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
+  memset(status, 0, sizeof(*status));
+
   if (target->ops->inject_file == NULL)
     return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 
@@ -587,7 +593,6 @@ twopence_send_file(struct twopence_target *target, twopence_file_xfer_t *xfer, t
   if (xfer->remote.mode == 0)
     xfer->remote.mode = 0644;
 
-  memset(status, 0, sizeof(*status));
   return target->ops->inject_file(target, xfer, status);
 }
 
@@ -623,6 +628,8 @@ twopence_extract_file
 int
 twopence_recv_file(struct twopence_target *target, twopence_file_xfer_t *xfer, twopence_status_t *status)
 {
+  memset(status, 0, sizeof(*status));
+
   if (target->ops->inject_file == NULL)
     return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 
@@ -634,7 +641,6 @@ twopence_recv_file(struct twopence_target *target, twopence_file_xfer_t *xfer, t
   if (xfer->remote.mode == 0)
     xfer->remote.mode = 0644;
 
-  memset(status, 0, sizeof(*status));
   return target->ops->extract_file(target, xfer, status);
 }
 
@@ -645,6 +651,15 @@ twopence_exit_remote(struct twopence_target *target)
     return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
 
   return target->ops->exit_remote(target);
+}
+
+int
+twopence_cancel_transactions(twopence_target_t *target)
+{
+  if (target->ops->cancel_transactions == NULL)
+    return TWOPENCE_UNSUPPORTED_FUNCTION_ERROR;
+
+  return target->ops->cancel_transactions(target);
 }
 
 int
@@ -713,6 +728,8 @@ twopence_strerror(int rc)
       return "Protocol versions not compatible between client and server";
     case TWOPENCE_INVALID_TRANSACTION:
       return "Invalid transaction ID";
+    case TWOPENCE_COMMAND_CANCELED_ERROR:
+      return "Command canceled by user";
   }
   return "Unknow error";
 }

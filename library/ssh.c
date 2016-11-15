@@ -503,7 +503,7 @@ __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
 
   if (trans->channel == NULL) {
     __twopence_ssh_transaction_fail(trans, TWOPENCE_TRANSPORT_ERROR);
-    return -1;
+    return TWOPENCE_TRANSPORT_ERROR;
   }
 
   /*
@@ -530,10 +530,8 @@ __twopence_ssh_transaction_get_exit_status(twopence_ssh_transaction_t *trans)
     twopence_log_error("transaction %d has no exit status", trans->pid);
     status->major = 0;
     (void) ssh_channel_get_exit_status(trans->channel);
-    if (!trans->have_exit_status) {
-      twopence_log_error("ssh_channel_get_exit_status didn't set the exit status either, faking it");
-      trans->status.major = EIO;
-    }
+    if (!trans->have_exit_status)
+      return TWOPENCE_TRANSPORT_ERROR;
   }
 
   twopence_debug("exit status is %d/%d\n", status->major, status->minor);
@@ -976,6 +974,8 @@ __twopence_ssh_command_ssh
   if (trans == NULL)
     return TWOPENCE_OPEN_SESSION_ERROR;
 
+  status_ret->pid = trans->pid;
+
   rc = __twopence_ssh_transaction_open_session(trans, cmd->user);
   if (rc != 0) {
     __twopence_ssh_transaction_free(trans);
@@ -1015,7 +1015,8 @@ __twopence_ssh_command_ssh
   if (trans->exception) {
     rc = trans->exception;
   } else {
-    *status_ret = trans->status;
+    status_ret->major = trans->status.major;
+    status_ret->minor = trans->status.minor;
     rc = 0;
   }
 
@@ -1339,9 +1340,6 @@ twopence_ssh_run_test
   if (cmd->command == NULL)
     return TWOPENCE_PARAMETER_ERROR;
 
-  /* 'major' makes no sense for SSH and 'minor' defaults to 0 */
-  memset(status_ret, 0, sizeof(*status_ret));
-
   // Execute the command
   return __twopence_ssh_command_ssh(handle, cmd, status_ret);
 }
@@ -1378,10 +1376,12 @@ twopence_ssh_wait(struct twopence_target *opaque_handle, int want_pid, twopence_
 
   assert(trans->done);
 
+  status->pid = trans->pid;
   if (trans->exception < 0) {
     rc = trans->exception;
   } else {
-    *status = trans->status;
+    status->major = trans->status.major;
+    status->minor = trans->status.minor;
     rc = trans->pid;
   }
 
@@ -1550,6 +1550,18 @@ twopence_ssh_interrupt_command(struct twopence_target *opaque_handle)
   return __twopence_ssh_interrupt_ssh(handle);
 }
 
+// Cancel all pending transactions
+//
+// Returns 0 if everything went fine
+static int
+twopence_ssh_cancel_transactions(struct twopence_target *opaque_handle)
+{
+  struct twopence_ssh_target *handle = (struct twopence_ssh_target *) opaque_handle;
+
+  __twopence_ssh_cancel_transactions(handle, TWOPENCE_COMMAND_CANCELED_ERROR);
+  return 0;
+}
+
 // Disconnect from remote, and cancel all pending transactions
 //
 // Returns 0 if everything went fine
@@ -1603,6 +1615,7 @@ const struct twopence_plugin twopence_ssh_ops = {
 	.extract_file = twopence_ssh_extract_file,
 	.exit_remote = twopence_ssh_exit_remote,
 	.interrupt_command = twopence_ssh_interrupt_command,
+	.cancel_transactions = twopence_ssh_cancel_transactions,
 	.disconnect = twopence_ssh_disconnect,
 	.end = twopence_ssh_end,
 };

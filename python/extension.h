@@ -50,6 +50,7 @@ typedef struct {
 	PyObject *	stdin;
 	bool		useTty;
 	bool		background;
+	bool		softfail;
 
 	twopence_env_t	environ;
 
@@ -81,6 +82,9 @@ typedef struct {
 	PyObject_HEAD
 
 	int		remoteStatus;
+	int		localError;
+	int		exitSignal;
+
 	/* for cmd operations */
 	PyObject *	stdout;
 	PyObject *	stderr;

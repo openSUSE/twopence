@@ -70,9 +70,37 @@ def testCaseSkip(msg):
 
 def testCaseCheckStatus(status, expectExitCode = 0):
 	print # command may not have printed a newline
+	if status is None:
+		testCaseFail("status object is None")
+		return False
 	print "Transaction finished; status %d" % status.code
+	if status.exitSignal:
+		testCaseFail("status object claims this command exited with signal %s" % status.exitSignal)
+		return False
+	if status.localError:
+		testCaseFail("status object claims this command failed with local error %d" % status.localError)
+		return False
 	if status.code != expectExitCode:
 		testCaseFail("command exited with status %d, expected %d" % (status.code, expectExitCode));
+		return False
+	return True
+
+def testCaseCheckLocalError(status, expectError):
+	print # command may not have printed a newline
+	print "Transaction finished; %s" % status.message
+	if status.localError != expectError:
+		testCaseFail("command exited with local error %d, expected %d" % (status.localError, expectError));
+		return False
+	return True
+
+def testCaseCheckSignal(status, expectExitSignal):
+	print # command may not have printed a newline
+	print "Transaction finished; %s" % status.message
+	if status.localError:
+		testCaseFail("unexpected local error %d in command" % status.localError)
+		return False
+	if status.exitSignal != expectExitSignal:
+		testCaseFail("command exited with signal %s, expected %s" % (status.exitSignal, expectExitSignal));
 		return False
 	return True
 
@@ -294,7 +322,7 @@ testCaseReport()
 testCaseBegin("run command kill -9 $$")
 try:
 	status = target.run("bash -c 'kill -9 $$'")
-	testCaseCheckStatus(status, 256 + 9)
+	testCaseCheckSignal(status, "KILL")
 except:
 	testCaseException()
 testCaseReport()
@@ -669,12 +697,7 @@ else:
 	target.run("sleep 3", background = 1);
 
 	status = target.waitAll(print_dots = 1);
-	if status == None:
-		testCaseFail("waitAll didn't return any status")
-	elif status.code != 2:
-		testCaseFail("waitAll should have reported an error")
-	else:
-		print "Good, waitAll returns an exit status of 2"
+	testCaseCheckStatus(status, 2)
 	if target.wait() != None:
 		testCaseFail("there were still commands left after waitAll returned")
     except:
@@ -682,7 +705,7 @@ else:
 testCaseReport()
 
 crossTargetConcurrencySupport = backgroundingSupported
-if target.type != "virtio" and target.type != "tcp" and target.type != "serial":
+if target.type not in ("virtio", "serial", "tcp", "chroot", "local"):
     crossTargetConcurrencySupport = False
 
 testCaseBegin("run concurrent processes on multiple targets")
@@ -1088,6 +1111,21 @@ try:
 		testCaseFail("callback was not invoked")
 except:
 	testCaseException()
+testCaseReport()
+
+testCaseBegin("Check whether we can cancel transactions")
+try:
+	cmd = twopence.Command("sleep 10", softfail = True)
+	timer = twopence.Timer(2, callback = target.cancel_transactions)
+	status = target.run(cmd)
+
+	testCaseCheckLocalError(status, twopence.COMMAND_CANCELED_ERROR)
+except:
+	testCaseFail("Command should have soft-failed");
+	import traceback
+
+	print traceback.format_exc(None)
+
 testCaseReport()
 
 

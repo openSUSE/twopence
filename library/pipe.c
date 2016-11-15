@@ -357,7 +357,10 @@ __twopence_transaction_run(struct twopence_pipe_target *handle, twopence_transac
     }
   }
 
-  *status = trans->client.status_ret;
+  status->pid = trans->id;
+  status->major = trans->client.status_ret.major;
+  status->minor = trans->client.status_ret.minor;
+
   if (trans->client.exception < 0)
     return trans->client.exception;
 
@@ -475,9 +478,6 @@ __twopence_pipe_command(struct twopence_pipe_target *handle, twopence_command_t 
 {
   twopence_transaction_t *trans;
   int rc;
-
-  // By default, no major and no minor
-  memset(status_ret, 0, sizeof(*status_ret));
 
   // Check that the username is valid
   if (_twopence_invalid_username(cmd->user))
@@ -687,6 +687,14 @@ __twopence_pipe_disconnect(struct twopence_pipe_target *handle)
   return 0;
 }
 
+static int
+__twopence_pipe_cancel_transactions(struct twopence_pipe_target *handle)
+{
+  if (handle->connection)
+    twopence_conn_cancel_transactions(handle->connection, TWOPENCE_COMMAND_CANCELED_ERROR);
+  return 0;
+}
+
 // Tell the remote test server to exit
 //
 // Returns 0 if everything went fine, or a negative error code if failed
@@ -793,14 +801,18 @@ twopence_pipe_wait(struct twopence_target *opaque_handle, int want_pid, twopence
   if (trans == NULL)
     return 0;
 
+  status->pid = trans->id;
+
   twopence_debug("%s: returning status for transaction %s", __func__, twopence_transaction_describe(trans));
   if (trans->client.exception < 0) {
     rc = trans->client.exception;
   } else {
-    *status = trans->client.status_ret;
+    status->major = trans->client.status_ret.major;
+    status->minor = trans->client.status_ret.minor;
     rc = trans->id;
   }
 
+  status->pid = trans->id;
   twopence_transaction_free(trans);
   return rc;
 }
@@ -851,6 +863,17 @@ twopence_pipe_interrupt_command(struct twopence_target *opaque_handle)
   struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
 
   return __twopence_pipe_interrupt_command(handle);
+}
+
+/*
+ * Cancel all pending transactions
+ */
+int
+twopence_pipe_cancel_transactions(twopence_target_t *opaque_handle)
+{
+  struct twopence_pipe_target *handle = (struct twopence_pipe_target *) opaque_handle;
+
+  return __twopence_pipe_cancel_transactions(handle);
 }
 
 /*
