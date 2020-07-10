@@ -3,7 +3,7 @@ Test executor, ssh plugin.
 It is used to send tests to real machines or VMs using SSH protocol.
 
 
-Copyright (C) 2014-2015 SUSE
+Copyright (C) 2014-2020 SUSE
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -879,12 +879,14 @@ __twopence_ssh_receive_file(twopence_scp_transaction_t *trans, twopence_status_t
       size = BUFFER_SIZE;
 
     received = ssh_scp_read(trans->scp, buffer, size);
-    if (received != size)
+    if (received == SSH_ERROR)
     {
       status->major = ssh_get_error_code(trans->session);
       __twopence_ssh_putc(trans->dots_stream, '\n');
       return TWOPENCE_RECEIVE_FILE_ERROR;
     }
+    if (received != size)                     // libssh might deliver less than requested
+      size = received;
 
     written = twopence_iostream_write(trans->local_stream, buffer, size);
     if (written != size)
