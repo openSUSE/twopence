@@ -18,8 +18,8 @@ all clean install::
 	done
 
 install::
-	mkdir -p $(DESTDIR)/usr/lib/twopence-0
-	cp add_virtio_channel.sh $(DESTDIR)/usr/lib/twopence-0/
+	mkdir -p $(DESTDIR)/usr/local/lib/twopence-0
+	cp add_virtio_channel.sh $(DESTDIR)/usr/local/lib/twopence-0/
 
 tests: server shell
 	make -C tests $@

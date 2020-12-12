@@ -23,6 +23,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <sys/types.h>
 #include <stdbool.h>
 #include <poll.h>
+#include <signal.h>
+#include <limits.h>
 
 typedef struct twopence_timeout {
 	struct timeval		now;
@@ -39,6 +41,10 @@ typedef struct twopence_pollinfo {
 typedef struct twopence_timer_list {
 	struct twopence_timer *		head;
 } twopence_timer_list_t;
+
+#ifndef HAVE_PPOLL
+extern int      ppoll(struct pollfd *fds, nfds_t nfds, const struct timespec *ts, const sigset_t *sigmask);
+#endif
 
 extern void		twopence_timeout_init(twopence_timeout_t *);
 extern bool		twopence_timeout_update(twopence_timeout_t *, const struct timeval *deadline);

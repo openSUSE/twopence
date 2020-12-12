@@ -760,7 +760,7 @@ twopence_transaction_recv_packet(twopence_transaction_t *trans, const twopence_h
 }
 
 
-inline void
+void
 twopence_transaction_send_client(twopence_transaction_t *trans, twopence_buf_t *bp)
 {
 	const twopence_hdr_t *h = (const twopence_hdr_t *) twopence_buf_head(bp);

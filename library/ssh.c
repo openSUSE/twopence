@@ -32,7 +32,9 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <string.h>
 #include <stdlib.h>
+#ifdef HAVE_MALLOC_H
 #include <malloc.h>
+#endif
 #include <signal.h>
 #include <assert.h>
 
