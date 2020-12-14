@@ -1,21 +1,32 @@
 .PHONY: all install clean
 
-DEBIAN := $(shell cat /etc/os-release | grep 'Debian' >/dev/null && echo "true" || echo "false")
-FEDORA := $(shell cat /etc/os-release | grep 'Fedora' >/dev/null && echo "true" || echo "false")
-SUSE   := $(shell cat /etc/os-release | grep 'SUSE' >/dev/null && echo "true" || echo "false")
-UBUNTU := $(shell cat /etc/os-release | grep 'Ubuntu' >/dev/null && echo "true" || echo "false")
+DEBIAN := $(shell cat /etc/os-release 2>/dev/null | grep 'Debian' >/dev/null && echo "true" || echo "false")
+FEDORA := $(shell cat /etc/os-release 2>/dev/null | grep 'Fedora' >/dev/null && echo "true" || echo "false")
+SUSE   := $(shell cat /etc/os-release 2>/dev/null | grep 'SUSE' >/dev/null && echo "true" || echo "false")
+UBUNTU := $(shell cat /etc/os-release 2>/dev/null | grep 'Ubuntu' >/dev/null && echo "true" || echo "false")
+MACOS  := $(shell sw_vers             2>/dev/null | grep 'macOS' >/dev/null && echo "true" || echo "false")
 
 ARCH      ?= x86_64
 ifeq ($(UBUNTU),true)
   LIBDIR  ?= /usr/lib/x86_64-linux-gnu
   RBVERSION ?= 2.3.0
   RBDIR      = $(LIBDIR)/ruby/$(RBVERSION)
+else ifeq ($(MACOS),true)
+  LIBDIR  ?= /usr/local/lib
+  RBVERSION ?= 2.7.0
+  RBDIR      = $(LIBDIR)/ruby/gems/$(RBVERSION)
 else
   LIBDIR  ?= /usr/lib64
   RBVERSION ?= 2.5.0
   RBDIR      = $(LIBDIR)/ruby/gems/$(RBVERSION)
 endif
-INCDIR    ?= /usr/include
+
+ifeq ($(MACOS),true)
+	INCDIR    ?= /usr/local/include
+else
+	INCDIR    ?= /usr/include
+endif
+
 VERSION   := $(shell ../subst.sh --version)
 
 all: twopence-$(VERSION).gem
@@ -28,8 +39,13 @@ twopence-$(VERSION).gem: twopence.gemspec Rakefile ext/twopence/extconf.rb \
 twopence.gemspec: twopence.gemspec.in ../subst.sh
 	../subst.sh < $< > $@
 
+ifeq ($(MACOS),true)
+install: twopence-$(VERSION).gem
+	ln -sf $(DESTDIR)$(LIBDIR)/libtwopence.0.dylib $(DESTDIR)$(LIBDIR)/libtwopence.dylib
+else
 install: twopence-$(VERSION).gem
 	ln -sf $(DESTDIR)$(LIBDIR)/libtwopence.so.$(VERSION) $(DESTDIR)$(LIBDIR)/libtwopence.so
+endif
 
 ifeq ($(UBUNTU),true)
 	CFLAGS="-I$(DESTDIR)$(INCDIR)" LDFLAGS="-L$(DESTDIR)$(LIBDIR)" DESTDIR="" \
@@ -41,14 +57,18 @@ else ifeq ($(FEDORA),true)
                gem install --local \
                      --install-dir "$(RBDIR)/" \
                      -V --force twopence-$(VERSION).gem
+else ifeq ($(MACOS),true)
+	CFLAGS="-I$(DESTDIR)$(INCDIR)" LDFLAGS="-L$(DESTDIR)$(LIBDIR)" DESTDIR="" \
+	       gem install --local \
+                     --build-root "$(DESTDIR)/" \
+                     --install-dir "$(RBDIR)/" \
+                     -V --force twopence-$(VERSION).gem
 else
 	CFLAGS="-I$(DESTDIR)$(INCDIR)" LDFLAGS="-L$(DESTDIR)$(LIBDIR)" DESTDIR="" \
 	       gem install --local \
                      --build-root "$(DESTDIR)/" \
                      --install-dir "$(RBDIR)/" \
                      -V --force twopence-$(VERSION).gem
-	rm $(DESTDIR)$(LIBDIR)/libtwopence.so
-	rm -f $(DESTDIR)$(RBDIR)/gems/twopence-$(VERSION)/ext/twopence/siteconf*.rb
 endif
 
 clean:
@@ -56,4 +76,4 @@ clean:
 	rm -f ext/library/buffer.h
 	rm -f ruby/ext/twopence/Makefile
 	rm -f ruby/ext/twopence/mkmf.log
-	rm -f twopence-$(VERSION).gem
+	rm -f twopence-*.gem

@@ -21,8 +21,11 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #ifndef TWOPENCE_PYTHON_EXT_H
 #define TWOPENCE_PYTHON_EXT_H
 
-
+#ifdef __APPLE__
+#include <Python/Python.h>
+#else
 #include <Python.h>
+#endif
 #include <twopence.h>
 #include <string.h>
 #include "utils.h"

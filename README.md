@@ -94,14 +94,14 @@ cat id_rsa.pub >> ~/.ssh/authorized keys
 ```
 
 * repeat for each account that will be used to run the tests
-* in the directory `/usr/lib/twopence/`
+* in the directory `/usr/local/lib/twopence/`
   adapt the first lines of test.rb and test.sh to the IP address or hostname of your system under test
 * run the following commands:
 
 ```console
 $ cd examples
-$ /usr/lib/twopence/test.sh
-$ ruby /usr/lib/twopence/test.rb
+$ /usr/local/lib/twopence/test.sh
+$ ruby /usr/local/lib/twopence/test.rb
 ```
 
 # How do I run the examples with virtio
@@ -116,14 +116,14 @@ $ ruby /usr/lib/twopence/test.rb
 * or you can use the provided script:
 
 ```console
-$ /usr/lib/twopence/add_virtio_channel.sh mydomain
+$ /usr/local/lib/twopence/add_virtio_channel.sh mydomain
 ```
 
 * start the VM
 * copy the test server into the VM:
 
 ```console
-$ scp /usr/lib/twopence/twopence_test_server root@sut.example.com:.
+$ scp /usr/local/lib/twopence/twopence_test_server root@sut.example.com:.
 ```
 
 instead of scp, you may use shared folders or whichever method you prefer
@@ -134,7 +134,7 @@ instead of scp, you may use shared folders or whichever method you prefer
 $ ./twopence_test_server
 ```
 
-* in the directory `/usr/lib/twopence/`
+* in the directory `/usr/local/lib/twopence/`
   adapt the first lines of test.rb and test.sh
   to the name of the socket file you just created; for example:
 
@@ -147,7 +147,7 @@ export TARGET=virtio:/var/run/twopence/test.sock
 ```console
 $ cd examples
 $ export LD_LIBRARY_PATH=../library
-$ ruby /usr/lib/twopence/test.rb
+$ ruby /usr/local/lib/twopence/test.rb
 ```
 
 * if you get error opening the communication,
@@ -166,7 +166,7 @@ $ ls -l /var/run/twopence/test.sock
 * copy the test server into the system under test:
 
 ```console
-$ scp /usr/lib/twopence/twopence_test_server root@sut.example.com:.
+$ scp /usr/local/lib/twopence/twopence_test_server root@sut.example.com:.
 ```
 
 instead of scp, you may use shared folders or whichever method you prefer
@@ -177,7 +177,7 @@ instead of scp, you may use shared folders or whichever method you prefer
 $ ./twopence_test_server
 ```
 
-* in the directory `/usr/lib/twopence/`
+* in the directory `/usr/local/lib/twopence/`
   adapt the first lines of test.rb and test.sh
   to the name of the character device; for example:
 
@@ -189,8 +189,8 @@ export TARGET=serial:/dev/ttyS0
 
 ```console
 $ cd examples
-$ /usr/lib/twopence/test.sh
-$ ruby /usr/lib/twopence/test.rb
+$ /usr/local/lib/twopence/test.sh
+$ ruby /usr/local/lib/twopence/test.rb
 ```
 
 * if you get error opening the communication,

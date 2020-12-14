@@ -27,6 +27,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <poll.h>
 #include <errno.h>
 #include <unistd.h>
+#include <string.h>
 
 #include "twopence.h"
 #include "pipe.h"

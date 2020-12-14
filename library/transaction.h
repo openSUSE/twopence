@@ -92,7 +92,7 @@ extern unsigned int		twopence_transaction_num_channels(const twopence_transactio
 extern int			twopence_transaction_fill_poll(twopence_transaction_t *trans, twopence_pollinfo_t *);
 extern void			twopence_transaction_doio(twopence_transaction_t *trans);
 extern void			twopence_transaction_recv_packet(twopence_transaction_t *trans, const twopence_hdr_t *hdr, twopence_buf_t *payload);
-extern inline void		twopence_transaction_send_client(twopence_transaction_t *trans, twopence_buf_t *bp);
+extern void	    	twopence_transaction_send_client(twopence_transaction_t *trans, twopence_buf_t *bp);
 extern void			twopence_transaction_send_status(twopence_transaction_t *trans, twopence_status_t *st);
 extern void			twopence_transaction_fail(twopence_transaction_t *, int);
 extern void			twopence_transaction_fail2(twopence_transaction_t *trans, int major, int minor);
