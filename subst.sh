@@ -14,8 +14,8 @@
 # If we ever bump the major version number, more manual work is
 # required.
 #
-VERSION=0.4.0
-DATE="December 2020"
+VERSION=0.4.1
+DATE="August 2021"
 
 # Special case
 if [ $# -eq 1 -a "$1" = "--version" ]; then
