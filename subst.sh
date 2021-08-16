@@ -14,7 +14,7 @@
 # If we ever bump the major version number, more manual work is
 # required.
 #
-VERSION=0.4.1
+VERSION=0.4.2
 DATE="August 2021"
 
 # Special case

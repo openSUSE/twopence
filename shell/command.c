@@ -3,7 +3,7 @@ Test command. It is used to send a test command to some testing environment.
 Currently the only supported environment is a livirt virtual machine.
 
 
-Copyright (C) 2014-2015 SUSE
+Copyright (C) 2014-2021 SUSE
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -31,19 +31,18 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 struct twopence_target *twopence_handle;
 
-enum { OPT_KEEPALIVE };
-
-char *short_options = "u:t:o:1:2:qbdvh";
+char *short_options = "u:t:o:1:2:s:k:e:qbdvh";
 struct option long_options[] = {
   { "user", 1, NULL, 'u' },
   { "timeout", 1, NULL, 't' },
   { "output", 1, NULL, 'o' },
   { "stdout", 1, NULL, '1' },
   { "stderr", 1, NULL, '2' },
+  { "size", 1, NULL, 's' },
+  { "keepalive", required_argument, NULL, 'k' },
+  { "setenv", required_argument, NULL, 'e' },
   { "quiet", 0, NULL, 'q' },
   { "batch", 0, NULL, 'b' },
-  { "keepalive", required_argument, NULL, OPT_KEEPALIVE },
-  { "setenv", required_argument, NULL, 'e' },
   { "debug", 0, NULL, 'd' },
   { "version", 0, NULL, 'v' },
   { "help", 0, NULL, 'h' },
@@ -124,9 +123,12 @@ void usage(const char *program_name)
 {
     fprintf(stderr, "Usage: %s [<options>] <target> <command>\n\
 Options: -u|--user <user>: user running the command (default: root)\n\
-         -t|--timeout: time in seconds before aborting the command (default: 60)\n\
+         -t|--timeout <time>: time in seconds before aborting the command (default: 60)\n\
          -o|--output <file>: store both the output and the errors in the same file\n\
          -1|--stdout <file1> -2|--stderr <file2>: store them separately\n\
+         -s|--size <size>: size of the output buffers in bytes (default: 65536)\n\
+         -k|--keepalive no|<keep>: value of keepalive (default: -1)\n\
+         -e|--setenv <env>: set environment variable\n\
          -q|--quiet: do not display command output nor errors\n\
          -b|--batch: do not display status messages\n\
          -d|--debug: print debug information\n\
@@ -143,6 +145,7 @@ int main(int argc, char *argv[])
 {
   int option;
   const char *opt_output, *opt_stdout, *opt_stderr;
+  long opt_size = 65536L;
   bool opt_quiet, opt_batch;
   const char *opt_target;
   int opt_keepalive = -1;
@@ -173,6 +176,8 @@ int main(int argc, char *argv[])
               break;
     case '2': opt_stderr = optarg;
               break;
+    case 's': opt_size = atol(optarg);
+              break;
     case 'q': opt_quiet = true;
               break;
     case 'b': opt_batch = true;
@@ -183,14 +188,12 @@ int main(int argc, char *argv[])
               exit(RC_OK);
     case 'h': usage(argv[0]);
               exit(RC_OK);
-    case OPT_KEEPALIVE:
-	      if (!strcmp(optarg, "no"))
+    case 'k': if (!strcmp(optarg, "no"))
 		opt_keepalive = 0;
 	      else
 		opt_keepalive = atoi(optarg);
 	      break;
-    case 'e':
-	      {
+    case 'e': {
 		char *name = optarg, *value;
 
 		if ((value = strchr(optarg, '=')) != NULL)
@@ -232,15 +235,15 @@ int main(int argc, char *argv[])
       goto invalid_options;
     }
     /* Connect both output streams to the same buffer */
-    twopence_buf_resize(&stdout_buf, 65536);
+    twopence_buf_resize(&stdout_buf, opt_size);
     twopence_command_ostream_capture(&cmd, TWOPENCE_STDOUT, &stdout_buf);
     twopence_command_ostream_capture(&cmd, TWOPENCE_STDERR, &stdout_buf);
   } else
   if (opt_stdout || opt_stderr) {
     /* Connect both output streams to separate buffers */
-    twopence_buf_resize(&stdout_buf, 65536);
+    twopence_buf_resize(&stdout_buf, opt_size);
     twopence_command_ostream_capture(&cmd, TWOPENCE_STDOUT, &stdout_buf);
-    twopence_buf_resize(&stderr_buf, 65536);
+    twopence_buf_resize(&stderr_buf, opt_size);
     twopence_command_ostream_capture(&cmd, TWOPENCE_STDERR, &stderr_buf);
   } else {
     /* No output, no -q option. Just send everything to our regular output. */
