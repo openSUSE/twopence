@@ -2,7 +2,7 @@
 Methods to call Twopence library - implementation.
 
 
-Copyright (C) 2014-2015 SUSE
+Copyright (C) 2014-2021 SUSE
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -193,6 +193,8 @@ VALUE method_test_and_drop_results(VALUE self, VALUE ruby_args)
 //         (optional, defaults to "root")
 //   timeout: the time in seconds after which the command is aborted 
 //            (optional, defaults to 60L)
+//   bufsize: the size of the output buffer
+//            (optional, defaults to 65536L)
 // Output:
 //   out: the standard output of the command
 //   rc: the return code of the testing platform
@@ -203,7 +205,8 @@ VALUE method_test_and_store_results_together(VALUE self, VALUE ruby_args)
   long len;
   VALUE ruby_command,
         ruby_user,
-        ruby_timeout;
+        ruby_timeout,
+        ruby_bufsize;
   struct twopence_target *target;
   twopence_buf_t stdout_buf;
   twopence_status_t status;
@@ -211,7 +214,7 @@ VALUE method_test_and_store_results_together(VALUE self, VALUE ruby_args)
 
   Check_Type(ruby_args, T_ARRAY);
   len = RARRAY_LEN(ruby_args);
-  if (len < 1 || len > 3)
+  if (len < 1 || len > 4)
     rb_raise(rb_eArgError, "wrong number of arguments");
   ruby_command = rb_ary_entry(ruby_args, 0);
   if (len >= 2)
@@ -226,10 +229,16 @@ VALUE method_test_and_store_results_together(VALUE self, VALUE ruby_args)
     Check_Type(ruby_timeout, T_FIXNUM);
   }
   else ruby_timeout = LONG2NUM(60L);
+  if (len >= 4)
+  {
+    ruby_bufsize = rb_ary_entry(ruby_args, 3);
+    Check_Type(ruby_bufsize, T_FIXNUM);
+  }
+  else ruby_bufsize = LONG2NUM(65536L);
   Data_Get_Struct(self, struct twopence_target, target);
 
   twopence_buf_init(&stdout_buf);
-  twopence_buf_resize(&stdout_buf, 65536);
+  twopence_buf_resize(&stdout_buf, ruby_bufsize);
 
   rc = twopence_test_and_store_results_together(target,
          StringValueCStr(ruby_user), NUM2LONG(ruby_timeout), StringValueCStr(ruby_command),
@@ -250,6 +259,8 @@ VALUE method_test_and_store_results_together(VALUE self, VALUE ruby_args)
 //         (optional, defaults to "root")
 //   timeout: the time in seconds after which the command is aborted 
 //            (optional, defaults to 60L)
+//   bufsize: the size of the output buffer for each of stdout and stderr
+//            (optional, defaults to 65536L)
 // Output:
 //   out: the standard output of the command
 //   err: the standard error of the command
@@ -261,7 +272,8 @@ VALUE method_test_and_store_results_separately(VALUE self, VALUE ruby_args)
   long len;
   VALUE ruby_command,
         ruby_user,
-        ruby_timeout;
+        ruby_timeout,
+        ruby_bufsize;
   struct twopence_target *target;
   twopence_buf_t stdout_buf, stderr_buf;
   twopence_status_t status;
@@ -269,7 +281,7 @@ VALUE method_test_and_store_results_separately(VALUE self, VALUE ruby_args)
 
   Check_Type(ruby_args, T_ARRAY);
   len = RARRAY_LEN(ruby_args);
-  if (len < 1 || len > 3)
+  if (len < 1 || len > 4)
     rb_raise(rb_eArgError, "wrong number of arguments");
   ruby_command = rb_ary_entry(ruby_args, 0);
   if (len >= 2)
@@ -284,12 +296,18 @@ VALUE method_test_and_store_results_separately(VALUE self, VALUE ruby_args)
     Check_Type(ruby_timeout, T_FIXNUM);
   }
   else ruby_timeout = LONG2NUM(60L);
+  if (len >= 4)
+  {
+    ruby_bufsize = rb_ary_entry(ruby_args, 3);
+    Check_Type(ruby_bufsize, T_FIXNUM);
+  }
+  else ruby_bufsize = LONG2NUM(65536L);
   Data_Get_Struct(self, struct twopence_target, target);
 
   twopence_buf_init(&stdout_buf);
   twopence_buf_init(&stderr_buf);
-  twopence_buf_resize(&stdout_buf, 65536);
-  twopence_buf_resize(&stderr_buf, 65536);
+  twopence_buf_resize(&stdout_buf, ruby_bufsize);
+  twopence_buf_resize(&stderr_buf, ruby_bufsize);
 
   rc = twopence_test_and_store_results_separately(target,
          StringValueCStr(ruby_user), NUM2LONG(ruby_timeout), StringValueCStr(ruby_command),
