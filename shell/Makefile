@@ -43,4 +43,9 @@ clean:
 	rm -f inject
 	rm -f extract
 	rm -f exit
-
+ifeq ($(MACOS),true)
+	rm -rf command.dSYM
+	rm -rf inject.dSYM
+	rm -rf extract.dSYM
+	rm -rf exit.dSYM
+endif

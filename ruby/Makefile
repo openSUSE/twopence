@@ -74,6 +74,8 @@ endif
 clean:
 	rm -f ext/library/twopence.h
 	rm -f ext/library/buffer.h
-	rm -f ruby/ext/twopence/Makefile
-	rm -f ruby/ext/twopence/mkmf.log
+	rm -f library/libtwopence.dylib
+	rm -f twopence.gemspec
+	rm -f ext/twopence/Makefile
+	rm -f ext/twopence/mkmf.log
 	rm -f twopence-*.gem
