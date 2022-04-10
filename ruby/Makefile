@@ -20,12 +20,7 @@ else
   LIBDIR  ?= /usr/lib64
   RBVERSION ?= $(shell ruby -e "print(RUBY_VERSION)")
   RBDIR      = $(LIBDIR)/ruby/gems/$(RBVERSION)
-endif
-
-ifeq ($(MACOS),true)
-	INCDIR    ?= /usr/local/include
-else
-	INCDIR    ?= /usr/include
+  INCDIR    ?= /usr/include
 endif
 
 VERSION   := $(shell ../subst.sh --version)

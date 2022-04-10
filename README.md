@@ -1,6 +1,7 @@
 # What is it
 
 Twopence is a test executor
+
 * it can run tests in a KVM virtual machine without using the network
 * it can also run more traditional SSH tests in a remote machine
 * it can send the tests through a serial cable too
@@ -45,6 +46,23 @@ apt-get install gcc libssh-dev ruby-dev rake-compiler python-dev
 
 # Fedora
 dnf install gcc libssh-devel ruby-devel rubygem-rake-compiler python-devel redhat-rpm-config
+
+# macOS Monterey and newer
+#
+# Apple removed Python 2
+# https://github.com/openSUSE/twopence/issues/69 must be fixed first to work with Monterey and
+# newer.
+# You need Homebrew (https://brew.sh) first.
+
+# install Homebrew
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# install Python and Ruby via Homebrew
+brew install python ruby
+
+# verify Python/Ruby version afterwards
+python --version
+ruby --version
 ```
 
 ### Build and installation

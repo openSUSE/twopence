@@ -8,20 +8,17 @@ MACOS  := $(shell sw_vers             2>/dev/null | grep 'macOS' >/dev/null && e
 ifdef RPM_OPT_FLAGS
 CCOPT	= $(RPM_OPT_FLAGS)
 else
-CCOPT	= -Wall -O2 -g
-endif
-
-CFLAGS	= -fPIC -I/usr/include/python -I/usr/include/python2.7 
-CFLAGS  += -I../library $(CCOPT)
-
-ifeq ($(MACOS),true)
-	CFLAGS+= -undefined dynamic_lookup
+CCOPT	= -Wall -O2 -g3
 endif
 
 ifeq ($(MACOS),true)
 	LIBDIR ?= /usr/local/lib
+	CFLAGS	= -fPIC -I/usr/local/opt/python@3.9/Frameworks/Python.framework/Versions/3.9/include/python3.9
+	CFLAGS  += -I../library $(CCOPT)
 else
 	LIBDIR ?= /usr/lib64
+	CFLAGS	= -fPIC -I/usr/include/python -I/usr/include/python2.7
+	CFLAGS  += -I../library $(CCOPT)
 endif
 
 ifeq ($(FEDORA),true)
@@ -29,7 +26,7 @@ ifeq ($(FEDORA),true)
 else ifeq ($(UBUNTU),true)
     PYDIR := $(LIBDIR)/python2.7/site-packages/
 else ifeq ($(MACOS),true)
-	PYDIR := $(LIBDIR)/python2.7/site-packages/
+	PYDIR := $(LIBDIR)/python3.9/site-packages/
 else
     PYDIR := $(shell readlink -f $(LIBDIR)/python/site-packages)
 endif
@@ -46,7 +43,7 @@ ifeq ($(MACOS),true)
 all: twopence.dylib
 
 twopence.dylib: $(OBJS)
-	$(CC) $(CFLAGS) -dynamiclib -install_name "twopence.0.dylib" -o $@ --shared -Wl, $(OBJS) -L../library -ltwopence
+	$(CC) $(CFLAGS) -dynamiclib -install_name "twopence.0.dylib" -o $@ --shared -Wl, $(OBJS) -L../library -ltwopence `python-config --ldflags`
 
 clean:
 	rm -f *.o *.dylib
