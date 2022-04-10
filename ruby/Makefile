@@ -9,15 +9,16 @@ MACOS  := $(shell sw_vers             2>/dev/null | grep 'macOS' >/dev/null && e
 ARCH      ?= x86_64
 ifeq ($(UBUNTU),true)
   LIBDIR  ?= /usr/lib/x86_64-linux-gnu
-  RBVERSION ?= 2.3.0
+  RBVERSION ?= $(shell ruby -e "print(RUBY_VERSION)")
   RBDIR      = $(LIBDIR)/ruby/$(RBVERSION)
 else ifeq ($(MACOS),true)
   LIBDIR  ?= /usr/local/lib
-  RBVERSION ?= 2.7.0
+  RBVERSION ?= $(shell ruby -e "print(RUBY_VERSION)")
   RBDIR      = $(LIBDIR)/ruby/gems/$(RBVERSION)
+  INCDIR    ?= /usr/local/include
 else
   LIBDIR  ?= /usr/lib64
-  RBVERSION ?= 2.5.0
+  RBVERSION ?= $(shell ruby -e "print(RUBY_VERSION)")
   RBDIR      = $(LIBDIR)/ruby/gems/$(RBVERSION)
 endif
 
