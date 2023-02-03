@@ -1,7 +1,7 @@
 /*
-Twopence python bindings - class Status
+Twopence Python bindings - class Status
 
-Copyright (C) 2014, 2015 SUSE
+Copyright (C) 2014-2023 SUSE LLC
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -35,7 +35,7 @@ static int		Status_nameToSignal(const char *);
 static const char *	Status_signalToName(int signal);
 
 /*
- * Define the python bindings of class "Status"
+ * Define the Python bindings of class "Status"
  * Normally, you do not create Status objects yourself;
  * Usually, these are created as the return value of Command.run()
  */
@@ -186,7 +186,7 @@ Status_message(twopence_Status *self)
 		snprintf(message, sizeof(message), "status %d", self->remoteStatus);
 	}
 
-	return PyString_FromString(message);
+	return PyUnicode_FromString(message);
 }
 
 static PyObject *
@@ -199,17 +199,17 @@ Status_getattr(twopence_Status *self, char *name)
 	if (!strcmp(name, "buffer"))
 		return Status_object_attr(self, self->buffer);
 	if (!strcmp(name, "code"))
-		return PyInt_FromLong(Status_code(self));
+		return PyLong_FromString(Status_code(self), NULL, 0);
 	if (!strcmp(name, "localError"))
-		return PyInt_FromLong(-self->localError);
+		return PyLong_FromString(-self->localError, NULL, 0);
 	if (!strcmp(name, "exitStatus"))
-		return PyInt_FromLong(self->remoteStatus);
+		return PyLong_FromString(self->remoteStatus, NULL, 0);
 	if (!strcmp(name, "exitSignal")) {
 		if (self->exitSignal == 0) {
 			Py_INCREF(Py_None);
 			return Py_None;
 		}
-		return PyString_FromString(Status_signalToName(self->exitSignal));
+		return PyUnicode_FromString(Status_signalToName(self->exitSignal));
 	}
 	if (!strcmp(name, "command")) {
 		PyObject *result = self->command;
