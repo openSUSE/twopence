@@ -3,7 +3,7 @@
 # Test script to exercise the Ruby wrapper.
 #
 # Provide a target on the command line using
-#   ruby_test.sh virtio:/var/run/twopence/test.sock
+#   ruby_test.sh virtio:/run/twopence/test.sock
 #   ruby_test.sh ssh:192.168.123.45
 #   ruby_test.sh serial:/dev/ttyS0
 ##########################################################

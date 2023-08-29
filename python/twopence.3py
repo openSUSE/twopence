@@ -63,7 +63,7 @@ This is the name assigned to it by the constructor.
 .TP
 .BR type " (read-only)
 This is the target type, which is the leading portion of the string passed into the
-constructor. For example, if you created a target for \(dqvirtio:/var/run/foo.socket\(dq, then
+constructor. For example, if you created a target for \(dqvirtio:/run/foo.socket\(dq, then
 the this attribute will contain \(dqvirtio\(dq.
 .\" --------------------------------------------------------------
 .\"

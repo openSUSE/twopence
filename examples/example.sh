@@ -2,7 +2,7 @@
 
 ##########################################################
 # Adapt the following line to your setup
-#   export TARGET=virtio:/var/run/twopence/test.sock
+#   export TARGET=virtio:/run/twopence/test.sock
 #   export TARGET=ssh:192.168.123.45
 #   export TARGET=serial:/dev/ttyS0
 export TARGET= YOUR_TARGET_HERE
