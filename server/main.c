@@ -49,7 +49,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "version.h"
 
 #define TWOPENCE_SERIAL_PORT_DEFAULT	"/dev/virtio-ports/org.opensuse.twopence.0"
-#define TWOPENCE_UNIX_PORT_DEFAULT	"/var/run/twopence.sock"
+#define TWOPENCE_UNIX_PORT_DEFAULT	"/run/twopence.sock"
 #define TWOPENCE_TCP_PORT_DEFAULT	64123
 
 #define TWOPENCE_SERVER_PARAMETER_ERROR -1

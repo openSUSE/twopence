@@ -6,7 +6,7 @@ import os
 try:
   #######################################################################
   # Adapt the following line to your setup
-  #   target = twopence::Target("virtio:/var/run/twopence/test.sock")
+  #   target = twopence::Target("virtio:/run/twopence/test.sock")
   #   target = twopence::Target("ssh:192.168.123.45")
   #   target = twopence::Target("serial:/dev/ttyS0")
   target = twopence.Target( YOUR_TARGET_HERE )

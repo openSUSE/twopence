@@ -6,7 +6,7 @@ require "fileutils"
 begin
 #######################################################################
 # Adapt the following line to your setup
-#   $target = Twopence::init("virtio:/var/run/twopence/test.sock")
+#   $target = Twopence::init("virtio:/run/twopence/test.sock")
 #   $target = Twopence::init("ssh:192.168.123.45")
 #   $target = Twopence::init("serial:/dev/ttyS0")
 $target = Twopence::init( YOUR_TARGET_HERE )
