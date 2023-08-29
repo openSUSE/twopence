@@ -4,7 +4,7 @@
 # Usage: ./add_virtio_channel domain 
 
 virsh="virsh -c qemu:///system"
-list=$($virsh list --all | tail -n +3 | tr -s ' ' | cut -f 3 -d ' ')
+list=$($virsh list --all --name)
 
 function usage
 {
