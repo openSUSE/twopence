@@ -3,7 +3,7 @@
 # Test script to exercise the shell commands.
 #
 # Provide a target on the command line using
-#   shell_test.sh virtio:/var/run/twopence/test.sock
+#   shell_test.sh virtio:/run/twopence/test.sock
 #   shell_test.sh ssh:192.168.123.45
 #   shell_test.sh serial:/dev/ttyS0
 ##########################################################

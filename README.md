@@ -154,7 +154,7 @@ instead of scp, you may use shared folders or whichever method you prefer
   to the name of the socket file you just created; for example:
 
 ```bash
-export TARGET=virtio:/var/run/twopence/test.sock
+export TARGET=virtio:/run/twopence/test.sock
 ```
 
 * run the following commands:
@@ -169,7 +169,7 @@ ruby /usr/local/lib/twopence/test.rb
   check the permissions of the socket file:
 
 ```bash
-ls -l /var/run/twopence/test.sock
+ls -l /run/twopence/test.sock
 ```
 
 ## How do I run the examples with a serial cable

@@ -4,7 +4,7 @@
 # Usage: ./add_virtio_channel domain 
 
 virsh="virsh -c qemu:///system"
-list=$($virsh list --all | tail -n +3 | tr -s ' ' | cut -f 3 -d ' ')
+list=$($virsh list --all --name)
 
 function usage
 {
@@ -24,7 +24,7 @@ domain="$1"
 
 function add_port
 {
-  socket=/var/run/twopence/${domain}.sock
+  socket=/run/twopence/${domain}.sock
   name=org.opensuse.twopence.0
   grep -q "<target type='virtio' name='${name}'/>" $tmpfile
   if [ $? -eq 0 ]; then
