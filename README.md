@@ -47,7 +47,9 @@ apt-get install gcc libssh-dev ruby-dev rake-compiler python-dev
 dnf install gcc libssh-devel ruby-devel rubygem-rake-compiler python-devel redhat-rpm-config
 
 # MacOS
+# install the Xcode command line tools
 xcode-select --install
+# Install Homebrew (https://brew.sh)
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 brew install libssh
 sudo ln -s /opt/homebrew/Cellar/libssh/<your_version>/include/libssh /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/libssh
