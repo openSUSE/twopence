@@ -46,7 +46,7 @@ apt-get install gcc libssh-dev ruby-dev rake-compiler python-dev
 # Fedora
 dnf install gcc libssh-devel ruby-devel rubygem-rake-compiler python-devel redhat-rpm-config
 
-# MacOS
+# macOS (tested on Sonoma)
 # install the Xcode command line tools
 xcode-select --install
 # Install Homebrew (https://brew.sh)
