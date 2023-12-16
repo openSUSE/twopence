@@ -305,10 +305,10 @@ fi
 test_case_report
 
 #
-# This doesn't really belong here, but OTOH we need to run python with a
+# This doesn't really belong here, but OTOH we need to run Python with a
 # specific stdin...
 #
-test_case_begin "ensure that running commands through python will also read from stdin"
+test_case_begin "ensure that running commands through Python will also read from stdin"
 cat >/tmp/twopence-test.py <<EOF
 import twopence
 import sys

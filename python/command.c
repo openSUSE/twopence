@@ -1,7 +1,7 @@
 /*
-Twopence python bindings
+Twopence Python bindings
 
-Copyright (C) 2014-2016 SUSE
+Copyright (C) 2014-2023 SUSE LLC
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -34,7 +34,7 @@ static PyObject *	Command_setenv(twopence_Command *, PyObject *, PyObject *);
 static PyObject *	Command_unsetenv(twopence_Command *, PyObject *, PyObject *);
 
 /*
- * Define the python bindings of class "Command"
+ * Define the Python bindings of class "Command"
  *
  * Create objects using
  *   command = twopence.Command("/bin/ls");
@@ -55,7 +55,7 @@ static PyObject *	Command_unsetenv(twopence_Command *, PyObject *, PyObject *);
  *	objects are not supported yet.
  *   stdout, stderr:
  *	Buffers to write the respective output streams to.
- *	If not specified, output is written to the python interpreter's stdout.
+ *	If not specified, output is written to the Python interpreter's stdout.
  *	Pass the None object to suppress output.
  *	If you just specify stdout but not stderr, the two output streams
  *	are combined into one and buffered together.
@@ -188,10 +188,10 @@ Command_init(twopence_Command *self, PyObject *args, PyObject *kwds)
 	if (stdinObject == NULL) {
 		/* Default: pipe our stdin to the remote command */
 	} else
-	if (PyString_Check(stdinObject)) {
+	if (PyUnicode_Check(stdinObject)) {
 		char *s;
 
-		if ((s = PyString_AsString(stdinObject)) == NULL)
+		if ((s = PyUnicode_AsUTF8(stdinObject)) == NULL)
 			return -1;
 		self->stdinPath = twopence_strdup(s);
 	} else {
@@ -255,7 +255,7 @@ Command_redirect_iostream(twopence_command_t *cmd, twopence_iofd_t dst, PyObject
 		}
 
 		/* We dup() the file descriptor so that we no longer have to worry
-		 * about what python does with its File object */
+		 * about what Python does with its File object */
 		twopence_command_iostream_redirect(cmd, dst, dup(fd), true);
 	} else
 	if (object == Py_None) {
@@ -330,14 +330,14 @@ Command_build(twopence_Command *self, twopence_command_t *cmd)
 		FILE *fp;
 		int fd;
 
-		fp = PySys_GetFile("stdin", NULL);
+		fp = PySys_GetObject("stdin");
 		if (fp != NULL) {
 			if ((fd = fileno(fp)) < 0) {
 				PyErr_SetString(PyExc_SystemError, "cannot connect command to stdin (not a regular file)");
 				return -1;
 			}
 			/* We dup() the file descriptor so that we no longer have to worry
-			 * about what python does with its File object */
+			 * about what Python does with its File object */
 			twopence_command_iostream_redirect(cmd, TWOPENCE_STDIN, dup(fd), true);
 		}
 	}
@@ -432,13 +432,13 @@ Command_getattr(twopence_Command *self, char *name)
 	if (!strcmp(name, "user"))
 		return return_string_or_none(self->user);
 	if (!strcmp(name, "timeout"))
-		return PyInt_FromLong(self->timeout);
+		return PyLong_FromString(self->timeout, NULL, 0);
 	if (!strcmp(name, "stdout"))
 		return Command_stdout(self);
 	if (!strcmp(name, "stderr"))
 		return Command_stderr(self);
 	if (!strcmp(name, "pid"))
-		return PyInt_FromLong(self->pid);
+		return PyLong_FromString(self->pid, NULL, 0);
 	if (!strcmp(name, "quiet"))
 		return return_bool(self->quiet);
 	if (!strcmp(name, "useTty"))
@@ -462,8 +462,8 @@ Command_getattr(twopence_Command *self, char *name)
 			} else {
 				value = "undef";
 			}
-			PyTuple_SET_ITEM(pair, 0, PyString_FromString(name));
-			PyTuple_SET_ITEM(pair, 1, PyString_FromString(value));
+			PyTuple_SET_ITEM(pair, 0, PyUnicode_FromString(name));
+			PyTuple_SET_ITEM(pair, 1, PyUnicode_FromString(value));
 			PyTuple_SET_ITEM(rv, i, pair);
 			free(name);
 		}
@@ -471,7 +471,7 @@ Command_getattr(twopence_Command *self, char *name)
 		return rv;
 	}
 
-	return Py_FindMethod(twopence_commandMethods, (PyObject *) self, name);
+	return PyObject_GenericGetAttr(self, PyUnicode_FromString(name));
 }
 
 static int
@@ -492,14 +492,14 @@ Command_setattr(twopence_Command *self, char *name, PyObject *v)
 	if (!strcmp(name, "user")) {
 		char *s;
 
-		if (!PyString_Check(v) || (s = PyString_AsString(v)) == NULL)
+		if (!PyUnicode_Check(v) || (s = PyUnicode_AsUTF8(v)) == NULL)
 			goto bad_attr;
 		assign_string(&self->user, s);
 		return 0;
 	}
 	if (!strcmp(name, "timeout")) {
-		if (PyInt_Check(v))
-			self->timeout = PyInt_AsLong(v);
+		if (PyLong_Check(v))
+			self->timeout = PyLong_AsLong(v);
 		else if (PyLong_Check(v))
 			self->timeout = PyLong_AsLongLong(v);
 		else

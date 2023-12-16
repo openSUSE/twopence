@@ -1,7 +1,7 @@
 /*
-Twopence python bindings
+Twopence Python bindings
 
-Copyright (C) 2014, 2015 SUSE
+Copyright (C) 2014-2023 SUSE LLC
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -31,7 +31,7 @@ static PyObject *	Transfer_getattr(twopence_Transfer *self, char *name);
 static int		Transfer_setattr(twopence_Transfer *self, char *name, PyObject *);
 
 /*
- * Define the python bindings of class "Transfer"
+ * Define the Python bindings of class "Transfer"
  *
  * Create objects using
  *   xfer = twopence.Transfer(remotefile = "/tmp/foobar", localfile = "mytemplate");
@@ -245,13 +245,13 @@ Transfer_getattr(twopence_Transfer *self, char *name)
 	if (!strcmp(name, "user"))
 		return return_string_or_none(self->user);
 	if (!strcmp(name, "permissions"))
-		return PyInt_FromLong(self->permissions);
+		return PyLong_FromString(self->permissions, NULL, 0);
 	if (!strcmp(name, "timeout"))
-		return PyInt_FromLong(self->timeout);
+		return PyLong_FromString(self->timeout, NULL, 0);
 	if (!strcmp(name, "data"))
 		return Transfer_data(self);
 
-	return Py_FindMethod(twopence_transferMethods, (PyObject *) self, name);
+	return PyObject_GenericGetAttr(self, PyUnicode_FromString(name));
 }
 
 static int
@@ -260,7 +260,7 @@ Transfer_setattr(twopence_Transfer *self, char *name, PyObject *v)
 	if (!strcmp(name, "remotefile")) {
 		char *s;
 
-		if (!PyString_Check(v) || (s = PyString_AsString(v)) == NULL)
+		if (!PyUnicode_Check(v) || (s = PyUnicode_AsUTF8(v)) == NULL)
 			goto bad_attr;
 		assign_string(&self->remote_filename, s);
 		return 0;
@@ -268,7 +268,7 @@ Transfer_setattr(twopence_Transfer *self, char *name, PyObject *v)
 	if (!strcmp(name, "localfile")) {
 		char *s;
 
-		if (!PyString_Check(v) || (s = PyString_AsString(v)) == NULL)
+		if (!PyUnicode_Check(v) || (s = PyUnicode_AsUTF8(v)) == NULL)
 			goto bad_attr;
 		assign_string(&self->local_filename, s);
 		return 0;
@@ -276,21 +276,21 @@ Transfer_setattr(twopence_Transfer *self, char *name, PyObject *v)
 	if (!strcmp(name, "user")) {
 		char *s;
 
-		if (!PyString_Check(v) || (s = PyString_AsString(v)) == NULL)
+		if (!PyUnicode_Check(v) || (s = PyUnicode_AsUTF8(v)) == NULL)
 			goto bad_attr;
 		assign_string(&self->user, s);
 		return 0;
 	}
 	if (!strcmp(name, "permissions")) {
-		if (!PyInt_Check(v))
+		if (!PyLong_Check(v))
 			goto bad_attr;
-		self->permissions = PyInt_AsLong(v);
+		self->permissions = PyLong_AsLong(v);
 		return 0;
 	}
 	if (!strcmp(name, "timeout")) {
-		if (!PyInt_Check(v))
+		if (!PyLong_Check(v))
 			goto bad_attr;
-		self->timeout = PyInt_AsLong(v);
+		self->timeout = PyLong_AsLong(v);
 		return 0;
 	}
 	if (!strcmp(name, "data")) {

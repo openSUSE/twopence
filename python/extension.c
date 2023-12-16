@@ -1,7 +1,7 @@
 /*
-Twopence python bindings - extension glue
+Twopence Python bindings - extension glue
 
-Copyright (C) 2014, 2015 SUSE
+Copyright (C) 2014-2023 SUSE LLC
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -145,12 +145,24 @@ twopence_callType(PyTypeObject *typeObject, PyObject *args, PyObject *kwds)
 	return twopence_callObject((PyObject *) typeObject, args, kwds);
 }
 
+static struct PyModuleDef twopence = {
+   	PyModuleDef_HEAD_INIT,
+    "twopence",     /* m_name */
+    "Module for twopence based testing",  /* m_doc */
+    -1,                  /* m_size */
+    twopence_methods,    /* m_methods */
+    NULL,                /* m_reload */
+    NULL,                /* m_traverse */
+    NULL,                /* m_clear */
+    NULL,                /* m_free */
+};
+
 PyMODINIT_FUNC
 inittwopence(void) 
 {
 	PyObject* m;
 
-	m = Py_InitModule3("twopence", twopence_methods, "Module for twopence based testing");
+	m = PyModule_Create(&twopence);
 
 	twopence_registerType(m, "Target", &twopence_TargetType);
 	twopence_registerType(m, "Command", &twopence_CommandType);

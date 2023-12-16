@@ -1,7 +1,7 @@
 /*
-Twopence python bindings
+Twopence Python bindings
 
-Copyright (C) 2014, 2015 SUSE
+Copyright (C) 2014-2023 SUSE LLC
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -45,7 +45,7 @@ static PyObject *	Target_cancel_transactions(twopence_Target *, PyObject *, PyOb
 static PyObject *	Target_chat(twopence_Target *, PyObject *, PyObject *);
 
 /*
- * Define the python bindings of class "Target"
+ * Define the Python bindings of class "Target"
  *
  * Create objects using
  *   target = twopence.Target("ssh:somehost");
@@ -192,7 +192,7 @@ Target_getattr(twopence_Target *self, char *name)
 		return value;
 	}
 
-	return Py_FindMethod(twopence_targetMethods, (PyObject *) self, name);
+	return PyObject_GenericGetAttr(self, PyUnicode_FromString(name));
 }
 
 /*
@@ -506,8 +506,8 @@ Target_wait(twopence_Target *self, PyObject *args, PyObject *kwds)
 
 	if (argObject == NULL) {
 		pid = 0;
-	} else if (PyInt_Check(argObject)) {
-		pid = PyInt_AsLong(argObject);
+	} else if (PyLong_Check(argObject)) {
+		pid = PyLong_AsLong(argObject);
 
 		if (pid < 0) {
 			PyErr_SetString(PyExc_ValueError, "target.wait(): pid must not be negative");
@@ -715,7 +715,7 @@ Target_inject(twopence_Target *self, PyObject *args, PyObject *kwds)
 	if (rc < 0)
 		return twopence_Exception("inject", rc);
 
-	return PyInt_FromLong(remoteRc);
+	return PyLong_FromString(remoteRc, NULL, 0);
 }
 
 /*
@@ -745,7 +745,7 @@ Target_extract(twopence_Target *self, PyObject *args, PyObject *kwds)
 	if (rc < 0)
 		return twopence_Exception("extract", rc);
 
-	return PyInt_FromLong(remoteRc);
+	return PyLong_FromString(remoteRc, NULL, 0);
 }
 
 /*
