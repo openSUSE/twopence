@@ -26,6 +26,7 @@ endif
 
 ifeq ($(MACOS),true)
 	INCDIR ?= /usr/local/include
+	CFLAGS	= -D_GNU_SOURCE -fPIC $(CCOPT) -I /opt/homebrew/include -I ext -L /opt/homebrew/lib -lssh 
 else
 	INCDIR ?= /usr/include
 endif

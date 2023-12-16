@@ -15,21 +15,18 @@ CFLAGS	= -fPIC -I/usr/include/python -I/usr/include/python2.7
 CFLAGS  += -I../library $(CCOPT)
 
 ifeq ($(MACOS),true)
-	CFLAGS+= -undefined dynamic_lookup
+	CFLAGS	= -fPIC -I$(HOME)/.pyenv/versions/2.7.18/include -I$(HOME)/.pyenv/versions/2.7.18/include/python2.7
+    CFLAGS  += -I../library $(CCOPT) -undefined dynamic_lookup
 endif
 
-ifeq ($(MACOS),true)
-	LIBDIR ?= /usr/local/lib
-else
-	LIBDIR ?= /usr/lib64
-endif
+LIBDIR ?= /usr/lib64
 
 ifeq ($(FEDORA),true)
     PYDIR := $(LIBDIR)/python2.7/site-packages/
 else ifeq ($(UBUNTU),true)
     PYDIR := $(LIBDIR)/python2.7/site-packages/
 else ifeq ($(MACOS),true)
-	PYDIR := $(LIBDIR)/python2.7/site-packages/
+	PYDIR := $(HOME)/.pyenv/versions/2.7.18/lib/python2.7/site-packages
 else
     PYDIR := $(shell readlink -f $(LIBDIR)/python/site-packages)
 endif

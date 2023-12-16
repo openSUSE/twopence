@@ -58,7 +58,7 @@ else ifeq ($(FEDORA),true)
                      --install-dir "$(RBDIR)/" \
                      -V --force twopence-$(VERSION).gem
 else ifeq ($(MACOS),true)
-	CFLAGS="-I$(DESTDIR)$(INCDIR)" LDFLAGS="-L$(DESTDIR)$(LIBDIR)" DESTDIR="" \
+	CFLAGS="-I /opt/homebrew/include -I ext -L /opt/homebrew/lib -lssh -I$(DESTDIR)$(INCDIR)" LDFLAGS="-L$(DESTDIR)$(LIBDIR)" DESTDIR="" \
 	       gem install --local \
                      --build-root "$(DESTDIR)/" \
                      --install-dir "$(RBDIR)/" \
