@@ -17,7 +17,7 @@ else ifeq ($(MACOS),true)
   RBDIR      = $(LIBDIR)/ruby/gems/$(RBVERSION)
 else
   LIBDIR  ?= /usr/lib64
-  RBVERSION ?= 2.5.0
+  RBVERSION ?= 3.3.0
   RBDIR      = $(LIBDIR)/ruby/gems/$(RBVERSION)
 endif
 
