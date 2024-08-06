@@ -46,4 +46,5 @@ void Init_twopence()
   rb_define_method(ruby_target_class, "extract_file", method_extract_file, -2);
   rb_define_method(ruby_target_class, "interrupt_command", method_interrupt_command, 0);
   rb_define_method(ruby_target_class, "exit", method_exit, 0);
+  rb_undef_alloc_func(ruby_target_class);
 }
