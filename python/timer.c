@@ -1,7 +1,7 @@
 /*
-Twopence python bindings - class Timer
+Twopence Python bindings - class Timer
 
-Copyright (C) 2016 SUSE
+Copyright (C) 2016-2023 SUSE LLC
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -36,7 +36,7 @@ static PyObject *	Timer_cancel(twopence_Timer *, PyObject *, PyObject *);
 static void		__Timer_callback(twopence_timer_t *t, void *user_data);
 
 /*
- * Define the python bindings of class "Timer"
+ * Define the Python bindings of class "Timer"
  * Normally, you do not create Timer objects yourself;
  * Usually, these are created as the return value of Target.addtimer()
  */
@@ -146,11 +146,11 @@ __Timer_callback(twopence_timer_t *t, void *user_data)
 	PyObject *v;
 
 	if (timerObj->callback == NULL || timerObj->callback == Py_None) {
-		twopence_debug("Timer %u fired; no python callback set", t->id);
+		twopence_debug("Timer %u fired; no Python callback set", t->id);
 		return;
 	}
 
-	twopence_debug("Timer %u fired; invoking python callback", t->id);
+	twopence_debug("Timer %u fired; invoking Python callback", t->id);
 	v = twopence_callObject(timerObj->callback, NULL, NULL);
 	if (v == NULL) {
 		twopence_log_error("Exception in twopence.Timer callback");
@@ -223,14 +223,14 @@ Timer_getattr(twopence_Timer *self, char *name)
 			return self->callback;
 		}
 		if (!strcmp(name, "state"))
-			return PyString_FromString(Timer_state2name(timer->state));
+			return PyUnicode_FromString(Timer_state2name(timer->state));
 		if (!strcmp(name, "id"))
-			return PyInt_FromLong(timer->id);
+			return PyLong_FromString(timer->id, NULL, 0);
 		if (!strcmp(name, "remaining"))
 			return PyFloat_FromDouble(twopence_timer_remaining(timer) * 1e-3);
 	}
 
-	return Py_FindMethod(twopence_timerMethods, (PyObject *) self, name);
+	return PyObject_GenericGetAttr(self, PyUnicode_FromString(name));
 }
 
 static int

@@ -1,7 +1,7 @@
 /*
-Twopence python bindings
+Twopence Python bindings
 
-Copyright (C) 2014, 2015 SUSE
+Copyright (C) 2014-2023 SUSE LLC
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -21,11 +21,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #ifndef TWOPENCE_PYTHON_EXT_H
 #define TWOPENCE_PYTHON_EXT_H
 
-#ifdef __APPLE__
-#include <Python/Python.h>
-#else
 #include <Python.h>
-#endif
 #include <twopence.h>
 #include <string.h>
 #include "utils.h"
@@ -154,7 +150,7 @@ return_string_or_none(const char *value)
 		Py_INCREF(Py_None);
 		return Py_None;
 	}
-	return PyString_FromString(value);
+	return PyUnicode_FromString(value);
 }
 
 static inline PyObject *

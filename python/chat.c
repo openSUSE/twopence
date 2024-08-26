@@ -1,7 +1,7 @@
 /*
-Twopence python bindings - class Chat
+Twopence Python bindings - class Chat
 
-Copyright (C) 2015 SUSE
+Copyright (C) 2015-2023 SUSE LLC
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -35,7 +35,7 @@ static PyObject *	Chat_wait(PyObject *self, PyObject *args, PyObject *kwds);
 static PyObject *	Chat_getattr(twopence_Chat *self, char *name);
 
 /*
- * Define the python bindings of class "Chat"
+ * Define the Python bindings of class "Chat"
  * Normally, you do not create Chat objects yourself;
  * Usually, these are created as the return value of Command.chat()
  */
@@ -153,10 +153,10 @@ Chat_getattr(twopence_Chat *self, char *name)
 			return Py_None;
 		}
 
-		return PyString_FromString(self->chat.found);
+		return PyUnicode_FromString(self->chat.found);
 	}
 
-	return Py_FindMethod(twopence_chatMethods, (PyObject *) self, name);
+	return PyObject_GenericGetAttr(self, PyUnicode_FromString(name));
 }
 
 /*
@@ -167,8 +167,8 @@ Chat_expect_set_strings(twopence_expect_t *e, PyObject *expectObj)
 {
 	unsigned int k;
 
-	if (PyString_Check(expectObj)) {
-		e->strings[0] = PyString_AsString(expectObj);
+	if (PyUnicode_Check(expectObj)) {
+		e->strings[0] = PyUnicode_AsUTF8(expectObj);
 		e->nstrings = 1;
 	} else
 	if (PySequence_Check(expectObj)) {
@@ -186,9 +186,9 @@ Chat_expect_set_strings(twopence_expect_t *e, PyObject *expectObj)
 		for (k = 0; k < count; ++k) {
 			PyObject *item = PySequence_GetItem(expectObj, k);
 
-			if (!PyString_Check(item))
+			if (!PyUnicode_Check(item))
 				goto bad_string;
-			e->strings[k] = PyString_AsString(item);
+			e->strings[k] = PyUnicode_AsUTF8(item);
 		}
 		e->nstrings = count;
 	} else {
@@ -308,7 +308,7 @@ Chat_recvline(PyObject *self, PyObject *args, PyObject *kwds)
 		return Py_None;
 	}
 
-	return PyString_FromString(buffer);
+	return PyUnicode_FromString(buffer);
 }
 
 static PyObject *
